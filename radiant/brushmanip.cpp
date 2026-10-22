@@ -821,10 +821,25 @@ void Scene_BrushConstructPrefab( scene::Graph& graph, EBrushPrefab type, std::si
 /// Edge mode: the selected edges; face mode: every edge of the selected faces; whole brushes: all their edges.
 void Brush_bevelSelected(){
 	const double size = GetSnapGridSize();
-	const bool component = GlobalSelectionSystem().Mode() == SelectionSystem::eComponent;
 	UndoableCommand undo( "brushBevel" );
 	std::size_t count = 0;
-	Scene_forEachVisibleSelectedBrush( [&]( BrushInstance& instance ){
+	// selected brushes, plus brushes with faces picked by Ctrl(+Shift)+click without being selected themselves
+	std::vector<BrushInstance*> targets;
+	Scene_forEachVisibleSelectedBrush( [&]( BrushInstance& instance ){ targets.push_back( &instance ); } );
+	Scene_forEachVisibleBrush( GlobalSceneGraph(), [&]( BrushInstance& instance ){
+		if( std::find( targets.begin(), targets.end(), &instance ) != targets.end() )
+			return;
+		bool anyFace = false;
+		class AnyFace : public BrushInstanceVisitor { public: bool& m_any; AnyFace( bool& any ) : m_any( any ){} void visit( FaceInstance& fi ) const override { m_any |= fi.isSelected(); } };
+		instance.forEachFaceInstance( AnyFace( anyFace ) );
+		if( anyFace )
+			targets.push_back( &instance );
+	} );
+	for( BrushInstance* target : targets ){
+		BrushInstance& instance = *target;
+		// faces / edges decide unless the whole brush is selected in normal mode
+		const bool component = GlobalSelectionSystem().Mode() == SelectionSystem::eComponent || !instance.isSelected();
+		[&]{
 		Brush& brush = instance.getBrush();
 		brush.evaluateBRep();
 		std::vector<Face*> faces;
@@ -890,7 +905,8 @@ void Brush_bevelSelected(){
 			if( brush.addPlane( np.p0, np.p1, np.p2, np.shader.c_str(), np.projection ) )
 				++count;
 		brush.removeEmptyFaces();
-	} );
+		}();
+	}
 	if( count == 0 )
 		globalWarningStream() << "Bevel: select brushes, or edges/faces in component mode (E / F)\n";
 	else

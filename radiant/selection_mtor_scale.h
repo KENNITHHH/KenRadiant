@@ -25,6 +25,9 @@
 
 class ScaleManipulator : public Manipulator
 {
+public:
+	inline static Shader* m_state_wire;
+	inline static Shader* m_state_fill;
 };
 
 ScaleManipulator* New_ScaleManipulator( Scalable& scalable, std::size_t segments, float length );

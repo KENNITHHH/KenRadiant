@@ -176,3 +176,29 @@ public:
 		m_axis2 = axis2;
 	}
 };
+
+/// KenRadiant: Unreal's centre cube - uniform scale on all three axes: drag right/up to grow, left/down to shrink
+class ScaleUniform : public Manipulatable
+{
+	Scalable& m_scalable;
+	DeviceVector m_start{ 0, 0 };
+	AABB m_bounds;
+public:
+	ScaleUniform( Scalable& scalable ) : m_scalable( scalable ){}
+	void Construct( const Matrix4& device2manip, const DeviceVector device_point, const AABB& bounds, const Vector3& transform_origin ) override {
+		m_start = device_point;
+		m_bounds = bounds;
+	}
+	void Transform( const Matrix4& manip2object, const Matrix4& device2manip, const DeviceVector device_point ) override {
+		const DeviceVector delta = device_point - m_start; // device units: the view is 2 wide
+		const float amount = float( delta.x() + delta.y() );
+		float scale = amount >= 0 ? 1 + 2 * amount : 1 / ( 1 - 2 * amount );
+		// snap so the largest side of the selection lands on the grid
+		const float size = 2 * std::max( { m_bounds.extents[0], m_bounds.extents[1], m_bounds.extents[2] } );
+		if( size > 0 && GetSnapGridSize() > 0 ){
+			const float snapped = std::max( float( GetSnapGridSize() ), float( float_snapped( size * scale, GetSnapGridSize() ) ) );
+			scale = snapped / size;
+		}
+		m_scalable.scale( Vector3( scale, scale, scale ) );
+	}
+};

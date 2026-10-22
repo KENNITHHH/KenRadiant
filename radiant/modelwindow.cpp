@@ -1071,6 +1071,12 @@ protected:
 			m_modBro.m_parent->raise();
 		}
 
+		// KenRadiant: Ctrl + wheel resizes the model cells (like the texture browser)
+		if( event->modifiers().testFlag( Qt::KeyboardModifier::ControlModifier ) ){
+			extern void ModelBrowser_stepCellSize( int direction );
+			ModelBrowser_stepCellSize( event->angleDelta().y() > 0 ? 1 : -1 );
+			return;
+		}
 		m_modBro.setOriginZ( m_modBro.m_originZ + std::copysign( 64, event->angleDelta().y() ) );
 	}
 };
@@ -1359,6 +1365,18 @@ void FoldersToLoadImport( CopiedString& self, const char* value ){
 	}
 }
 typedef ReferenceCaller<CopiedString, void(const char*), FoldersToLoadImport> FoldersToLoadImportCaller;
+
+void ModelBrowser_stepCellSize( int direction ){
+	static const int sizes[] = { 32, 48, 64, 80, 112, 160, 224, 320 };
+	int current = g_ModelBrowser.m_cellSize, next = current;
+	if( direction > 0 ){
+		for( int sz : sizes ) if( sz > current ){ next = sz; break; }
+	}
+	else{
+		for( int i = int( std::size( sizes ) ) - 1; i >= 0; --i ) if( sizes[i] < current ){ next = sizes[i]; break; }
+	}
+	CellSizeImport( g_ModelBrowser.m_cellSize, next );
+}
 
 void ModelBrowser_constructPage( PreferenceGroup& group ){
 	PreferencesPage page( group.createPage( "Model Browser", "Model Browser Preferences" ) );

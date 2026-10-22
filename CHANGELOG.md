@@ -3,6 +3,15 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (2)
+### Editor
+- **Textures / Models tabs** under the camera (regular layouts): the model browser now sits next to the texture browser. **Ctrl + wheel** resizes model cells too.
+- **Unreal-style scale gizmo**: axis lines with cubes (one axis), triangles between two axes (two axes), white centre cube = uniform scale (drag right/up to grow), sizes snap to the grid.
+- **Ctrl+Shift+click selects faces** again, as in GtkRadiant (Ctrl+click still works too).
+- **Ctrl+B** works (it had no menu entry, so the shortcut was never connected); also View → Browse To Selected Texture.
+- **Skybox button** and **Game View button** on the FOV toolbar. Game View turns the skybox preview on and puts it back as it was.
+- Bevel (Shift+B) also works on faces picked with Ctrl / Ctrl+Shift+click.
+
 ## Build 2026-10-23
 ### Editor
 - **Sky brushes** show as brushes with the sky shader's editor image again (like GtkRadiant). View → Show → *Sky Brushes Show Skybox* turns the in-game sky preview back on.

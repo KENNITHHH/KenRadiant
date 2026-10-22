@@ -147,6 +147,9 @@ void add_filter_command( unsigned int flag, const char* command, const QKeySeque
 /// toggling it again restores exactly the filters that were set before
 static bool g_gameView = false;
 static unsigned int g_gameView_savedExclude = 0;
+static bool g_gameView_savedSkybox = false;
+void SkyboxPreview_set( bool on );
+bool SkyboxPreview_get();
 ToggleItem g_gameView_item{ BoolExportCaller( g_gameView ) };
 void GameView_toggle(){
 	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
@@ -156,9 +159,12 @@ void GameView_toggle(){
 	if( g_gameView ){
 		g_gameView_savedExclude = g_filters_globals.exclude;
 		g_filters_globals.exclude |= editorOnly;
+		g_gameView_savedSkybox = SkyboxPreview_get();
+		SkyboxPreview_set( true ); // the real sky, like in game
 	}
 	else{
 		g_filters_globals.exclude = g_gameView_savedExclude;
+		SkyboxPreview_set( g_gameView_savedSkybox );
 	}
 	for ( auto& toggle : g_filter_items )
 		toggle.m_item.update();

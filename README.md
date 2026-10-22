@@ -32,8 +32,11 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Find** | Magnifier button (or **Tab**) — flies the camera to the selection. |
 | **Fly speed / up / down** | While flying (hold right mouse): **mouse wheel** = speed, **Space** = up, **C** = down. |
 | **Game view** | **Shift+G** hides editor-only stuff (all nodraw/tool surfaces, triggers, lights, paths, portals, sounds and other point entities); again to restore. |
+| **Scale gizmo** | Cubes on the axes scale one axis, triangles between two axes scale both, the white centre cube scales uniformly (snapped to the grid). |
+| **Textures / Models tabs** | Under the camera: switch between the texture and model browser; Ctrl + wheel resizes both. |
+| **Face select** | Ctrl+click or **Ctrl+Shift+click** (GtkRadiant style). |
 | **Rotate gizmo** (R) | Unreal-style thick rings per axis, white outer ring rotates around the view direction. |
-| **Sky brushes** | Shown with the sky shader's editor image so you can edit them; View → Show → *Sky Brushes Show Skybox* previews the real sky instead. |
+| **Sky brushes** | Shown with the sky shader's editor image so you can edit them; the cloud button (or View → Show → *Sky Brushes Show Skybox*) previews the real sky. Game View turns it on automatically. |
 | **Bevel** | **Shift+B** (or the toolbar button / Brush → Bevel) chamfers edges by the grid size: selected edges (E), all edges of selected faces (F), or whole brushes. |
 | **Browse to texture** | **Ctrl+B** — opens the texture browser on the texture of the selected face / brush / patch. |
 | **FOV slider** | Its own small toolbar (drag the dotted handle to place it). |

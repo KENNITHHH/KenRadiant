@@ -49,6 +49,7 @@
 #include <QMenuBar>
 #include <QApplication>
 #include <QToolBar>
+#include <QTabWidget>
 #include <QSlider>
 #include <QLabel>
 #include <QStatusBar>
@@ -716,9 +717,18 @@ void EntityInspector_ToggleShow(){
 }
 
 QWidget* g_page_models;
+// KenRadiant: in the regular layouts the texture and model browsers share one tabbed panel under the camera
+QTabWidget* g_texModelTabs = nullptr;
+bool TexModelTabs_show( int index ){
+	if( g_texModelTabs == nullptr )
+		return false;
+	g_texModelTabs->setCurrentIndex( index );
+	return true;
+}
 
 void ModelBrowser_ToggleShow(){
-	GroupDialog_showPage( g_page_models );
+	if( !TexModelTabs_show( 1 ) )
+		GroupDialog_showPage( g_page_models );
 }
 
 QWidget* g_page_layers;
@@ -950,6 +960,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 	if ( ( style != MainFrame::eRegular && style != MainFrame::eRegularLeft ) || g_Layout_builtInGroupDialog.m_value ) {
 		create_menu_item_with_mnemonic( menu, "Texture Browser", "ToggleTextures" );
 	}
+	create_menu_item_with_mnemonic( menu, "Browse To Selected Texture", "BrowseToSelectedTexture" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
@@ -1303,6 +1314,7 @@ void SurfaceInspector_registerShortcuts(){
 
 void TexBro_registerShortcuts(){
 	toggle_add_accelerator( "SearchFromStart" );
+	command_connect_accelerator( "BrowseToSelectedTexture" ); // KenRadiant Ctrl+B (had no menu item, so no shortcut)
 }
 
 void Misc_registerShortcuts(){
@@ -1464,6 +1476,8 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 
 /// KenRadiant: FOV slider in its own toolbar, so it can be dragged around like the others
 void create_fov_toolbar( QToolBar *toolbar ){
+	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
+	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
 	{	// camera field of view (also in Preferences > Camera)
 
 		auto *label = new QLabel;
@@ -1760,7 +1774,9 @@ void MainFrame::Create(){
 		g_page_textures = GroupDialog_addPage( "Textures", TextureBrowser_constructWindow( GroupDialog_getWindow() ), TextureBrowserExportTitleCaller() );
 	}
 
-	g_page_models = GroupDialog_addPage( "Models", ModelBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Models" ) );
+	const bool texModelTabs = ( CurrentStyle() == eRegular || CurrentStyle() == eRegularLeft ) && !g_Layout_builtInGroupDialog.m_value;
+	if( !texModelTabs )
+		g_page_models = GroupDialog_addPage( "Models", ModelBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Models" ) );
 
 	g_page_layers = GroupDialog_addPage( "Layers", LayersBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Layers" ) );
 
@@ -1796,8 +1812,14 @@ void MainFrame::Create(){
 				// textures
 				if( g_Layout_builtInGroupDialog.m_value )
 					g_page_textures = GroupDialog_addPage( "Textures", TextureBrowser_constructWindow( GroupDialog_getWindow() ), TextureBrowserExportTitleCaller() );
-				else
-					m_vSplit2->addWidget( TextureBrowser_constructWindow( window ) );
+				else{
+					auto *tabs = new QTabWidget;
+					tabs->setDocumentMode( true );
+					tabs->addTab( TextureBrowser_constructWindow( window ), "Textures" );
+					tabs->addTab( ModelBrowser_constructWindow( window ), "Models" );
+					m_vSplit2->addWidget( tabs );
+					g_texModelTabs = tabs;
+				}
 			}
 		}
 	}

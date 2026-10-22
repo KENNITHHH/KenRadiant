@@ -620,11 +620,15 @@ void TextureBrowser_SetHideUnused( TextureBrowser& textureBrowser, bool hideUnus
 
 QWidget* g_page_textures;
 
+bool TexModelTabs_show( int index );
 void TextureBrowser_toggleShow(){
-	GroupDialog_showPage( g_page_textures );
+	if( !TexModelTabs_show( 0 ) )
+		GroupDialog_showPage( g_page_textures );
 }
 
 void TextureBrowser_show(){
+	if( TexModelTabs_show( 0 ) )
+		return;
 	if ( g_page_textures != nullptr )
 		GroupDialog_showPage( g_page_textures );
 }
@@ -1944,10 +1948,18 @@ void TextureBrowser_setBackgroundColour( const Vector3& colour ){
 void RefreshShaders();
 extern bool g_skyboxPreview;
 ToggleItem g_skyboxPreview_item{ BoolExportCaller( g_skyboxPreview ) };
-static void SkyboxPreview_toggle(){
-	g_skyboxPreview = !g_skyboxPreview;
+void SkyboxPreview_set( bool on ){
+	if( on == g_skyboxPreview )
+		return;
+	g_skyboxPreview = on;
 	g_skyboxPreview_item.update();
 	RefreshShaders(); // render states are built per shader
+}
+bool SkyboxPreview_get(){
+	return g_skyboxPreview;
+}
+static void SkyboxPreview_toggle(){
+	SkyboxPreview_set( !g_skyboxPreview );
 }
 
 void RefreshShaders(){

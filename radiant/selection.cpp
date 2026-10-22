@@ -1091,7 +1091,7 @@ public:
 		m_count_component( SelectionChangedCaller( *this ) ),
 		m_translate_manipulator( New_TranslateManipulator( *this, 2, 80 ) ),
 		m_rotate_manipulator( New_RotateManipulator( *this, 8, 80 ) ),
-		m_scale_manipulator( New_ScaleManipulator( *this, 0, 64 ) ),
+		m_scale_manipulator( New_ScaleManipulator( *this, 0, 80 ) ),
 		m_skew_manipulator( New_SkewManipulator( *this, *this, *this, *this, *this, m_bounds, m_pivot2world, m_pivotIsCustom ) ),
 		m_drag_manipulator( New_DragManipulator( *this, *this ) ),
 		m_clip_manipulator( New_ClipManipulator( m_pivot2world, m_bounds ) ),
@@ -1280,12 +1280,18 @@ public:
 				View scissored( view );
 				ConstructSelectionTest( scissored, SelectionBoxForPoint( device_point, device_epsilon ) );
 
-				if( transformOrigin_isTranslatable() ){
+				// KenRadiant: in scale mode the Unreal-style centre cube (uniform scale) sits on the pivot point; it wins there
+				if( ManipulatorMode() == eScale ){
+					m_manipulator->testSelect( scissored, GetPivot2World() );
+				}
+				if( transformOrigin_isTranslatable() && !( ManipulatorMode() == eScale && m_manipulator->isSelected() ) ){
 					m_transformOrigin_manipulator.testSelect( scissored, GetPivot2World() );
 					movingOrigin = m_transformOrigin_manipulator.isSelected();
+					if( movingOrigin )
+						m_manipulator->setSelected( false );
 				}
 
-				if( !movingOrigin )
+				if( !movingOrigin && ManipulatorMode() != eScale )
 					m_manipulator->testSelect( scissored, GetPivot2World() );
 			}
 
@@ -1337,11 +1343,18 @@ public:
 			View scissored( view );
 			ConstructSelectionTest( scissored, SelectionBoxForPoint( device_point, device_epsilon ) );
 
-			if( transformOrigin_isTranslatable() )
-				m_transformOrigin_manipulator.highlight( scissored, GetPivot2World() );
-
-			if( !m_transformOrigin_manipulator.isSelected() )
+			if( ManipulatorMode() == eScale ){
 				m_manipulator->highlight( scissored, GetPivot2World() );
+				if( !m_manipulator->isSelected() && transformOrigin_isTranslatable() )
+					m_transformOrigin_manipulator.highlight( scissored, GetPivot2World() );
+			}
+			else{
+				if( transformOrigin_isTranslatable() )
+					m_transformOrigin_manipulator.highlight( scissored, GetPivot2World() );
+
+				if( !m_transformOrigin_manipulator.isSelected() )
+					m_manipulator->highlight( scissored, GetPivot2World() );
+			}
 		}
 	}
 
@@ -1801,10 +1814,12 @@ public:
 #endif
 		m_state = GlobalShaderCache().capture( "$POINT" );
 		TranslateManipulator::m_state_wire =
+		ScaleManipulator::m_state_wire =
 		RotateManipulator::m_state_outer =
 		SkewManipulator::m_state_wire =
 		BuildManipulator::m_state_line = GlobalShaderCache().capture( "$WIRE_OVERLAY" );
 		TranslateManipulator::m_state_fill =
+		ScaleManipulator::m_state_fill =
 		SkewManipulator::m_state_fill = GlobalShaderCache().capture( "$FLATSHADE_OVERLAY" );
 		TransformOriginManipulator::m_state =
 		ClipManipulator::m_state =
@@ -2420,6 +2435,10 @@ const ModifierFlags c_modifier_replace = c_modifierNone;
 const ModifierFlags c_modifier_face = c_modifierShift;
 #endif
 const ModifierFlags c_modifier_toggle_face = c_modifier_toggle | c_modifier_face;
+/// KenRadiant: Ctrl+Shift+click selects faces too, as in GtkRadiant 1.5/1.6 (netradiant-custom uses Ctrl alone)
+inline bool modifiers_select_face(){
+	return g_modifiers == c_modifier_face || g_modifiers == ( c_modifierControl | c_modifierShift );
+}
 const ModifierFlags c_modifier_replace_face = c_modifier_replace | c_modifier_face;
 
 const ButtonIdentifier c_button_texture = c_buttonMiddle;
@@ -2485,11 +2504,11 @@ public:
 class Selector_
 {
 	bool m1selecting() const {
-		return !m_mouse2 && ( g_modifiers == c_modifier_toggle || g_modifiers == c_modifier_face
+		return !m_mouse2 && ( g_modifiers == c_modifier_toggle || modifiers_select_face()
 		|| ( g_modifiers == c_modifierAlt && getSelectionSystem().Mode() == SelectionSystem::eComponent ) ); // select primitives in component mode
 	}
 	bool m2selecting() const {
-		return m_mouse2 && ( g_modifiers == c_modifier_toggle || g_modifiers == c_modifier_face );
+		return m_mouse2 && ( g_modifiers == c_modifier_toggle || modifiers_select_face() );
 	}
 
 	RadiantSelectionSystem::EModifier modifier_for_mouseMoved() const {
@@ -2521,10 +2540,10 @@ class Selector_
 			const DeviceVector delta( position - m_start );
 			if ( m_mouseMovedWhilePressed ) {
 				if( delta.x() != 0 && delta.y() != 0 )
-					getSelectionSystem().SelectArea( *m_view, SelectionBoxForArea( m_start, delta ), g_modifiers == c_modifier_face );
+					getSelectionSystem().SelectArea( *m_view, SelectionBoxForArea( m_start, delta ), modifiers_select_face() );
 			}
 			else{
-				getSelectionSystem().SelectPoint( *m_view, position, m_epsilon, modifier, g_modifiers == c_modifier_face );
+				getSelectionSystem().SelectPoint( *m_view, position, m_epsilon, modifier, modifiers_select_face() );
 			}
 		}
 
@@ -2560,7 +2579,7 @@ public:
 		m_start = m_current = device_constrained( position );
 		m_paintMode = RadiantSelectionSystem::eSelect;
 		if( m1selecting() ){
-			m_paintMode = getSelectionSystem().SelectPoint_InitPaint( *m_view, position, m_epsilon, g_modifiers == c_modifier_face );
+			m_paintMode = getSelectionSystem().SelectPoint_InitPaint( *m_view, position, m_epsilon, modifiers_select_face() );
 		}
 	}
 
@@ -2570,7 +2589,7 @@ public:
 			draw_area();
 		}
 		else if( m1selecting() ){
-			getSelectionSystem().SelectPoint( *m_view, m_current, m_epsilon, m_paintMode, g_modifiers == c_modifier_face );
+			getSelectionSystem().SelectPoint( *m_view, m_current, m_epsilon, m_paintMode, modifiers_select_face() );
 		}
 	}
 	typedef MemberCaller<Selector_, void(DeviceVector), &Selector_::mouseMoved> MouseMovedCaller;
