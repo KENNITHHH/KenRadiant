@@ -68,6 +68,16 @@ int MergeSurfacesBSP( const char *bspPath, double cellSize, double planeRange, b
 	LoadBSPFile( bspPath );
 	ParseEntities();
 
+	/* per-map overrides from worldspawn (front-ends that can't pass arguments can set these in the .map) */
+	if ( const char *v = entities[ 0 ].valueForKey( "_mergecell" ); !strEmpty( v ) ) {
+		cellSize = std::max( 64.0, atof( v ) );
+		Sys_Printf( "worldspawn _mergecell %g\n", cellSize );
+	}
+	if ( const char *v = entities[ 0 ].valueForKey( "_mergeplanerange" ); !strEmpty( v ) ) {
+		planeRange = std::max( 0.0, atof( v ) );
+		Sys_Printf( "worldspawn _mergeplanerange %g\n", planeRange );
+	}
+
 	if ( entities[ 0 ].boolForKey( "_mergedsurfaces" ) ) {
 		Sys_Printf( "bsp already merged, nothing to do\n" );
 		return 0;

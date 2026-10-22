@@ -58,6 +58,9 @@ CoD-style maps VIS can't help much (mp_strike: the average cluster sees 65% of t
 - patches, flares, autosprite, sky and lightmapped soups are untouched; leaf and brushside links are remapped.
 - surfaces only merge on the same lightmap page: no luxel moves, (shader, lightmap) pairs can't grow.
 
+Per map, worldspawn keys `"_mergecell" "<units>"` and `"_mergeplanerange" "<units>"` override the defaults
+(mp_strike: cell 1024 → 27,010 surfaces, 2048 → 23,607, 4096 → 21,635; bigger cells draw more off-screen triangles).
+
 **Automatic:** `-light -game sof2` runs this merge itself when lighting is done, so front-ends that can't add a
 step (CoD4toSOF2 GUI, SourceToSoF2) get it for free. `-nomerge` skips it, `-merge` enables it for other games.
 
