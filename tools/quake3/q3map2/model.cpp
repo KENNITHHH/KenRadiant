@@ -331,6 +331,7 @@ static AssModel *LoadModel( const char *name, int frame ){
 	s_assImporter->SetPropertyInteger( AI_CONFIG_PP_SLM_VERTEX_LIMIT, maxSurfaceVerts ); // TODO this optimal and with respect to lightmapped/not
 	s_assImporter->SetPropertyInteger( AI_CONFIG_IMPORT_GLOBAL_KEYFRAME, frame );
 
+	Sys_FPrintf( SYS_VRB, "LoadModel: %s (frame %d)\n", name, frame );
 	const aiScene *scene = s_assImporter->ReadFile( name, flags );
 
 	if( scene != nullptr ){
@@ -339,7 +340,9 @@ static AssModel *LoadModel( const char *name, int frame ){
 		return &s_assModels.emplace( ModelNameFrame{ name, frame }, AssModel( s_assImporter->GetOrphanedScene(), name ) ).first->second;
 	}
 	else{
-		return nullptr; // TODO /* if loading failed, make a bogus model to silence the rest of the warnings */
+		Sys_Warning( "Failed to load model %s: %s\n", name, s_assImporter->GetErrorString() );
+		/* remember the failure so the same model isn't re-imported (and re-warned) for every instance */
+		return nullptr;
 	}
 }
 
