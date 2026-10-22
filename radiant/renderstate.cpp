@@ -21,6 +21,9 @@
 
 #include "renderstate.h"
 
+/// KenRadiant: draw sky brushes as the actual skybox (netradiant-custom) or with their editor image (GtkRadiant, default)
+bool g_skyboxPreview = false;
+
 #include "debugging/debugging.h"
 
 #include "ishaders.h"
@@ -1984,7 +1987,7 @@ void OpenGLShader::construct( const char* name ){
 			bumpPass.m_blend_src = GL_ONE;
 			bumpPass.m_blend_dst = GL_ONE;
 		}
-		else if( m_shader->getSkyBox() != nullptr && m_shader->getSkyBox()->texture_number != 0 )
+		else if( g_skyboxPreview && m_shader->getSkyBox() != nullptr && m_shader->getSkyBox()->texture_number != 0 )
 		{
 			state.m_texture = m_shader->getTexture()->texture_number;
 			state.m_textureSkyBox = m_shader->getSkyBox()->texture_number;

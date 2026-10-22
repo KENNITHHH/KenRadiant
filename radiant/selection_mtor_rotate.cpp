@@ -85,15 +85,28 @@ inline Vector3 normalised_safe( const Vector3& self ){
 
 
 
+/// KenRadiant: thick rotation rings (Unreal-style)
+template<typename Base>
+struct ThickRenderable : public Base
+{
+	float m_width;
+	ThickRenderable( std::size_t size, float width ) : Base( size ), m_width( width ){}
+	void render( RenderStateFlags state ) const override {
+		gl().glLineWidth( m_width );
+		Base::render( state );
+		gl().glLineWidth( 1 );
+	}
+};
+
 class RotateManipulatorImpl final : public RotateManipulator, public ManipulatorSelectionChangeable
 {
 	RotateFree m_free;
 	RotateAxis m_axis;
 	Vector3 m_axis_screen;
-	RenderableSemiCircle m_circle_x;
-	RenderableSemiCircle m_circle_y;
-	RenderableSemiCircle m_circle_z;
-	RenderableCircle m_circle_screen;
+	ThickRenderable<RenderableSemiCircle> m_circle_x;
+	ThickRenderable<RenderableSemiCircle> m_circle_y;
+	ThickRenderable<RenderableSemiCircle> m_circle_z;
+	ThickRenderable<RenderableCircle> m_circle_screen;
 	RenderableCircle m_circle_sphere;
 	SelectableBool m_selectable_x;
 	SelectableBool m_selectable_y;
@@ -111,10 +124,10 @@ public:
 	RotateManipulatorImpl( Rotatable& rotatable, std::size_t segments, float radius ) :
 		m_free( rotatable ),
 		m_axis( rotatable ),
-		m_circle_x( ( segments << 2 ) + 1 ),
-		m_circle_y( ( segments << 2 ) + 1 ),
-		m_circle_z( ( segments << 2 ) + 1 ),
-		m_circle_screen( segments << 3 ),
+		m_circle_x( ( segments << 2 ) + 1, 3.5f ),
+		m_circle_y( ( segments << 2 ) + 1, 3.5f ),
+		m_circle_z( ( segments << 2 ) + 1, 3.5f ),
+		m_circle_screen( segments << 3, 1.5f ),
 		m_circle_sphere( segments << 3 ){
 		draw_semicircle( segments, radius, m_circle_x.m_vertices.data(), RemapYZX() );
 		draw_semicircle( segments, radius, m_circle_y.m_vertices.data(), RemapZXY() );
@@ -129,8 +142,9 @@ public:
 		m_circle_x.setColour( colourSelected( g_colour_x, m_selectable_x.isSelected() ) );
 		m_circle_y.setColour( colourSelected( g_colour_y, m_selectable_y.isSelected() ) );
 		m_circle_z.setColour( colourSelected( g_colour_z, m_selectable_z.isSelected() ) );
-		m_circle_screen.setColour( colourSelected( g_colour_screen, m_selectable_screen.isSelected() ) );
-		m_circle_sphere.setColour( colourSelected( g_colour_sphere, false ) );
+		// Unreal: white outer ring rotates around the view axis; the inner outline is only a faint guide
+		m_circle_screen.setColour( colourSelected( Colour4b( 230, 230, 230, 255 ), m_selectable_screen.isSelected() ) );
+		m_circle_sphere.setColour( Colour4b( 128, 128, 128, 90 ) );
 	}
 
 	void updateCircleTransforms(){

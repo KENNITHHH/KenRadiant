@@ -1941,6 +1941,15 @@ void TextureBrowser_setBackgroundColour( const Vector3& colour ){
 	g_TexBro.queueDraw();
 }
 
+void RefreshShaders();
+extern bool g_skyboxPreview;
+ToggleItem g_skyboxPreview_item{ BoolExportCaller( g_skyboxPreview ) };
+static void SkyboxPreview_toggle(){
+	g_skyboxPreview = !g_skyboxPreview;
+	g_skyboxPreview_item.update();
+	RefreshShaders(); // render states are built per shader
+}
+
 void RefreshShaders(){
 	g_TextureBrowser_currentDirectory = "";
 	g_TexBro.m_searchedTags = false;
@@ -2142,6 +2151,7 @@ void TextureBrowser_Construct(){
 	GlobalCommands_insert( "TagCopy", makeCallbackF( TextureBrowser_copyTag ) );
 	GlobalCommands_insert( "TagPaste", makeCallbackF( TextureBrowser_pasteTag ) );
 	GlobalCommands_insert( "RefreshShaders", makeCallbackF( RefreshShaders ) );
+	GlobalToggles_insert( "ToggleSkyboxPreview", makeCallbackF( SkyboxPreview_toggle ), ToggleItem::AddCallbackCaller( g_skyboxPreview_item ) ); // KenRadiant
 	GlobalToggles_insert( "ShowInUse", makeCallbackF( TextureBrowser_ToggleHideUnused ), ToggleItem::AddCallbackCaller( g_TexBro.m_hideunused_item ), QKeySequence( "U" ) );
 	GlobalCommands_insert( "ShowAllTextures", makeCallbackF( TextureBrowser_showAll ), QKeySequence( "Ctrl+A" ) );
 	GlobalCommands_insert( "ToggleTextures", makeCallbackF( TextureBrowser_toggleShow ), QKeySequence( "T" ) );
@@ -2170,6 +2180,7 @@ void TextureBrowser_Construct(){
 	                                             BoolExportStringCaller( g_TexBro.m_showTextureScrollbar )
 	                                           );
 	GlobalPreferenceSystem().registerPreference( "ShowShaders", BoolImportStringCaller( g_TexBro.m_showShaders ), BoolExportStringCaller( g_TexBro.m_showShaders ) );
+	GlobalPreferenceSystem().registerPreference( "SkyboxPreview", BoolImportStringCaller( g_skyboxPreview ), BoolExportStringCaller( g_skyboxPreview ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "ShowTextures", BoolImportStringCaller( g_TexBro.m_showTextures ), BoolExportStringCaller( g_TexBro.m_showTextures ) );
 	GlobalPreferenceSystem().registerPreference( "ShowShaderlistOnly", BoolImportStringCaller( g_TextureBrowser_shaderlistOnly ), BoolExportStringCaller( g_TextureBrowser_shaderlistOnly ) );
 	GlobalPreferenceSystem().registerPreference( "FixedSize", BoolImportStringCaller( g_TextureBrowser_fixedSize ), BoolExportStringCaller( g_TextureBrowser_fixedSize ) );

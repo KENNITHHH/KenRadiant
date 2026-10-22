@@ -150,7 +150,8 @@ static unsigned int g_gameView_savedExclude = 0;
 ToggleItem g_gameView_item{ BoolExportCaller( g_gameView ) };
 void GameView_toggle(){
 	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
-	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS;
+	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS
+	                                  | EXCLUDE_NODRAW | EXCLUDE_POINT_ENT; // point entities = sounds, info_*, targets (models and lights have their own filters)
 	g_gameView = !g_gameView;
 	if( g_gameView ){
 		g_gameView_savedExclude = g_filters_globals.exclude;
@@ -216,6 +217,7 @@ void Filters_constructMenu( QMenu* menu ){
 	create_check_menu_item_with_mnemonic( menu, "FuncGroups", "FilterFuncGroups" );
 	create_check_menu_item_with_mnemonic( menu, "Point Entities", "FilterPointEntities" );
 	create_check_menu_item_with_mnemonic( menu, "Sky", "FilterSky" );
+	create_check_menu_item_with_mnemonic( menu, "Nodraw (all tool surfaces)", "FilterNodraw" ); // KenRadiant
 	// filter manipulation
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "Invert filters", "InvertFilters" );
@@ -270,6 +272,7 @@ void ConstructFilters(){
 	add_filter_command( EXCLUDE_FUNC_GROUPS, "FilterFuncGroups" );
 	add_filter_command( EXCLUDE_POINT_ENT, "FilterPointEntities" );
 	add_filter_command( EXCLUDE_SKY, "FilterSky" );
+	add_filter_command( EXCLUDE_NODRAW, "FilterNodraw" ); // KenRadiant
 
 	PerformFiltering();
 }

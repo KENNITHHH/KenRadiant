@@ -3,6 +3,15 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23
+### Editor
+- **Sky brushes** show as brushes with the sky shader's editor image again (like GtkRadiant). View → Show → *Sky Brushes Show Skybox* turns the in-game sky preview back on.
+- **Game view** (Shift+G) now also hides every `surfaceparm nodraw` surface (caulk, nodraw, hint, skip, clip, shoot, trigger, vmf2map tools …) and point entities (sounds, info_null, targets …). Models and world geometry stay.
+- New filter **Nodraw (all tool surfaces)**; the Caulk / Hint / Areaportal / Clusterportal filters know SOF2's `textures/tools/_*` names.
+- **Local gizmo** stays on the object while dragging.
+- **Space / C fly up/down** now also works with shortcuts saved by older builds (the saved empty binding overrode the new default). Same for End (drop to floor) vs Center View.
+- **Rotate gizmo** Unreal-style: thick red/green/blue rings, white outer ring for view-axis rotation, faint guide circle; same size as the move gizmo.
+
 ## Build 2026-10-22 (night)
 ### Editor
 - **Bevel** (Shift+B, toolbar button, Brush → Bevel): chamfers edges by the current grid size, like Blender's bevel.

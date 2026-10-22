@@ -569,6 +569,19 @@ public:
 	}
 	void operator()( const char* name, QKeySequence& accelerator ){
 		if ( auto value = m_ini.getValue( "Commands", name ) ) {
+			// KenRadiant: shortcuts.ini stores every shortcut, so new KenRadiant defaults would be overridden by the
+			// old saved value; these keep their new default when the file still has the old netradiant one
+			struct NewDefault{ const char* name; const char* oldValue; };
+			static const NewDefault newDefaults[] = {
+				{ "CameraFreeMoveUp", "" }, { "CameraFreeMoveDown", "" }, // Space / C while flying
+				{ "CenterView", "End" },                                   // End is drop to floor
+			};
+			bool keepDefault = false;
+			for( const auto& nd : newDefaults )
+				if( string_equal( name, nd.name ) && string_equal( *value, nd.oldValue ) )
+					keepDefault = true;
+			if( keepDefault )
+				return;
 			if ( string_empty( *value ) ) {
 				accelerator = {};
 			}

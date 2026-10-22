@@ -1230,6 +1230,20 @@ filter_brush_all_faces g_filter_brush_detail( &g_filter_face_detail );
 filter_face_shader_prefix g_filter_face_decals( "textures/decals/" );
 filter_brush_any_face g_filter_brush_decals( &g_filter_face_decals );
 
+// KenRadiant: SOF2 tool shaders (textures/tools/_caulk ...) and every nodraw surface
+filter_face_shader_prefix g_filter_face_caulk_sof2( "textures/tools/_caulk" );
+filter_brush_all_faces g_filter_brush_caulk_sof2( &g_filter_face_caulk_sof2 );
+filter_face_shader g_filter_face_hint_sof2( "textures/tools/_hint" );
+filter_brush_any_face g_filter_brush_hint_sof2( &g_filter_face_hint_sof2 );
+filter_face_shader g_filter_face_skip_sof2( "textures/tools/_skip" );
+filter_brush_any_face g_filter_brush_skip_sof2( &g_filter_face_skip_sof2 );
+filter_face_shader g_filter_face_areaportal_sof2( "textures/tools/_areaportal" );
+filter_brush_any_face g_filter_brush_areaportal_sof2( &g_filter_face_areaportal_sof2 );
+filter_face_shader g_filter_face_clusterportal_sof2( "textures/tools/_clusterportal" );
+filter_brush_all_faces g_filter_brush_clusterportal_sof2( &g_filter_face_clusterportal_sof2 );
+filter_face_flags g_filter_face_nodraw( QER_NODRAW );
+filter_brush_all_faces g_filter_brush_nodraw( &g_filter_face_nodraw );
+
 filter_face_flags g_filter_face_sky( QER_SKY );
 filter_brush_any_face g_filter_brush_sky( &g_filter_face_sky );
 
@@ -1268,6 +1282,15 @@ void BrushFilters_construct(){
 	add_brush_filter( g_filter_brush_lightgrid, EXCLUDE_LIGHTGRID );
 	add_brush_filter( g_filter_brush_decals, EXCLUDE_DECALS );
 	add_brush_filter( g_filter_brush_sky, EXCLUDE_SKY );
+	// KenRadiant
+	add_brush_filter( g_filter_brush_caulk_sof2, EXCLUDE_CAULK );
+	add_face_filter( g_filter_face_caulk_sof2, EXCLUDE_CAULK );
+	add_brush_filter( g_filter_brush_hint_sof2, EXCLUDE_HINTSSKIPS );
+	add_brush_filter( g_filter_brush_skip_sof2, EXCLUDE_HINTSSKIPS );
+	add_brush_filter( g_filter_brush_areaportal_sof2, EXCLUDE_AREAPORTALS );
+	add_brush_filter( g_filter_brush_clusterportal_sof2, EXCLUDE_CLUSTERPORTALS );
+	add_brush_filter( g_filter_brush_nodraw, EXCLUDE_NODRAW );
+	add_face_filter( g_filter_face_nodraw, EXCLUDE_NODRAW );
 }
 
 #if 0

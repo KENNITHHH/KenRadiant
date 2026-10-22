@@ -1090,7 +1090,7 @@ public:
 		m_count_primitive( SelectionChangedCaller( *this ) ),
 		m_count_component( SelectionChangedCaller( *this ) ),
 		m_translate_manipulator( New_TranslateManipulator( *this, 2, 80 ) ),
-		m_rotate_manipulator( New_RotateManipulator( *this, 8, 64 ) ),
+		m_rotate_manipulator( New_RotateManipulator( *this, 8, 80 ) ),
 		m_scale_manipulator( New_ScaleManipulator( *this, 0, 64 ) ),
 		m_skew_manipulator( New_SkewManipulator( *this, *this, *this, *this, *this, m_bounds, m_pivot2world, m_pivotIsCustom ) ),
 		m_drag_manipulator( New_DragManipulator( *this, *this ) ),
@@ -1593,7 +1593,7 @@ public:
 			m_repeatableTransforms.setTranslation( translation );
 
 			m_pivot2world = m_pivot2world_start;
-			matrix4_translate_by_vec3( m_pivot2world, translation );
+			m_pivot2world.t().vec3() += translation; // world-space move (KenRadiant: the gizmo may be rotated in local mode)
 
 			if ( Mode() == eComponent ) {
 				Scene_Translate_Component_Selected( GlobalSceneGraph(), m_translation );

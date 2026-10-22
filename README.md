@@ -31,7 +31,9 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Drop to floor** | **End** — the selection drops onto the highest brush below it (Edit → Drop To Floor). *Center View moved to Shift+End.* |
 | **Find** | Magnifier button (or **Tab**) — flies the camera to the selection. |
 | **Fly speed / up / down** | While flying (hold right mouse): **mouse wheel** = speed, **Space** = up, **C** = down. |
-| **Game view** | **Shift+G** hides editor-only stuff (caulk, clip, hint, triggers, lights, paths, portals); again to restore. |
+| **Game view** | **Shift+G** hides editor-only stuff (all nodraw/tool surfaces, triggers, lights, paths, portals, sounds and other point entities); again to restore. |
+| **Rotate gizmo** (R) | Unreal-style thick rings per axis, white outer ring rotates around the view direction. |
+| **Sky brushes** | Shown with the sky shader's editor image so you can edit them; View → Show → *Sky Brushes Show Skybox* previews the real sky instead. |
 | **Bevel** | **Shift+B** (or the toolbar button / Brush → Bevel) chamfers edges by the grid size: selected edges (E), all edges of selected faces (F), or whole brushes. |
 | **Browse to texture** | **Ctrl+B** — opens the texture browser on the texture of the selected face / brush / patch. |
 | **FOV slider** | Its own small toolbar (drag the dotted handle to place it). |

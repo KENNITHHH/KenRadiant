@@ -49,6 +49,7 @@ enum
 	EXCLUDE_FUNC_GROUPS      = 0x00200000,
 	EXCLUDE_POINT_ENT        = 0x00400000,
 	EXCLUDE_SKY              = 0x00800000,
+	EXCLUDE_NODRAW           = 0x01000000, // KenRadiant: every surfaceparm nodraw surface (tool textures: caulk, nodraw, hint, skip, clip, trigger ...)
 };
 
 class Filter

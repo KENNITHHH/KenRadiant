@@ -1027,6 +1027,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		create_check_menu_item_with_mnemonic( submenu, "Show Axes", "ShowAxes" );
 		create_check_menu_item_with_mnemonic( submenu, "Show 2D Workzone", "ShowWorkzone2d" );
 		create_check_menu_item_with_mnemonic( submenu, "Show 3D Workzone", "ShowWorkzone3d" );
+		create_check_menu_item_with_mnemonic( submenu, "Sky Brushes Show Skybox", "ToggleSkyboxPreview" ); // KenRadiant
 		create_check_menu_item_with_mnemonic( submenu, "Show Renderer Stats", "ShowStats" );
 	}
 
