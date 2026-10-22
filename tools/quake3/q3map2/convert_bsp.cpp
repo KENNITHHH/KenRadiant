@@ -1110,6 +1110,9 @@ int ConvertBSPMain( Args& args ){
 		while ( args.takeArg( "-wtf" ) ) {
 			g_decompile_wtf = true;
 		}
+		while ( args.takeArg( "-legacydecompile" ) ) {
+			g_decompile_legacy = true;
+		}
 	}
 
 	LoadShaderInfo();

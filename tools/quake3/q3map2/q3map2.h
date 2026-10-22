@@ -332,10 +332,10 @@ struct bspDrawVert_t
 
 inline const bspDrawVert_t c_bspDrawVert_t0 =
 {
-	.xyz{ 0 },
-	.st{ 0 },
+	.xyz = Vector3( 0 ),
+	.st = Vector2( 0 ),
 	.lightmap = makeArray4( Vector2( 0 ) ),
-	.normal{ 0 },
+	.normal = Vector3( 0 ),
 	.color = makeArray4( Color4b( 0 ) )
 };
 
@@ -1942,6 +1942,7 @@ inline bool lightmapsAsTexcoord;
 // bsp to map conversion
 inline bool g_decompile_modelClip;
 inline bool g_decompile_wtf;
+inline bool g_decompile_legacy; /* use the old (pre exact-texdef) standard-format decompiler */
 
 /* general commandline arguments */
 inline bool force;

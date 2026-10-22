@@ -33,6 +33,8 @@
 #include "bspfile_rbsp.h"
 #include "qspatial.h"
 #include <map>
+#include "convert_map_exact.h"
+#include <set>
 
 
 
@@ -73,9 +75,12 @@ class ModelTriangles
 {
 	std::map<CopiedString, std::vector<BspTriangleRef>> m_modelTriangles;
 public:
-	ModelTriangles( const bspModel_t& model ){
+	/* excludeSurfs: surfaces already owned by a brush side (RBSP side->surface links) - never candidates for other sides */
+	ModelTriangles( const bspModel_t& model, const std::vector<char> *excludeSurfs = nullptr ){
 		for ( const bspDrawSurface_t& s : Span( &bspDrawSurfaces[ model.firstBSPSurface ], model.numBSPSurfaces ) )
 		{
+			if ( excludeSurfs != nullptr && ( s.surfaceType != MST_PLANAR || ( *excludeSurfs )[ &s - bspDrawSurfaces.data() ] ) )
+				continue; // with links present, misc_model soups and linked faces would only produce false matches
 			if ( s.surfaceType == MST_PLANAR || s.surfaceType == MST_TRIANGLE_SOUP ) {
 				auto& vec = m_modelTriangles[bspShaders[s.shaderNum].shader];
 				for ( int t = 0; t + 3 <= s.numIndexes; t += 3 )
@@ -191,8 +196,8 @@ static void ConvertOriginBrush( FILE *f, int num, const Vector3& origin, EBrushT
 	const int size = ext * 2;
 	const int texSize = 64; // can find out from shader
 	const float texScale = float( size ) / texSize;
-	static const char * const shader = strEqual( g_game->arg, "sof2" )
-	                                || strEqual( g_game->arg, "ja" )
+	static const char * const shader = strEqual( g_game->arg, "sof2" )? "tools/_origin"
+	                                 : strEqual( g_game->arg, "ja" )
 	                                || strEqual( g_game->arg, "jk2" )? "system/origin" : "common/origin";
 	// 6: +Z +Y +X -Z -Y -X
 	char pattern[6][7][4] = {
@@ -306,6 +311,7 @@ static void bspBrush_to_buildBrush( const bspBrush_t& brush ){
 		/* tag it */
 		buildBrush.sides.back().shaderInfo = &ShaderInfoForShader( shader.shader );
 		buildBrush.sides.back().planenum = side.planeNum;
+		buildBrush.sides.back().outputNum = int( &side - bspBrushSides.data() );
 	}
 }
 
@@ -389,6 +395,200 @@ static void ConvertBrushFast( FILE *f, int bspBrushNum, const Vector3& origin, E
 	fprintf( f, "\t}\n\n" );
 }
 
+/* detail brushes are referenced from non-opaque leafs; precomputed once (was O(brushes*leafs)) */
+static std::vector<char> g_brushInVisLeaf;
+static int BrushDetailFlag( int bspBrushNum ){
+	if ( g_brushInVisLeaf.size() != bspBrushes.size() ) {
+		g_brushInVisLeaf.assign( bspBrushes.size(), 0 );
+		for ( const auto& leaf : bspLeafs )
+			if ( leaf.cluster > CLUSTER_OPAQUE )
+				for ( const int id : Span( &bspLeafBrushes[ leaf.firstBSPLeafBrush ], leaf.numBSPLeafBrushes ) )
+					if ( id >= 0 && id < int( g_brushInVisLeaf.size() ) ) g_brushInVisLeaf[ id ] = 1;
+	}
+	if ( bspShaders[ bspBrushes[ bspBrushNum ].shaderNum ].contentFlags & GetRequiredSurfaceParm<"structural">().contentFlags )
+		return 0; // structural transparent brushes, e.g. hints
+	return g_brushInVisLeaf[ bspBrushNum ] ? C_DETAIL : 0;
+}
+
+/* ===== exact standard-format decompile (SOF2 / RBSP focused) ===== */
+static bool PointInsideBuildBrush( const Vector3& p, double eps ){
+	for ( const side_t& s : buildBrush.sides )
+		if ( plane3_distance_to_point( mapplanes[ s.planenum ].plane, p ) > eps )
+			return false;
+	return true;
+}
+
+static void CollectSideVerts( const side_t& side, const Vector3& origin, const ModelTriangles& mt,
+                              std::vector<DoubleVector3>& xyz, std::vector<BasicVector2<double>>& st, bool& linked ){
+	xyz.clear(); st.clear(); linked = false;
+	const double W = side.shaderInfo->shaderWidth, H = side.shaderInfo->shaderHeight;
+	const plane_t& pl = mapplanes[ side.planenum ];
+	if ( side.outputNum >= 0 && side.outputNum < int( bspBrushSides.size() ) ) {
+		const bspBrushSide_t& bs = bspBrushSides[ side.outputNum ];
+		if ( bs.surfaceNum >= 0 && bs.surfaceNum < int( bspDrawSurfaces.size() ) ) {
+			const bspDrawSurface_t& ds = bspDrawSurfaces[ bs.surfaceNum ];
+			if ( ds.surfaceType == MST_PLANAR ) {
+				for ( const bspDrawVert_t& v : Span( &bspDrawVerts[ ds.firstVert ], ds.numVerts ) ) {
+					if ( std::fabs( plane3_distance_to_point( pl.plane, v.xyz ) ) > 0.1 ) continue;
+					if ( !PointInsideBuildBrush( v.xyz, 0.1 ) ) continue;
+					xyz.push_back( DoubleVector3( v.xyz + origin ) );
+					st.push_back( { v.st[0] * W, v.st[1] * H } );
+				}
+				if ( xyz.size() >= 3 ) { linked = true; return; }
+				xyz.clear(); st.clear();
+			}
+		}
+	}
+	const TriRef vert = mt.GetBestSurfaceTriangleMatchForBrushside( side );
+	if ( vert[0] != nullptr && vert[1] != nullptr && vert[2] != nullptr )
+		for ( const bspDrawVert_t *v : vert ) {
+			xyz.push_back( DoubleVector3( v->xyz + origin ) );
+			st.push_back( { v->st[0] * W, v->st[1] * H } );
+		}
+}
+
+/* 3 plane points from the winding: biggest triangle, snapped to the integer grid when that keeps the plane */
+static void ExactPlanePoints( const side_t& side, const Vector3& origin, Vector3 out[3] ){
+	const plane_t& pl = mapplanes[ side.planenum ];
+	const winding_t& w = side.winding;
+	const size_t n = w.size();
+	size_t bi = 0, bj = 1, bk = 2; double best = -1;
+	for ( size_t i = 0; i < n; ++i ) for ( size_t j = i + 1; j < n; ++j ) for ( size_t k = j + 1; k < n; ++k ) {
+		const double a = vector3_length( vector3_cross( DoubleVector3( w[j] - w[i] ), DoubleVector3( w[k] - w[i] ) ) );
+		if ( a > best ) { best = a; bi = i; bj = j; bk = k; }
+	}
+	Vector3 raw[3] = { w[bi], w[bj], w[bk] };
+	Vector3 snapped[3];
+	bool canSnap = true;
+	for ( int i = 0; i < 3; ++i ) for ( int c = 0; c < 3; ++c ) {
+		const double r = std::round( raw[i][c] );
+		if ( std::fabs( r - raw[i][c] ) > 0.01 ) canSnap = false;
+		snapped[i][c] = r;
+	}
+	Vector3 *use = raw;
+	if ( canSnap ) {
+		Plane3f tp;
+		if ( PlaneFromPoints( tp, snapped ) && PlaneEqual( pl, tp ) ) use = snapped;
+	}
+	// keep orientation consistent with the side plane
+	Plane3f tp;
+	if ( PlaneFromPoints( tp, use ) && vector3_dot( tp.normal(), pl.normal() ) < 0 ) std::swap( use[1], use[2] );
+	for ( int i = 0; i < 3; ++i ) out[i] = use[i] + origin;
+}
+
+static std::set<CopiedString> g_missingImages;
+static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, const ModelTriangles& mt, int contentFlag ){
+	using namespace exactdec;
+	bspBrush_to_buildBrush( bspBrushes[ bspBrushNum ] );
+	if ( !CreateBrushWindings( buildBrush ) )
+		return;
+
+	struct Out { side_t *side; TexDef td; };
+	std::vector<Out> outs;
+	std::vector<DoubleVector3> xyz; std::vector<BasicVector2<double>> st;
+	for ( side_t& side : buildBrush.sides ) {
+		if ( side.shaderInfo == nullptr || side.winding.size() < 3 || WindingArea( side.winding ) < 0.1f ) {
+			if ( side.shaderInfo != nullptr ) ++g_stats.bevelsDropped;
+			continue;
+		}
+		Out o{ &side, {} };
+		if ( !( side.shaderInfo->compileFlags & C_NODRAW ) && side.shaderInfo->shaderImage && strEqual( side.shaderInfo->shaderImage->name.c_str(), DEFAULT_IMAGE ) ) {
+			++g_stats.missingImage;
+			if ( g_missingImages.insert( side.shaderInfo->shader.c_str() ).second )
+				Sys_Printf( "exact decompile: no image for %s (texdef scale uses 64x64)\n", side.shaderInfo->shader.c_str() );
+		}
+		bool linked;
+		CollectSideVerts( side, origin, mt, xyz, st, linked );
+		if ( xyz.size() >= 3 && Solve( mapplanes[ side.planenum ].normal(), xyz, st,
+		                               side.shaderInfo->shaderWidth, side.shaderInfo->shaderHeight, o.td ) ) {
+			++( linked ? g_stats.linked : g_stats.searched );
+			++( o.td.err <= g_tolTexel ? g_stats.exact : g_stats.inexact );
+			if ( o.td.err > g_tolTexel )
+				Sys_FPrintf( SYS_VRB, "exact decompile: brush %d side %d %s: best texdef off by %.3f texel (%zu verts, %s)\n",
+				             bspBrushNum, int( &side - buildBrush.sides.data() ), side.shaderInfo->shader.c_str(), o.td.err, xyz.size(), linked ? "linked" : "searched" );
+			g_stats.worstErr = std::max( g_stats.worstErr, o.td.err );
+		}
+		outs.push_back( o );
+	}
+
+	/* hidden sides: inherit from visible sides of this brush (same shader first) */
+	for ( Out& o : outs ) {
+		if ( o.td.solved ) continue;
+		const Out *src = nullptr;
+		std::map<std::tuple<double, double, double, double, double>, int> hist;
+		for ( int pass = 0; pass < 2 && !src; ++pass ) {
+			hist.clear();
+			for ( const Out& v : outs )
+				if ( v.td.solved && ( pass || v.side->shaderInfo == o.side->shaderInfo ) )
+					++hist[ { v.td.rotate, v.td.scale[0], v.td.scale[1], v.td.shift[0], v.td.shift[1] } ];
+			int bestc = 0;
+			for ( const auto& [k, c] : hist ) if ( c > bestc ) {
+				bestc = c;
+				for ( const Out& v : outs )
+					if ( v.td.solved && std::tie( v.td.rotate, v.td.scale[0], v.td.scale[1], v.td.shift[0], v.td.shift[1] ) == std::tie( std::get<0>( k ), std::get<1>( k ), std::get<2>( k ), std::get<3>( k ), std::get<4>( k ) ) ) { src = &v; break; }
+			}
+		}
+		if ( src ) {
+			o.td = src->td; o.td.solved = false;
+			// shifts are only meaningful modulo texture size; tool textures are almost always unshifted
+			if ( striEqualPrefix( o.side->shaderInfo->shader, "textures/tools/" ) )
+				o.td.shift[0] = o.td.shift[1] = 0;
+			o.td.shift[0] = Wrap( o.td.shift[0], o.side->shaderInfo->shaderWidth );
+			o.td.shift[1] = Wrap( o.td.shift[1], o.side->shaderInfo->shaderHeight );
+			++g_stats.hiddenBrush;
+		}
+		else {
+			o.td.rotate = g_defaultRotate; o.td.scale[0] = g_defaultScale[0]; o.td.scale[1] = g_defaultScale[1];
+			o.td.shift[0] = o.td.shift[1] = 0;
+			++g_stats.hiddenGlobal;
+		}
+	}
+
+	fprintf( f, "\t// brush %d\n\t{\n", bspBrushNum );
+	char b[9][32];
+	for ( const Out& o : outs ) {
+		Vector3 pts[3];
+		ExactPlanePoints( *o.side, origin, pts );
+		const char *texture = striEqualPrefix( o.side->shaderInfo->shader, "textures/" )
+		                      ? o.side->shaderInfo->shader + 9 : o.side->shaderInfo->shader.c_str();
+		fprintf( f, "\t\t( %s %s %s ) ( %s %s %s ) ( %s %s %s ) ",
+		         Num( pts[0][0], b[0] ), Num( pts[0][1], b[1] ), Num( pts[0][2], b[2] ),
+		         Num( pts[1][0], b[3] ), Num( pts[1][1], b[4] ), Num( pts[1][2], b[5] ),
+		         Num( pts[2][0], b[6] ), Num( pts[2][1], b[7] ), Num( pts[2][2], b[8] ) );
+		fprintf( f, "%s %s %s %s %s %s %d 0 0\n", texture,
+		         Num( o.td.shift[0], b[0] ), Num( o.td.shift[1], b[1] ), Num( o.td.rotate, b[2] ),
+		         Num( o.td.scale[0], b[3] ), Num( o.td.scale[1], b[4] ), contentFlag );
+	}
+	fprintf( f, "\t}\n\n" );
+}
+
+/* map-wide most common rotate/scale over all linked planar sides -> default for fully hidden brushes */
+static void ExactComputeDefaults(){
+	using namespace exactdec;
+	std::map<std::tuple<double, double, double>, int> hist;
+	std::vector<DoubleVector3> xyz; std::vector<BasicVector2<double>> st;
+	for ( const bspBrushSide_t& bs : bspBrushSides ) {
+		if ( bs.surfaceNum < 0 || bs.surfaceNum >= int( bspDrawSurfaces.size() ) || bs.shaderNum < 0 ) continue;
+		const bspDrawSurface_t& ds = bspDrawSurfaces[ bs.surfaceNum ];
+		if ( ds.surfaceType != MST_PLANAR ) continue;
+		const shaderInfo_t& si = ShaderInfoForShader( bspShaders[ bs.shaderNum ].shader );
+		xyz.clear(); st.clear();
+		for ( const bspDrawVert_t& v : Span( &bspDrawVerts[ ds.firstVert ], ds.numVerts ) ) {
+			xyz.push_back( DoubleVector3( v.xyz ) );
+			st.push_back( { v.st[0] * si.shaderWidth, v.st[1] * si.shaderHeight } );
+		}
+		TexDef td;
+		if ( Solve( bspPlanes[ bs.planeNum ].normal(), xyz, st, si.shaderWidth, si.shaderHeight, td ) && td.err <= g_tolTexel )
+			++hist[ { td.rotate, td.scale[0], td.scale[1] } ];
+	}
+	int best = 0;
+	for ( const auto& [k, c] : hist ) if ( c > best ) {
+		best = c; g_defaultRotate = std::get<0>( k ); g_defaultScale[0] = std::get<1>( k ); g_defaultScale[1] = std::get<2>( k );
+	}
+	Sys_Printf( "exact decompile: default texdef for hidden brushes = rotate %g scale %g %g (%d sides)\n",
+	            g_defaultRotate, g_defaultScale[0], g_defaultScale[1], best );
+}
+
 static void ConvertBrush( FILE *f, int bspBrushNum, const Vector3& origin, EBrushType brushType, const ModelTriangles& modelTriangles ){
 
 	bspBrush_to_buildBrush( bspBrushes[bspBrushNum] );
@@ -407,21 +607,7 @@ static void ConvertBrush( FILE *f, int bspBrushNum, const Vector3& origin, EBrus
 		fprintf( f, "\t{\n" );
 	}
 
-	/* find out if brush is detail */
-	int contentFlag = 0;
-	if( !( bspShaders[bspBrushes[bspBrushNum].shaderNum].contentFlags & GetRequiredSurfaceParm<"structural">().contentFlags ) ){ // sort out structural transparent brushes, e.g. hints
-		for( const auto& leaf : bspLeafs ){
-			if( leaf.cluster > CLUSTER_OPAQUE )
-				for( const int id : Span( &bspLeafBrushes[ leaf.firstBSPLeafBrush ], leaf.numBSPLeafBrushes ) ){
-					if( id == bspBrushNum ){
-						contentFlag = C_DETAIL;
-						break;
-					}
-				}
-			if( contentFlag == C_DETAIL)
-				break;
-		}
-	}
+	const int contentFlag = BrushDetailFlag( bspBrushNum );
 
 	/* iterate through build brush sides */
 	for ( side_t& buildSide : buildBrush.sides )
@@ -897,9 +1083,22 @@ static void ConvertModel( FILE *f, const bspModel_t& model, const Vector3& origi
 			ConvertBrushFast( f, model.firstBSPBrush + i, origin, brushType );
 	}
 	else{
-		ModelTriangles modelTriangles( model );
-		for ( int i = 0; i < model.numBSPBrushes; ++i )
-			ConvertBrush( f, model.firstBSPBrush + i, origin, brushType, modelTriangles );
+		/* RBSP brush sides link to their surface; when the bsp has such links, only unlinked planar surfaces are search candidates */
+		static std::vector<char> linkedSurfs;
+		static bool hasLinks = false;
+		if ( linkedSurfs.size() != bspDrawSurfaces.size() ) {
+			linkedSurfs.assign( bspDrawSurfaces.size(), 0 );
+			for ( const bspBrushSide_t& bs : bspBrushSides )
+				if ( bs.surfaceNum >= 0 && bs.surfaceNum < int( linkedSurfs.size() ) ) { linkedSurfs[ bs.surfaceNum ] = 1; hasLinks = true; }
+		}
+		const bool exact = brushType == EBrushType::Quake && !g_decompile_legacy;
+		ModelTriangles modelTriangles( model, exact && hasLinks ? &linkedSurfs : nullptr );
+		for ( int i = 0; i < model.numBSPBrushes; ++i ){
+			if ( exact )
+				ConvertBrushExact( f, model.firstBSPBrush + i, origin, modelTriangles, BrushDetailFlag( model.firstBSPBrush + i ) );
+			else
+				ConvertBrush( f, model.firstBSPBrush + i, origin, brushType, modelTriangles );
+		}
 	}
 
 	/* go through each drawsurf in the model */
@@ -953,6 +1152,7 @@ static void ConvertEPairs( FILE *f, const entity_t& e, bool skip_origin ){
    exports an quake map file from the bsp
  */
 
+
 static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 	/* setup brush conversion prerequisites */
 	{
@@ -977,6 +1177,8 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 
 	/* note it */
 	Sys_Printf( "--- Convert BSP to MAP ---\n" );
+	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast )
+		ExactComputeDefaults();
 
 	/* create map filename from the bsp name */
 	const auto name = StringStream( PathExtensionless( bspName ), "_converted.map" );
@@ -1030,6 +1232,15 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 
 	/* close the file and return */
 	fclose( f );
+	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast ) {
+		const auto& st = exactdec::g_stats;
+		Sys_Printf( "exact decompile: %d sides from linked surface, %d from triangle search\n"
+		            "                 %d exact (<= %g texel), %d inexact (worst %.3f texel)\n"
+		            "                 %d hidden sides inherited from brush, %d used map default\n"
+		            "                 %d bevel/degenerate sides dropped, %d sides with missing texture image\n",
+		            st.linked, st.searched, st.exact, exactdec::g_tolTexel, st.inexact, st.worstErr,
+		            st.hiddenBrush, st.hiddenGlobal, st.bevelsDropped, st.missingImage );
+	}
 
 	/* return to sender */
 	return 0;
