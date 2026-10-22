@@ -150,6 +150,18 @@ int main( int argc, char **argv ){
 		Error( "Usage: %s [general options] [options] mapfile\n%s -help for help", args.getArg0(), args.getArg0() );
 	}
 
+	/* SOF2 branch: machine-readable feature list for front-ends (CoD4toSOF2, SourceToSoF2 ...) */
+	if ( args.takeFront( "-sof2caps" ) ) {
+		printf( "sof2caps 1\n"
+		        "exactdecompile\n"        /* -convert -format map: exact standard texdefs */
+		        "shaderpack\n"            /* -light: shader-aware lightmap packing, -noshaderpack */
+		        "mergesurfaces\n"         /* -mergesurfaces stage */
+		        "automerge\n"             /* -light -game sof2 merges automatically, -nomerge */
+		        "keepmodels-default\n"    /* -bsp -game sof2 keeps misc_models, -nokeepmodels */
+		        "lwofix\n" );             /* assimp LWO vertex colour crash fixed */
+		return 0;
+	}
+
 	/* fixaas */
 	if ( args.takeFront( "-fixaas" ) ) {
 		r = FixAAS( args );

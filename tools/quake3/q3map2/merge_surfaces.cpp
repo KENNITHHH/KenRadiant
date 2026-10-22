@@ -58,35 +58,14 @@ struct Piece
 
 }
 
-int MergeSurfacesMain( Args& args ){
-	double cellSize = 1024, planeRange = 64;
-	bool soups = true;
-
-	if ( args.empty() ) {
-		Sys_Printf( "Usage: q3map2 -game sof2 -mergesurfaces [-cell 1024] [-planerange 64] [-nosoups] <mapname>\n" );
-		return 0;
-	}
-	const char *fileName = args.takeBack();
-	while ( args.takeArg( "-cell" ) ) {
-		cellSize = std::max( 64.0, atof( args.takeNext() ) );
-	}
-	while ( args.takeArg( "-planerange" ) ) {
-		planeRange = std::max( 0.0, atof( args.takeNext() ) );
-	}
-	while ( args.takeArg( "-nosoups" ) ) {
-		soups = false;
-	}
-
-	strcpy( source, ExpandArg( fileName ) );
-	path_set_extension( source, ".bsp" );
-
+/* merge the drawsurfaces of a lit bsp file in place; shaders must already be loaded */
+int MergeSurfacesBSP( const char *bspPath, double cellSize, double planeRange, bool soups ){
 	Sys_Printf( "--- MergeSurfaces ---\n" );
 	Sys_Printf( "cell %g units, plane range %g units, soups %s, face vert limit %d, soup limits %d verts / %d indexes\n",
 	            cellSize, planeRange, soups ? "on" : "off", maxLMSurfaceVerts, maxSurfaceVerts, maxSurfaceIndexes );
 
-	LoadShaderInfo();
-	Sys_Printf( "Loading %s\n", source );
-	LoadBSPFile( source );
+	Sys_Printf( "Loading %s\n", bspPath );
+	LoadBSPFile( bspPath );
 	ParseEntities();
 
 	if ( entities[ 0 ].boolForKey( "_mergedsurfaces" ) ) {
@@ -299,7 +278,33 @@ int MergeSurfacesMain( Args& args ){
 
 	entities[ 0 ].setKeyValue( "_mergedsurfaces", "1" );
 	UnparseEntities();
-	Sys_Printf( "Writing %s\n", source );
-	WriteBSPFile( source );
+	Sys_Printf( "Writing %s\n", bspPath );
+	WriteBSPFile( bspPath );
 	return 0;
+}
+
+int MergeSurfacesMain( Args& args ){
+	double cellSize = 1024, planeRange = 64;
+	bool soups = true;
+
+	if ( args.empty() ) {
+		Sys_Printf( "Usage: q3map2 -game sof2 -mergesurfaces [-cell 1024] [-planerange 64] [-nosoups] <mapname>\n" );
+		return 0;
+	}
+	const char *fileName = args.takeBack();
+	while ( args.takeArg( "-cell" ) ) {
+		cellSize = std::max( 64.0, atof( args.takeNext() ) );
+	}
+	while ( args.takeArg( "-planerange" ) ) {
+		planeRange = std::max( 0.0, atof( args.takeNext() ) );
+	}
+	while ( args.takeArg( "-nosoups" ) ) {
+		soups = false;
+	}
+
+	strcpy( source, ExpandArg( fileName ) );
+	path_set_extension( source, ".bsp" );
+
+	LoadShaderInfo();
+	return MergeSurfacesBSP( source, cellSize, planeRange, soups );
 }

@@ -58,6 +58,9 @@ CoD-style maps VIS can't help much (mp_strike: the average cluster sees 65% of t
 - patches, flares, autosprite, sky and lightmapped soups are untouched; leaf and brushside links are remapped.
 - surfaces only merge on the same lightmap page: no luxel moves, (shader, lightmap) pairs can't grow.
 
+**Automatic:** `-light -game sof2` runs this merge itself when lighting is done, so front-ends that can't add a
+step (CoD4toSOF2 GUI, SourceToSoF2) get it for free. `-nomerge` skips it, `-merge` enables it for other games.
+
 mp_strike: 72,206 → 27,010 drawsurfaces (median potentially visible per cluster 66,677 → 24,986), 2 seconds,
 the triangle set (positions, UVs, lightmap UVs, colours, pages) bit-for-bit identical. Must be the last step:
 `-light` on a merged bsp warns.
@@ -70,6 +73,12 @@ mp_strike (q3map2 bsp): inexact sides 9,788 → 518. Raven bsps unchanged.
 ### Crash fixes
 - assimp LWO loader: out-of-bounds read on `.lwo` files with vertex colour maps (it indexed surfaces with a stale face counter). This crashed `-bsp` on CoD4toSOF2 maps, which ship their vertex-alpha blend layers as `models/cod4/blend/*_layers.lwo`. Found with AddressSanitizer on mp_strike.
 - A model that fails to load is now named in the warning (assimp's own message, e.g. "No meshes remaining", doesn't say which file), and is only tried once instead of once per placement.
+
+### Detecting this build from a front-end
+- the version string carries `-sof2`: `Q3Map (ydnar) - v2.5.17n-sof2-git-<commit>`
+- `q3map2 -sof2caps` prints `sof2caps 1` and one feature per line
+  (`exactdecompile`, `shaderpack`, `mergesurfaces`, `automerge`, `keepmodels-default`, `lwofix`).
+  A tool can run it once, and offer options only for the features listed. Stock q3map2 prints its usage error instead.
 
 ### Build
 - No glib dependency for q3map2 (directory listing uses `std::filesystem`).

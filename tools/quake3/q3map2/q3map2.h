@@ -1536,6 +1536,8 @@ int                         MiniMapBSPMain( Args& args );
 
 /* merge_surfaces.cpp */
 int                         MergeSurfacesMain( Args& args );
+int                         MergeSurfacesBSP( const char *bspPath, double cellSize, double planeRange, bool soups );
+inline bool g_autoMergeSurfaces = false;   /* -light: run -mergesurfaces when done (sof2 default) */
 
 /* convert_bsp.c */
 int                         FixAAS( Args& args );

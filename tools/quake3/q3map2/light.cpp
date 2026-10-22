@@ -2147,6 +2147,8 @@ int LightMain( Args& args ){
 	/* SOF2: one renderer shader per (shader, lightmap page) pair, capped at MAX_SHADERS 2048 */
 	if ( strEqual( g_game->arg, "sof2" ) || strEqual( g_game->arg, "jk2" ) || strEqual( g_game->arg, "ja" ) )
 		g_shaderAwareLightmapPacking = true;
+	/* SOF2: merge drawsurfaces after lighting (fewer surfaces per frame); -nomerge to keep them separate */
+	g_autoMergeSurfaces = strEqual( g_game->arg, "sof2" );
 	bool bounceStore = true;
 
 
@@ -2656,6 +2658,12 @@ int LightMain( Args& args ){
 			Sys_Printf( "Faster mode enabled\n" );
 		}
 
+		while ( args.takeArg( "-merge" ) ) {
+			g_autoMergeSurfaces = true;
+		}
+		while ( args.takeArg( "-nomerge" ) ) {
+			g_autoMergeSurfaces = false;
+		}
 		while ( args.takeArg( "-shaderpack" ) ) {
 			g_shaderAwareLightmapPacking = true;
 		}
@@ -2986,6 +2994,12 @@ int LightMain( Args& args ){
 	/* ydnar: export lightmaps */
 	if ( exportLightmaps && !externalLightmaps ) {
 		ExportLightmaps();
+	}
+
+	/* SOF2 branch: merge drawsurfaces of the finished bsp (same as a separate -mergesurfaces run) */
+	if ( g_autoMergeSurfaces ) {
+		Sys_Printf( "\n(automatic -mergesurfaces after light; -nomerge to skip)\n" );
+		MergeSurfacesBSP( source, 1024, 64, true );
 	}
 
 	/* return to sender */
