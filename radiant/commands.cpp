@@ -126,6 +126,9 @@ const KeyEvent& GlobalKeyEvents_find( const char* name ){
 #include <QPushButton>
 #include <QKeySequenceEdit>
 #include <QKeyEvent>
+#include <QGuiApplication>
+#include <QInputMethod>
+#include <QLocale>
 #include <QApplication>
 
 
@@ -266,11 +269,29 @@ static void accelerator_alter( QTreeWidgetItem *item, const QKeySequence acceler
 	}
 }
 
-/* KenRadiant: QWERTY <-> AZERTY. Swaps W<->Z and A<->Q in every shortcut (modifiers kept), so WASD becomes ZQSD and
-   every other binding on those keys follows. Applying it twice restores the original layout. */
+/* KenRadiant: QWERTY <-> AZERTY.
+   - plain letter shortcuts (no Ctrl/Alt) swap W<->Z and A<->Q, so WASD becomes ZQSD and Q/W tools stay under the same fingers;
+     Ctrl+Z, Ctrl+A, Alt+... keep their letters, as AZERTY users expect
+   - number-row shortcuts (1..0, Alt+6, Ctrl+3...) also answer to the character that key types on AZERTY (&, é, ", ', (, §...),
+     see command_connect_accelerator() */
 bool g_keyboard_azerty = false;
 
 static int swapAzertyKey( int combo ){
+	const int mods = combo & int( Qt::KeyboardModifierMask );
+	if( mods & int( Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier ) )
+		return combo;
+	int key = combo & ~int( Qt::KeyboardModifierMask );
+	switch ( key ) {
+	case Qt::Key_W: key = Qt::Key_Z; break;
+	case Qt::Key_Z: key = Qt::Key_W; break;
+	case Qt::Key_A: key = Qt::Key_Q; break;
+	case Qt::Key_Q: key = Qt::Key_A; break;
+	default: break;
+	}
+	return key | mods;
+}
+// first KenRadiant version swapped letters with any modifier (Ctrl+Z became Ctrl+W)
+static int swapAzertyKey_v1( int combo ){
 	const int mods = combo & int( Qt::KeyboardModifierMask );
 	int key = combo & ~int( Qt::KeyboardModifierMask );
 	switch ( key ) {
@@ -283,24 +304,63 @@ static int swapAzertyKey( int combo ){
 	return key | mods;
 }
 
-static QKeySequence swapAzertySequence( const QKeySequence& seq ){
+template<int( *F )( int )>
+static QKeySequence mapSequence( const QKeySequence& seq ){
 	int k[4] = { 0, 0, 0, 0 };
 	for ( int i = 0; i < seq.count() && i < 4; ++i )
-		k[i] = swapAzertyKey( int( seq[i] ) );
+		k[i] = F( int( seq[i] ) );
 	return QKeySequence( k[0], k[1], k[2], k[3] );
 }
 
-void Shortcuts_toggleAzerty(){
-	for ( const auto& [name, value] : g_shortcuts )
-		if ( !value.accelerator.isEmpty() )
-			disconnect_accelerator( name.c_str() );
-	for ( auto& [name, value] : g_shortcuts )
-		if ( !value.accelerator.isEmpty() ) {
-			value.accelerator = swapAzertySequence( value.accelerator );
-			connect_accelerator( name.c_str() );
+/// sets every shortcut that the user did not customise to the QWERTY default or its AZERTY form
+static void Shortcuts_applyLayout( bool azerty ){
+	std::vector<const char*> changed;
+	for ( auto& [name, value] : g_shortcuts ){
+		const QKeySequence& def = value.accelerator_default;
+		if( def.isEmpty() )
+			continue;
+		const QKeySequence az = mapSequence<swapAzertyKey>( def );
+		const QKeySequence az1 = mapSequence<swapAzertyKey_v1>( def );
+		const QKeySequence target = azerty ? az : def;
+		const bool untouched = value.accelerator == def || value.accelerator == az || value.accelerator == az1;
+		if( untouched && value.accelerator != target ){
+			if( value.type != 0 )
+				disconnect_accelerator( name.c_str() );
+			changed.push_back( name.c_str() );
 		}
+	}
+	for( const char* name : changed ){
+		auto& value = g_shortcuts.find( name )->second;
+		value.accelerator = azerty ? mapSequence<swapAzertyKey>( value.accelerator_default ) : value.accelerator_default;
+	}
+	for ( const auto& [name, value] : g_shortcuts )
+		if( value.type != 0 )
+			connect_accelerator( name.c_str() ); // also refreshes the number-row alternatives
+}
+
+void Shortcuts_toggleAzerty(){
 	g_keyboard_azerty = !g_keyboard_azerty;
-	globalOutputStream() << "keyboard layout: " << ( g_keyboard_azerty ? "AZERTY (ZQSD)" : "QWERTY (WASD)" ) << '\n';
+	Shortcuts_applyLayout( g_keyboard_azerty );
+	globalOutputStream() << "keyboard layout: " << ( g_keyboard_azerty ? "AZERTY (ZQSD, number row &é\"'(...)" : "QWERTY (WASD)" ) << '\n';
+}
+
+/// AZERTY character on the number-row key that types \p digit on QWERTY; 0 if none. Belgian and French layouts differ on 6 and 8.
+int Azerty_numberRowKey( int digit ){
+	static const bool belgian = QGuiApplication::inputMethod() == nullptr
+	                         || QGuiApplication::inputMethod()->locale().country() != QLocale::France;
+	switch( digit ){
+	case Qt::Key_1: return Qt::Key_Ampersand;
+	case Qt::Key_2: return Qt::Key_Eacute;
+	case Qt::Key_3: return Qt::Key_QuoteDbl;
+	case Qt::Key_4: return Qt::Key_Apostrophe;
+	case Qt::Key_5: return Qt::Key_ParenLeft;
+	case Qt::Key_6: return belgian ? Qt::Key_section : Qt::Key_Minus;
+	case Qt::Key_7: return Qt::Key_Egrave;
+	case Qt::Key_8: return belgian ? Qt::Key_Exclam : Qt::Key_Underscore;
+	case Qt::Key_9: return Qt::Key_Ccedilla;
+	case Qt::Key_0: return Qt::Key_Agrave;
+	default: return 0;
+	}
 }
 
 void accelerator_reset_all_button_clicked( QTreeWidget *tree ){
@@ -535,6 +595,13 @@ void LoadCommandMap( const char* path ){
 			ReadCommandMap visitor( ini );
 			GlobalShortcuts_foreach( visitor );
 			globalOutputStream() << "parsed " << visitor.count() << " custom shortcuts\n";
+			// KenRadiant: shortcuts saved by the first AZERTY toggle (Ctrl+Z -> Ctrl+W ...) go back to their intended form
+			for ( auto& [name, value] : g_shortcuts ){
+				const QKeySequence az1 = mapSequence<swapAzertyKey_v1>( value.accelerator_default );
+				const QKeySequence az = mapSequence<swapAzertyKey>( value.accelerator_default );
+				if( !value.accelerator_default.isEmpty() && az1 != az && value.accelerator == az1 )
+					value.accelerator = az;
+			}
 		}
 		else
 		{

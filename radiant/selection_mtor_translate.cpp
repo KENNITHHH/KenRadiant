@@ -66,7 +66,7 @@ public:
 
 		draw_quad( 16, m_quad_screen.m_quad );
 
-		const float a = length * 0.3f, b = length * 0.55f;
+		const float a = length * 0.2f, b = length * 0.6f; // Unreal-sized: ~40% of the arrow
 		for( int n = 0; n < 3; ++n ){
 			const int u = ( n + 1 ) % 3, v = ( n + 2 ) % 3;
 			const float uv[4][2] = { { a, a }, { b, a }, { b, b }, { a, b } };

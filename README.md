@@ -1,110 +1,79 @@
-NetRadiant-custom
-=================
+# KenRadiant
 
-The open-source, cross-platform level editor for id Tech based games.
+**A Soldier of Fortune II: Double Helix level editor**, built on
+[Garux/netradiant-custom](https://github.com/Garux/netradiant-custom) and bundled with a SOF2-tuned **q3map2**
+(faster compiles that stay under SOF2's engine limits, and near 1:1 BSP → .map decompiling).
 
-NetRadiant-custom is a fork of NetRadiant (GtkRadiant 1.4&rarr;massive rewrite&rarr;1.5&rarr;NetRadiant&rarr;this)
+Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each build.
 
 ---
-![screenshot](/../readme_files/radDarkShot.png?raw=true)
----
 
-## Downloads
+## Download & install
 
-Ready-to-use packages are available in the [Releases section](/../../releases).
+1. Download the latest **KenRadiant Latest Build** from the [Releases page](../../releases)
+   (`kenradiant-<date>-windows-x86_64.zip` or `-linux-x86_64.7z`).
+2. Unzip it into its own folder, e.g. `C:\Games\SoF2\KenRadiant\`. To update, unzip a newer build over it — your settings stay.
+3. Start `radiant.exe`, pick **Soldier of Fortune II - Double Helix**, and point the engine path at your SoF2 folder
+   (the one that contains `base`).
+4. Open a map from `base/maps`. Compile it with **Build → KenRadiant: (final) …**.
 
-## Supported games
+> If a texture shows **SHADER NOT FOUND**, check that its image exists under `base/textures` (loose or inside a `.pk3`)
+> and that its `.shader` file is listed in `base/shaders/shaderlist.txt`.
 
-Main focus is on Quake, Quake3 and Quake Live.
+## What KenRadiant adds
 
-Though other normally supported games should work too. Releases include configs for the following games: Alien Arena, Darkplaces, Doom 3, Doombringer, Wolfenstein: Enemy Territory, Heretic II, Half-Life, Jedi Knight Jedi Academy, Jedi Knight II: Jedi Outcast, Kingpin, Neverball, Nexuiz, Open Arena, Project::OSiRiON, Prey, Quake II, Q3Rally, Quake 4, Quetoo, Smokin' Guns, Soldier of Fortune II - Double Helix, Star Trek Voyager : Elite Force, Tremulous, Turtle Arena, UFO:Alien Invasion, Unreal Arena, Unvanquished, Urban Terror, Warfork, Warsow, Return To Castle Wolfenstein, World of Padman, Xonotic, ZEQ2 Lite.
+### Editing (Unreal Engine style)
+| Feature | How to use it |
+|---|---|
+| **Gizmo plane handles** | The coloured squares between two arrows of the move gizmo (W) move only in that plane (XY / XZ / YZ). |
+| **Alt + drag to duplicate** | Hold **Alt** and drag any part of the move / rotate / scale gizmo: a copy stays behind, the selection moves. One **Ctrl+Z** undoes both. |
+| **World / Local gizmo** | Cube button on the toolbar: off = world axes, on = the object's own rotation (models / entities with `angles`; brushes are always axis-aligned). |
+| **Drop to floor** | **End** — the selection drops onto the highest brush below it (Edit → Drop To Floor). *Center View moved to Shift+End.* |
+| **Find** | Magnifier button (or **Tab**) — flies the camera to the selection. |
+| **Fly speed** | While flying (hold right mouse), the **mouse wheel** changes camera speed. |
+| **Browse to texture** | **Ctrl+B** — opens the texture browser on the texture of the selected face / brush / patch. |
+| **FOV slider** | Right end of the main toolbar. |
+| **Thumbnail size** | **Ctrl + mouse wheel** in the texture browser (10–200 %). |
+| **AZERTY keyboard** | Edit → **AZERTY Keyboard (ZQSD)**: WASD flying becomes ZQSD, and number-row shortcuts (1–0, Alt+1…Alt+9) work on the AZERTY keys (&, é, ", ', (, §, è, !, ç, à). Ctrl+Z, Ctrl+A etc. stay as they are. |
 
-## Features
+### SOF2 support
+- **Shaders load like in the game**: names containing `{` (e.g. `textures/cstrike/{tk_grate`) no longer break the rest of the `.shader` file.
+- **Shader preview**: textures with `alphaFunc` show as cut-out (masked), `blendFunc` stages show translucent / additive (glows) / multiply, like in game.
+- Shaders without an editor image still show a picture: first stage image, sky `_ft` side, or an image with the shader's name.
+- **Tool textures** use SOF2's own shaders: the caulk / clip / hint / nodraw / trigger filter buttons (right-click = apply to selection),
+  **AutoCaulk (F4)**, Hollow and clipper cuts all use `textures/tools/_caulk` and friends.
+- **Build menu presets** for this q3map2: final, final high quality (bounce + ambient occlusion), quick test, final without surface merge, and **decompile .bsp → .map**.
+- Defaults: 3D workzone off, texture lock on.
 
-Development is focused on smoothing and tweaking editing process.
+### Bundled q3map2 (SOF2 edition)
+Details in [README_SOF2.md](README_SOF2.md). Highlights:
+- **Decompile** (`-convert -format map`) with exact texture alignment recovery — Raven's kam6: 99.4 % of visible faces identical to the original .map.
+- **Lightmap packing per shader** so maps stay under SOF2's `MAX_SHADERS` (mp_strike: 1938 → 409 shader/lightmap pairs).
+- **Automatic surface merge** after `-light`: far fewer draw surfaces per frame (mp_strike busy view: ~27k → ~10k surfaces, 67 fps → 140+ fps).
+- SOF2 defaults that match Raven's compiler (misc_models kept, `_bsp` model shaders), crash fixes for CoD4-converted `.lwo` models.
 
-#### Random feature highlights
+## Shortcuts that differ from NetRadiant
+| Key | Action |
+|---|---|
+| End | Drop selection to floor |
+| Shift+End | Center view (was End) |
+| Ctrl+B | Show selected texture in the texture browser |
+| Alt + drag gizmo | Duplicate and move/rotate/scale |
+| Wheel while right mouse held | Camera fly speed |
 
-* WASD camera binds
-* Fully supported editing in 3D view (brush and entity creation, all manipulating tools)
-* Uniform merge algorithm, merging selected brushes, components and clipper points
-* Free and robust vertex editing, also providing abilities to remove and insert vertices
-* UV Tool (edits texture alignment of selected face or patch)
-* Autocaulk
-* Model browser
-* Brush faces extrusion
-* Left mouse button click tunnel selector, paint selector
-* Numerous mouse shortcuts (see help->General->Mouse Shortcuts)
-* Focus camera on selected (Tab)
-* Snapped modes of manipulators
-* Draggable renderable transform origin for manipulators
-* Quick vertices drag / brush faces shear shortcut
-* Simple shader editor
-* Texture painting by drag
-* Seamless brush face<->face, patch<->face texture paste
-* Customizable keyboard shortcuts
-* Customizable GUI themes, fonts
-* MeshTex plugin
-* Patch thicken
-* All patch prefabs are created aligned to active projection
-* Filters toolbar with extra functions on right mouse button click
-* Viewports zoom in to mouse pointer
-* \'all Supported formats\' default option in open dialogs
-* Opening *.map, sent via cmd line (can assign *.map files in OS to be opened with radiant)
-* Texture browser: show alpha transparency option
-* Texture browser: search in directories and tags trees
-* Texture browser: search in currently shown textures
-* CSG Tool (aka shell modifier)
-* Working region compilations (build a map with region enabled = compile regioned part only)
-* QE tool in a component mode: perform drag w/o hitting any handle too
-* Map info dialog: + Total patches, Ingame entities, Group entities, Ingame group entities counts
-* Connected entities selector/walker
-* Build->customize: list available build variables
-* 50x faster light radius rendering
-* Light power is adjustable by mouse drag
-* Anisotropic textures filtering
-* Optional MSAA in viewports
-* New very fast entity names rendering system
-* Support \'stupid quake bug\'
-* Arbitrary texture projections for brushes and curves
-* Fully working texture lock, supporting any affine transformation
-* Texture locking during vertex and edge manipulations
-* Brush resize (QE tool): reduce selected faces amount to most wanted ones
-* Support brush formats, as toggleable preference: Axial projection, Brush primitives, Valve 220
-* Autodetect brush type on map opening
-* Automatic AP, BP and Valve220 brush types conversion on map Import and Paste
-* New bbox styled manipulator, allowing any affine transform (move, rotate, scale, skew)
-* rendering of Q3 shader based skyboxes
-* Incredible number of fixes and options
+All shortcuts can be changed in Edit → Shortcuts.
 
+## Building from source
+Windows builds are made by GitHub Actions (MSYS2 / MinGW, `.github/workflows/build.yml`); run the workflow by hand to publish a new **KenRadiant Latest Build**.
+On Linux:
+```
+make -j8 DEPENDENCIES_CHECK=off ASSIMP_INTERNAL=yes BUILD=release
+```
+The result is in `install/`. The SOF2 gamepack tweaks are applied by `setup/kenradiant/apply_gamepack_tweaks.sh` during `make`.
 
-#### Q3Map2:
+## Credits
+- [Garux](https://github.com/Garux/netradiant-custom) — netradiant-custom, the base of this editor and of q3map2-custom
+- ydnar, TTimo, divVerent and everyone behind GtkRadiant / NetRadiant / q3map2
+- Raven Software — Soldier of Fortune II and the original kam6.map used to verify decompiling
 
-* q3map_remapshader remaps anything fine, on all stages
-* Automatic map packager (complete Q3 support)
-* Report full / full pk3 path on file syntax errors
-* Allowed simultaneous samples+filter use, makes sense
-* -brightness 0..alot, def 1: mimics q3map_lightmapBrightness globally
-* -contrast -255..255, def 0: lighting contrast
-* -saturation light option
-* -bouncecolorratio 0..1 (ratio of colorizing light sample by texture)
-* -nolm - no lightmaps
-* -novertex works, (0..1) sets globally
-* -vertexscale
-* New area lights backsplash algorithm (utilizing area lights instead of point ones)
-* -backsplash (float)scale (float)distance: adjust area lights globally (real area lights have no backsplash)
-* New slightly less careful, but much faster lightmaps packing algorithm (allocating... process)
-* -extlmhacksize zero effort external lightmaps for Q3
-* Valve220 mapformat autodetection and support
-* Consistent brush content deduction with mixed face parameters
-* Model shaders paths deduction
-* Fixed model autoclip, added 20 new clipping modes
-* Support negative misc_model scale
-* Assimp model loading library (40+ formats)
-* -json bsp export/import
-* -mergebsp injects one bsp to another
-* No shaderlist.txt mode: load all shaders
-
-###### see changelog-custom.txt for more
-
-## [COMPILING](/COMPILING)
+The original netradiant-custom readme is kept in [README_NETRADIANT.md](README_NETRADIANT.md). License: GPL v2 (see `LICENSE`, `GPL`).

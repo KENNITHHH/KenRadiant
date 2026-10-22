@@ -1,0 +1,43 @@
+# KenRadiant changelog
+
+Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
+(`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
+
+## Build 2026-10-22 (evening)
+### Editor
+- **Shader preview**: `alphaFunc` stages render cut-out (masked), `blendFunc` stages render translucent, additive (glows) or multiply.
+- **World / Local gizmo** toggle (cube button on the toolbar). Local uses the object's own rotation (models, entities with `angles`).
+- **Alt + drag** now keeps moving after the copy is made (the copy stays behind, the selection keeps following the mouse); one Ctrl+Z undoes it.
+- Gizmo plane handles are bigger and filled.
+- **AZERTY**: Ctrl/Alt shortcuts keep their letters (Ctrl+Z stays undo); only plain letter keys swap (WASD → ZQSD).
+  Number-row shortcuts (1–0, Alt+6 …) also work on the AZERTY characters (&, é, ", ', (, §, è, !, ç, à; French layout: - and _ for 6 and 8).
+  Shortcuts saved by the first AZERTY version (Ctrl+W for undo etc.) are corrected automatically.
+- More room left of the FOV label.
+
+## Build 2026-10-22 (afternoon)
+### Editor
+- **Fixed "SHADER NOT FOUND"** for shaders listed after a shader with `{` in its name (`textures/cstrike/{tk_grate`): sky, `_nonsolid`, emitters, model shaders.
+- SOF2 tool shaders for the caulk/clip/hint/nodraw/trigger buttons, AutoCaulk, Hollow and clipper (`textures/tools/_caulk` …).
+- AutoCaulk (F4) compiles with `-game sof2` so translucent/sky/liquid rules come from SOF2 shaders.
+- Unreal-style **gizmo plane handles** and **Alt + drag duplicate**.
+- **End** = drop to floor (Center View → Shift+End), **Ctrl+B** = show the selected texture in the texture browser.
+- **Find** (magnifier) button, **FOV slider**, mouse wheel = fly speed while holding right mouse.
+### Build
+- The editor's q3map2 uses the bundled, patched model loader (fixes the `.lwo` crash on CoD4-converted maps such as mp_strike).
+
+## Build 2026-10-22 (morning)
+### Editor
+- Shaders without a working editor image fall back to the first stage image, the shader name, or the sky's `_ft` image.
+- Ctrl + mouse wheel resizes texture browser thumbnails.
+- Edit → **AZERTY Keyboard (ZQSD)**.
+- 3D workzone off and texture lock on by default.
+- **Build menu**: KenRadiant SOF2 presets (final, high quality, quick test, no merge, decompile .bsp → .map).
+
+## Initial release (based on netradiant-custom 8216133)
+### q3map2 SOF2 edition
+- Exact texture alignment when decompiling (`-convert -format map`), SOF2 origin brushes, Raven `q3map_*` keywords.
+- Per-shader lightmap packing for SOF2's `MAX_SHADERS` limit.
+- `-mergesurfaces`, automatic after `-light -game sof2` (`-nomerge` to skip); `_mergecell` / `_mergeplanerange` worldspawn keys.
+- misc_models kept and `_bsp` model shaders used by default for SOF2, like Raven's compiler.
+- Crash fix for `.lwo` models with vertex colours; failed models are named once instead of per placement.
+- `-sof2caps` feature probe for front-ends (CoD4toSOF2, SourceToSoF2).

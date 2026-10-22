@@ -1754,10 +1754,10 @@ public:
 			if ( !m_undo_begun ) {
 				m_undo_begun = true;
 				GlobalUndoSystem().start();
-				if( m_clone_on_move ){ // Unreal-style: the copy is what moves, the original stays
+				if( m_clone_on_move ){ // Unreal-style duplicate: a copy stays where the selection was, the selection keeps moving
 					m_clone_on_move = false;
-					extern void Scene_Clone_Selected();
-					Scene_Clone_Selected();
+					extern void Scene_Clone_Selected_keepSelection();
+					Scene_Clone_Selected_keepSelection();
 				}
 			}
 
@@ -2186,32 +2186,24 @@ inline void pivot_for_node( Matrix4& pivot, scene::Node& node, scene::Instance& 
 }
 #endif
 
-void RadiantSelectionSystem::ConstructPivotRotation() const {
-	switch ( m_manipulator_mode )
-	{
-	case eTranslate:
-		break;
-	case eRotate:
-		if ( Mode() == eComponent ) {
-			matrix4_assign_rotation_for_pivot( m_pivot2world, *m_component_selection.back() );
-		}
-		else
-		{
-			matrix4_assign_rotation_for_pivot( m_pivot2world, *m_selection.back() );
-		}
-		break;
-	case eScale:
-		if ( Mode() == eComponent ) {
-			matrix4_assign_rotation_for_pivot( m_pivot2world, *m_component_selection.back() );
-		}
-		else
-		{
-			matrix4_assign_rotation_for_pivot( m_pivot2world, *m_selection.back() );
-		}
-		break;
-	default:
-		break;
+extern bool g_manipulator_local_space;
+/// KenRadiant: object rotation for the gizmo in local space (entities with angles/rotation: misc_model etc.; brushes are axial)
+static void matrix4_assign_local_rotation( Matrix4& matrix, scene::Instance& instance ){
+	Editable* editable = Node_getEditable( instance.path().top() );
+	if ( editable != 0 ) {
+		matrix4_assign_rotation( matrix, matrix4_multiplied_by_matrix4( instance.localToWorld(), editable->getLocalPivot() ) );
 	}
+	else
+	{
+		matrix4_assign_rotation( matrix, instance.localToWorld() );
+	}
+}
+void RadiantSelectionSystem::ConstructPivotRotation() const {
+	// World / Local toggle (Unreal): world = axis-aligned gizmo (stock behaviour), local = the last selected object's rotation
+	if( !g_manipulator_local_space || Mode() == eComponent )
+		return;
+	if( m_manipulator_mode == eTranslate || m_manipulator_mode == eRotate || m_manipulator_mode == eScale )
+		matrix4_assign_local_rotation( m_pivot2world, *m_selection.back() );
 }
 
 void RadiantSelectionSystem::ConstructPivot() const {

@@ -28,6 +28,7 @@
 #include "generic/callback.h"
 #include "signal/isignal.h"
 #include "gtkutil/widget.h"
+#include "dialog.h"
 
 
 void ModeChangeNotify(){
@@ -418,7 +419,18 @@ void ToggleDragSkewModes(){
 
 
 
+// KenRadiant: gizmo axes in world space (default, like Unreal) or in the selected object's own rotation (models/entities with angles)
+bool g_manipulator_local_space = false;
+ToggleItem g_manipulator_space_button{ BoolExportCaller( g_manipulator_local_space ) };
+static void ManipulatorSpace_toggle(){
+	g_manipulator_local_space = !g_manipulator_local_space;
+	g_manipulator_space_button.update();
+	GlobalSelectionSystem().pivotChanged();
+	globalOutputStream() << "gizmo space: " << ( g_manipulator_local_space ? "local (object)" : "world" ) << '\n';
+}
+
 void Tools_registerCommands(){
+	GlobalToggles_insert( "ToggleManipulatorLocalSpace", makeCallbackF( ManipulatorSpace_toggle ), ToggleItem::AddCallbackCaller( g_manipulator_space_button ) );
 	GlobalToggles_insert( "DragVertices", makeCallbackF( SelectVertexMode ), ToggleItem::AddCallbackCaller( g_vertexMode_button ), QKeySequence( "V" ) );
 	GlobalToggles_insert( "DragEdges", makeCallbackF( SelectEdgeMode ), ToggleItem::AddCallbackCaller( g_edgeMode_button ), QKeySequence( "E" ) );
 	GlobalToggles_insert( "DragFaces", makeCallbackF( SelectFaceMode ), ToggleItem::AddCallbackCaller( g_faceMode_button ), QKeySequence( "F" ) );

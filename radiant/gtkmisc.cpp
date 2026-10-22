@@ -72,6 +72,13 @@ inline QAction* command_connect_accelerator( const Command& command ){
 		QObject::connect( action, &QAction::triggered, command.m_callback );
 	}
 	action->setShortcut( command.m_accelerator );
+	// KenRadiant AZERTY: number-row shortcuts also answer to the character that key types on AZERTY (Alt+6 = Alt+§)
+	if( g_keyboard_azerty && command.m_accelerator.count() == 1 ){
+		const int combo = command.m_accelerator[0];
+		const int mods = combo & int( Qt::KeyboardModifierMask );
+		if( const int alt = Azerty_numberRowKey( combo & ~int( Qt::KeyboardModifierMask ) ); alt != 0 && !( mods & Qt::ShiftModifier ) )
+			action->setShortcuts( { command.m_accelerator, QKeySequence( alt | mods ) } );
+	}
 	return action;
 }
 

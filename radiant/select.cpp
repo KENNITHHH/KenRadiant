@@ -1315,6 +1315,13 @@ void Scene_Clone_Selected( scene::Graph& graph, bool makeUnique ){
 	}
 }
 
+/// KenRadiant (Alt+drag on the gizmo): leaves a copy in place and keeps the current selection, so a running drag goes on
+void Scene_Clone_Selected_keepSelection(){
+	CloneSelected cloneSelected( false );
+	GlobalSceneGraph().traverse( cloneSelected );
+	Map_mergeClonedNames( false );
+}
+
 enum ENudgeDirection
 {
 	eNudgeUp = 1,

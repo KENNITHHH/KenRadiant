@@ -1384,6 +1384,7 @@ void Manipulators_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_toggle_button( toolbar, "Transform (Q)", "select_mousetransform.png", "MouseTransform" ); // hardcoded shortcut tip of "MouseDragOrTransform"...
 //	toolbar_append_toggle_button( toolbar, "Build", "select_mouserotate.png", "MouseBuild" );
 	toolbar_append_toggle_button( toolbar, "UV Tool", "select_mouseuv.png", "MouseUV" );
+	toolbar_append_toggle_button( toolbar, "Gizmo in local (object) space; off = world space", "kr_localspace.png", "ToggleManipulatorLocalSpace" ); // KenRadiant
 }
 
 extern CopiedString g_toolbarHiddenButtons;
@@ -1462,6 +1463,7 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 		toolbar->addWidget( spacer );
 
 		auto *label = new QLabel;
+		label->setContentsMargins( 16, 0, 6, 0 ); // KenRadiant: room left of "FOV"
 		auto *slider = new QSlider( Qt::Orientation::Horizontal );
 		slider->setRange( 50, 140 );
 		slider->setFixedWidth( 140 );

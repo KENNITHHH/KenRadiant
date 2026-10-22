@@ -292,6 +292,8 @@ public:
 	float m_AlphaRef;
 // cull stuff
 	IShader::ECull m_Cull;
+	// KenRadiant: blendFunc of the first stage of a Quake 3 shader, so translucent/additive/multiply shaders look that way in the editor
+	BlendFuncExpression m_q3BlendFunc{ "", "" };
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -867,7 +869,26 @@ public:
 
 		m_notfound = 0;
 
+		applyQ3BlendFunc();
 		realise();
+	}
+	void applyQ3BlendFunc(){
+		const BlendFuncExpression& blendFunc = m_template.m_q3BlendFunc;
+		if( string_empty( blendFunc.first.c_str() ) )
+			return;
+		if ( !string_empty( blendFunc.second.c_str() ) ) {
+			m_blendFunc = BlendFunc( evaluateBlendFactor( blendFunc.first, m_template.m_params, m_args ),
+			                         evaluateBlendFactor( blendFunc.second, m_template.m_params, m_args ) );
+		}
+		else if ( string_equal_nocase( blendFunc.first.c_str(), "add" ) ) {
+			m_blendFunc = BlendFunc( BLEND_ONE, BLEND_ONE );
+		}
+		else if ( string_equal_nocase( blendFunc.first.c_str(), "filter" ) ) {
+			m_blendFunc = BlendFunc( BLEND_DST_COLOUR, BLEND_ZERO );
+		}
+		else {
+			m_blendFunc = BlendFunc( BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA );
+		}
 	}
 	~CShader(){
 		unrealise();
@@ -1074,6 +1095,7 @@ public:
 			m_layers.clear();
 
 			m_blendFunc = BlendFunc( BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA );
+			applyQ3BlendFunc();
 		}
 	}
 
@@ -1192,6 +1214,10 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	m_textureName = m_Name;
 	bool hasEditorImage = false;
 	CopiedString firstStageImage; // like q3map2: without qer_editorimage, show the first stage's image
+	// KenRadiant: what the game does with the first stages - masked (alphaFunc) / translucent (blendFunc) preview
+	int stageNum = 0;
+	bool stageHasImage = false, imageStageDone = false;
+	CopiedString stageAlphaFunc;
 
 	tokeniser.nextLine();
 
@@ -1208,9 +1234,29 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 
 		if ( string_equal( token, "{" ) ) {
 			++depth;
+			if( depth == 2 ){
+				++stageNum;
+				stageHasImage = false;
+				stageAlphaFunc = "";
+			}
 			continue;
 		}
 		else if ( string_equal( token, "}" ) ) {
+			if( depth == 2 && stageHasImage && !imageStageDone ){
+				imageStageDone = true;
+				if( !stageAlphaFunc.empty() && !( m_nFlags & QER_ALPHATEST ) ){
+					if( string_equal_nocase( stageAlphaFunc.c_str(), "GT0" ) ){
+						m_AlphaFunc = IShader::eGreater; m_AlphaRef = 0;
+					}
+					else if( string_equal_nocase( stageAlphaFunc.c_str(), "LT128" ) ){
+						m_AlphaFunc = IShader::eLess; m_AlphaRef = 0.5f;
+					}
+					else{ // GE128
+						m_AlphaFunc = IShader::eGEqual; m_AlphaRef = 0.5f;
+					}
+					m_nFlags |= QER_ALPHATEST;
+				}
+			}
 			--depth;
 			if ( depth < 0 ) { // underflow
 				return false;
@@ -1220,6 +1266,41 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 
 			continue;
+		}
+
+		if ( depth == 2 ) {
+			if ( string_equal_nocase( token, "map" ) || string_equal_nocase( token, "clampmap" ) || string_equal_nocase( token, "animmap" ) ) {
+				if ( string_equal_nocase( token, "animmap" ) ) {
+					tokeniser.getToken(); // frequency
+				}
+				if ( const char* image = tokeniser.getToken(); image != 0 && image[0] != '$' && image[0] != '*' ) {
+					stageHasImage = true;
+					if( firstStageImage.empty() )
+						firstStageImage = StringStream<64>( PathExtensionless( image ) );
+				}
+				continue;
+			}
+			else if ( string_equal_nocase( token, "alphafunc" ) ) {
+				if( const char* func = tokeniser.getToken() )
+					stageAlphaFunc = func;
+				continue;
+			}
+			else if ( string_equal_nocase( token, "blendfunc" ) ) {
+				const char* a = tokeniser.getToken();
+				if( a == 0 )
+					return false;
+				const CopiedString first( a );
+				CopiedString second;
+				if( !string_equal_nocase( a, "add" ) && !string_equal_nocase( a, "blend" ) && !string_equal_nocase( a, "filter" ) ){
+					const char* b = tokeniser.getToken();
+					if( b == 0 )
+						return false;
+					second = b;
+				}
+				if( stageNum == 1 )
+					m_q3BlendFunc = BlendFuncExpression( first.c_str(), second.c_str() );
+				continue;
+			}
 		}
 
 		if ( depth == 2 && firstStageImage.empty() ) {
@@ -1355,6 +1436,15 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 		}
 	}
+
+	/* first stage blends with what is behind it: show it translucent (qer_trans and skies keep their own handling) */
+	if ( !string_empty( m_q3BlendFunc.first.c_str() ) && !( m_nFlags & ( QER_TRANS | QER_SKY ) ) ) {
+		const bool opaque = string_equal_nocase( m_q3BlendFunc.first.c_str(), "gl_one" ) && string_equal_nocase( m_q3BlendFunc.second.c_str(), "gl_zero" );
+		if( !opaque )
+			m_nFlags |= QER_TRANS;
+	}
+	if ( m_nFlags & QER_SKY )
+		m_q3BlendFunc = BlendFuncExpression( "", "" );
 
 	/* no qer_editorimage: fall back to the first stage image (what q3map2 and the game show),
 	   unless an image with the shader's own name exists - that is what stock radiant used */
