@@ -498,6 +498,7 @@ void HelpMain( const char* arg )
 		{ "-fixaas", "Fixing AAS checksum" },
 		{ "-info", "Get info about BSP file" },
 		{ "-minimap", "MiniMap" },
+		{ "-mergesurfaces", "Merge drawsurfaces of a lit bsp (fewer surfaces per frame); -cell <units> -planerange <units> -nosoups" },
 		{ "-pk3", "PK3 creation" },
 		{ "-repack", "Maps repack creation" },
 		{ "-json", "BSP json export/import" },

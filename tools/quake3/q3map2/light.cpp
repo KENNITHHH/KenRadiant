@@ -2952,6 +2952,9 @@ int LightMain( Args& args ){
 
 	/* parse bsp entities */
 	ParseEntities();
+	if ( entities[ 0 ].boolForKey( "_mergedsurfaces" ) ) {
+		Sys_Warning( "this bsp went through -mergesurfaces: relighting it packs lightmaps badly. Re-run -bsp (and -vis), -light, then -mergesurfaces\n" );
+	}
 
 	/* inject command line parameters */
 	InjectCommandLine( "-light", argsToInject );

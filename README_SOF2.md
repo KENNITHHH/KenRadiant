@@ -44,6 +44,29 @@ whose shaders are a subset of the target's. The light log prints the real pair c
 mp_strike at `_lightmapscale 1`: **1938 → 409 pairs**, 100 → 119 lightmap pages, 98.5% of lightmapped vertices identical (≤1/255).
 `-noshaderpack` restores the stock behaviour; `-shaderpack` enables it for other games. `Q3MAP2_DEBUGPACK=1` dumps every placement to stderr.
 
+### `-mergesurfaces` (post-light, fewer surfaces per frame)
+SOF2's frame cost scales with drawsurfaces in view (mp_strike: 27k surfaces = 67 fps, 10k = 200 fps), and on open
+CoD-style maps VIS can't help much (mp_strike: the average cluster sees 65% of the map). Run on the finished bsp:
+
+    q3map2 -game sof2 -fs_basepath <SoF2> -fs_game base -mergesurfaces maps\<map>.bsp
+
+- flat faces with the same shader, fog, lightmap page(s), light styles and normal, plane distances within
+  `-planerange` (64) and inside one `-cell` (1024 units), become one face of at most 64 verts (SOF2 MAX_FACE_POINTS).
+  The rearmost piece goes first, so the renderer's back-face cull (plane from the first vertex) never hides a visible piece.
+- vertex-lit triangle soups (baked misc_models) and vertex-lit faces whose shader has `surfaceparm nomarks`
+  merge into soups (999 verts / 6000 indexes). Soups get no bullet marks, hence the nomarks rule. `-nosoups` disables.
+- patches, flares, autosprite, sky and lightmapped soups are untouched; leaf and brushside links are remapped.
+- surfaces only merge on the same lightmap page: no luxel moves, (shader, lightmap) pairs can't grow.
+
+mp_strike: 72,206 → 27,010 drawsurfaces (median potentially visible per cluster 66,677 → 24,986), 2 seconds,
+the triangle set (positions, UVs, lightmap UVs, colours, pages) bit-for-bit identical. Must be the last step:
+`-light` on a merged bsp warns.
+
+### Decompile on q3map2-compiled maps
+The linked-surface fit takes whole triangles of the side (all corners on its plane, centroid inside the brush), so faces of
+neighbouring brushes that q3map2's meta merge (or `-mergesurfaces`) put in the same surface no longer pollute the fit.
+mp_strike (q3map2 bsp): inexact sides 9,788 → 518. Raven bsps unchanged.
+
 ### Crash fixes
 - assimp LWO loader: out-of-bounds read on `.lwo` files with vertex colour maps (it indexed surfaces with a stale face counter). This crashed `-bsp` on CoD4toSOF2 maps, which ship their vertex-alpha blend layers as `models/cod4/blend/*_layers.lwo`. Found with AddressSanitizer on mp_strike.
 - A model that fails to load is now named in the warning (assimp's own message, e.g. "No meshes remaining", doesn't say which file), and is only tried once instead of once per placement.

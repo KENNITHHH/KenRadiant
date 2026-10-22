@@ -427,12 +427,31 @@ static void CollectSideVerts( const side_t& side, const Vector3& origin, const M
 		const bspBrushSide_t& bs = bspBrushSides[ side.outputNum ];
 		if ( bs.surfaceNum >= 0 && bs.surfaceNum < int( bspDrawSurfaces.size() ) ) {
 			const bspDrawSurface_t& ds = bspDrawSurfaces[ bs.surfaceNum ];
-			if ( ds.surfaceType == MST_PLANAR ) {
-				for ( const bspDrawVert_t& v : Span( &bspDrawVerts[ ds.firstVert ], ds.numVerts ) ) {
-					if ( std::fabs( plane3_distance_to_point( pl.plane, v.xyz ) ) > 0.1 ) continue;
-					if ( !PointInsideBuildBrush( v.xyz, 0.1 ) ) continue;
-					xyz.push_back( DoubleVector3( v.xyz + origin ) );
-					st.push_back( { v.st[0] * W, v.st[1] * H } );
+			/* triangle soups too: -mergesurfaces turns nomarks faces into soups; verts are filtered by plane below */
+			if ( ds.surfaceType == MST_PLANAR || ds.surfaceType == MST_TRIANGLE_SOUP ) {
+				/* take whole triangles lying on this side: all corners on the plane, centroid inside the brush.
+				   (a surface can hold faces of neighbouring brushes - meta merge, -mergesurfaces - whose
+				   edge vertices touch this brush; testing single vertices would mix in their texture mapping) */
+				std::vector<char> used( ds.numVerts, 0 );
+				for ( int t = 0; t + 2 < ds.numIndexes; t += 3 ) {
+					const bspDrawVert_t *tv[3];
+					bool onPlane = true;
+					for ( int k = 0; k < 3; ++k ) {
+						const int vi = bspDrawIndexes[ ds.firstIndex + t + k ];
+						if ( vi < 0 || vi >= ds.numVerts ) { onPlane = false; break; }
+						tv[k] = &bspDrawVerts[ ds.firstVert + vi ];
+						if ( std::fabs( plane3_distance_to_point( pl.plane, tv[k]->xyz ) ) > 0.1 ) onPlane = false;
+					}
+					if ( !onPlane ) continue;
+					const Vector3 centroid = ( tv[0]->xyz + tv[1]->xyz + tv[2]->xyz ) / 3.f;
+					if ( !PointInsideBuildBrush( centroid, 0.1 ) ) continue; // a neighbour's triangle has its centroid outside this brush
+					for ( int k = 0; k < 3; ++k ) {
+						const int vi = bspDrawIndexes[ ds.firstIndex + t + k ];
+						if ( used[ vi ] ) continue;
+						used[ vi ] = 1;
+						xyz.push_back( DoubleVector3( tv[k]->xyz + origin ) );
+						st.push_back( { tv[k]->st[0] * W, tv[k]->st[1] * H } );
+					}
 				}
 				if ( xyz.size() >= 3 ) { linked = true; return; }
 				xyz.clear(); st.clear();

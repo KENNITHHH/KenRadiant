@@ -1534,6 +1534,9 @@ int                         BSPMain( Args& args );
 /* minimap.c */
 int                         MiniMapBSPMain( Args& args );
 
+/* merge_surfaces.cpp */
+int                         MergeSurfacesMain( Args& args );
+
 /* convert_bsp.c */
 int                         FixAAS( Args& args );
 int                         AnalyzeBSP( Args& args );

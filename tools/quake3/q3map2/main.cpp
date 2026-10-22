@@ -225,6 +225,11 @@ int main( int argc, char **argv ){
 		r = MergeBSPMain( args );
 	}
 
+	/* SOF2 branch: post-light surface merge */
+	else if ( args.takeFront( "-mergesurfaces" ) ) {
+		r = MergeSurfacesMain( args );
+	}
+
 	/* div0: minimap */
 	else if ( args.takeFront( "-minimap" ) ) {
 		r = MiniMapBSPMain( args );
