@@ -822,6 +822,7 @@ static void ParseShaderFile( const char *filename ){
 			strClear( token + strlen( token ) - strlen( ":q3map" ) );
 
 		shaderInfo_t& si = AllocShaderInfo( token );
+		si.scripted = true;
 
 		/* handle { } section */
 		if ( !( text.GetToken( true ) && strEqual( token, "{" ) ) ) {
@@ -1666,17 +1667,6 @@ static void ParseShaderFile( const char *filename ){
 				/* q3map_onlyvertexlighting (sof2) */
 				else if ( striEqual( token, "q3map_onlyVertexLighting" ) ) {
 					ApplySurfaceParm( "pointlight", &si.contentFlags, &si.surfaceFlags, &si.compileFlags );
-				}
-
-				/* Raven (sof2/jk2/ja) compile keywords that stand in for surfaceparms:
-				   tools/_hint, _areaportal, _origin, _clusterportal rely on these in stock SOF2 shaders */
-				else if ( striEqual( token, "q3map_hint" ) || striEqual( token, "q3map_areaportal" )
-				       || striEqual( token, "q3map_origin" ) || striEqual( token, "q3map_structural" )
-				       || striEqual( token, "q3map_clusterportal" ) || striEqual( token, "q3map_nolightmap" )
-				       || striEqual( token, "q3map_alphashadow" ) ) {
-					const char *parm = token + 6; // skip "q3map_"
-					if ( !ApplySurfaceParm( parm, &si.contentFlags, &si.surfaceFlags, &si.compileFlags ) )
-						Sys_FPrintf( SYS_VRB, "%s: no surfaceparm \"%s\" in this game, ignored\n", si.shader.c_str(), parm );
 				}
 
 				/* q3map_lightColor ( r g b ) (Raven, parenthesised linear 0..1 colour) */

@@ -24,9 +24,10 @@ How:
 - Prints a summary: how many sides were solved, how many are exact, worst error, hidden-side handling.
 - `-legacydecompile` restores the old netradiant behaviour; `-format map_bp` / `map_220` are unchanged.
 
-### SOF2 compile fixes
-- `q3map_hint`, `q3map_areaportal`, `q3map_origin`, `q3map_structural` and `q3map_clusterportal` (Raven keywords used by SOF2's stock `tools.shader`) are honoured. Before this, `tools/_hint` did nothing and `tools/_origin` was not an origin brush.
-- Decompiled SOF2 maps write origin brushes with `tools/_origin` (was JK2's `system/origin`), so doors and rotating entities keep their pivot when recompiled.
+### SOF2 compile changes
+- Decompiled SOF2 maps write origin brushes with `tools/_origin` (netradiant wrote JK2's `system/origin`, which SOF2 has no shader for), so doors and rotating entities keep their pivot when recompiled.
+- `-game sof2` now matches Raven's sof2map defaults: `misc_model` entities are kept in the BSP (so `-convert` restores them 1:1), and baked models use the `_bsp` shader variants, **but only when that shader is actually defined**, so custom/converted props never lose their texture. Opt out with `-nokeepmodels` / `-norename`.
+- `q3map_lightColor ( r g b )` (Raven syntax) is parsed. Other Raven `q3map_*` keywords (`q3map_hint`, `q3map_areaportal`, `q3map_origin`, `q3map_nolightmap`, `q3map_alphashadow` …) already worked through ydnar's generic `q3map_<surfaceparm>` fallback.
 
 ### Build
 - No glib dependency for q3map2 (directory listing uses `std::filesystem`).

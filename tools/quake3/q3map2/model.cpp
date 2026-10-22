@@ -1328,9 +1328,16 @@ void InsertModel( const char *name, const char *skin, int frame, const Matrix4& 
 		}
 
 		/* shader renaming for sof2 */
-		shaderInfo_t& si = renameModelShaders
-			? ShaderInfoForShader( String64( PathExtensionless( picoShaderName ), ( spawnFlags & eRMG_BSP )? "_RMG_BSP" : "_BSP" ) )
-			: ShaderInfoForShader( picoShaderName );
+		/* only switch to the _bsp variant when it is actually defined in the shader scripts,
+		   otherwise models without one (custom / converted props) would lose their texture */
+		shaderInfo_t& si = [&]() -> shaderInfo_t& {
+			if ( renameModelShaders ) {
+				const String64 bspName( PathExtensionless( picoShaderName ), ( spawnFlags & eRMG_BSP )? "_RMG_BSP" : "_BSP" );
+				if ( const auto it = shaderInfo.find_first( bspName ); it != shaderInfo.end() && it->scripted )
+					return ShaderInfoForShader( bspName );
+			}
+			return ShaderInfoForShader( picoShaderName );
+		}();
 
 		/* allocate a surface (ydnar: gs mods) */
 		mapDrawSurface_t& ds = AllocDrawSurface( ESurfaceType::Triangles, si );

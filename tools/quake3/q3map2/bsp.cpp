@@ -717,6 +717,15 @@ int BSPMain( Args& args ){
 			Sys_Printf( "Appending _bsp suffix to misc_model shaders (SOF2)\n" );
 			renameModelShaders = true;
 		}
+		/* SOF2 defaults match Raven's sof2map: keep misc_model entities in the bsp (so -convert can restore
+		   them 1:1) and use the _bsp shader variants of baked models where the shader scripts define them */
+		if ( strEqual( g_game->arg, "sof2" ) ) {
+			bool noKeep = false, noRename = false;
+			while ( args.takeArg( "-nokeepmodels" ) ) noKeep = true;
+			while ( args.takeArg( "-norename" ) ) noRename = true;
+			if ( !noKeep && !keepModels ) { keepModels = true; Sys_Printf( "SOF2: keeping misc_model entities in the bsp (-nokeepmodels to strip)\n" ); }
+			if ( !noRename && !renameModelShaders ) { renameModelShaders = true; Sys_Printf( "SOF2: using _bsp shader variants for baked models (-norename to disable)\n" ); }
+		}
 
 		/* ydnar args */
 		while ( args.takeArg( "-ne" ) ) {

@@ -642,6 +642,7 @@ struct shaderInfo_t_data
 	char                *shaderText;                    /* ydnar */
 	bool custom;
 	bool finished;
+	bool scripted = false;                              /* defined in a .shader file (not an implicit default) */
 };
 
 struct shaderInfo_t : public shaderInfo_t_data
