@@ -65,6 +65,7 @@ struct _QERScripLibTable
 	Tokeniser& ( *m_pfnNewScriptTokeniser )( TextInputStream & istream );
 	Tokeniser& ( *m_pfnNewMapTokeniser )( TextInputStream & istream );
 	Tokeniser& ( *m_pfnNewSimpleTokeniser )( TextInputStream & istream );
+	Tokeniser& ( *m_pfnNewShaderTokeniser )( TextInputStream & istream );
 	TokenWriter& ( *m_pfnNewSimpleTokenWriter )( TextOutputStream & ostream );
 };
 

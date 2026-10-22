@@ -55,6 +55,7 @@ class ScriptTokeniser final : public Tokeniser
 
 	const bool m_special;
 	const bool m_specialComments;
+	const bool m_braceInToken; // KenRadiant: like the engine's COM_ParseExt, a '{' or '}' inside a word belongs to it (textures/cstrike/{tk_grate)
 	const char m_specialCommentSig[4] = "@$&";
 	const char *m_specialCommentRead;
 
@@ -139,10 +140,15 @@ class ScriptTokeniser final : public Tokeniser
 	bool tokeniseToken( char c ){
 		switch ( charType( c ) )
 		{
+		case eCharSpecial:
+			if ( m_braceInToken && ( c == '{' || c == '}' ) ) {
+				add( c );
+				break;
+			}
+			[[fallthrough]];
 		case eNewline:
 		case eWhitespace:
 		case eCharQuote:
-		case eCharSpecial:
 			pop();
 			m_emit = true; // emit token
 			break;
@@ -326,7 +332,7 @@ class ScriptTokeniser final : public Tokeniser
 	}
 
 public:
-	ScriptTokeniser( TextInputStream& istream, bool special, bool specialComments ) :
+	ScriptTokeniser( TextInputStream& istream, bool special, bool specialComments, bool braceInToken = false ) :
 		m_state( m_stack ),
 		m_istream( istream ),
 		m_scriptline( 1 ),
@@ -335,7 +341,8 @@ public:
 		m_unget( false ),
 		m_emit( false ),
 		m_special( special ),
-		m_specialComments( specialComments ){
+		m_specialComments( specialComments ),
+		m_braceInToken( braceInToken ){
 		m_stack[0] = Tokenise( &ScriptTokeniser::tokeniseDefault );
 		m_eof = !m_istream.readChar( m_current );
 		m_token[MAXTOKEN - 1] = '\0';
@@ -372,6 +379,11 @@ public:
 
 inline Tokeniser& NewScriptTokeniser( TextInputStream& istream ){
 	return *( new ScriptTokeniser( istream, true, false ) );
+}
+
+/// shader scripts: braces split tokens only at word boundaries, as in the game engines
+inline Tokeniser& NewShaderTokeniser( TextInputStream& istream ){
+	return *( new ScriptTokeniser( istream, true, false, true ) );
 }
 
 inline Tokeniser& NewMapTokeniser( TextInputStream& istream ){

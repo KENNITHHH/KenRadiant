@@ -2255,7 +2255,7 @@ void map_autocaulk_selected(){
 	{	// compile
 		StringOutputStream str( 256 );
 		str << AppPath_get() << "q3map2." << RADIANT_EXECUTABLE
-		    << " -game quake3"
+		    << " -game " << ( string_empty( g_pGameDescription->getKeyValue( "q3map2_type" ) ) ? "quake3" : g_pGameDescription->getKeyValue( "q3map2_type" ) ) // KenRadiant: the game's own shaders decide what is translucent/sky/liquid
 		    << " -fs_basepath " << Quoted( EnginePath_get() )
 		    << " -fs_homepath " << Quoted( g_qeglobals.m_userEnginePath )
 		    << " -fs_game " << gamename_get()

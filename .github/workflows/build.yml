@@ -39,7 +39,7 @@ jobs:
 
     - name: Build
       run: |
-        make MAKEFILE_CONF=msys2-Makefile.conf -j4
+        make MAKEFILE_CONF=msys2-Makefile.conf ASSIMP_INTERNAL=yes -j4
         mkdir -p install/settings
         7z a Windows-${{ matrix.arch }}.zip ./install/*
 #       zip immediately, since .bla files and empty folders get lost somewhere later otherwise
@@ -69,7 +69,7 @@ jobs:
 
     - name: Build
       run: |
-        make CC=gcc-14 CXX=g++-14 CXXFLAGS="-Wno-deprecated-copy" -j4
+        make CC=gcc-14 CXX=g++-14 CXXFLAGS="-Wno-deprecated-copy" ASSIMP_INTERNAL=yes -j4
         ./appimage.sh
         7z a Linux-${{ matrix.arch }}.7z ./NetRadiant-Custom-x86_64.AppImage
 #        7z a Linux-${{ matrix.arch }}.7z ./install/*

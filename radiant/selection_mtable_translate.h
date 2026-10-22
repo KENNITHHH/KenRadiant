@@ -119,6 +119,44 @@ public:
 	}
 };
 
+/// KenRadiant: Unreal-style plane handle, moves only within the plane through the pivot with normal \p m_normal (manipulator space)
+class TranslatePlane : public Manipulatable
+{
+	Vector3 m_start;
+	Vector3 m_normal;
+	Translatable& m_translatable;
+	AABB m_bounds;
+	Vector3 point( const Matrix4& device2manip, const DeviceVector device_point ) const {
+		return point_on_plane( Plane3( m_normal, 0 ), matrix4_full_inverse( device2manip ), device_point );
+	}
+public:
+	TranslatePlane( Translatable& translatable )
+		: m_translatable( translatable ){
+	}
+	void Construct( const Matrix4& device2manip, const DeviceVector device_point, const AABB& bounds, const Vector3& transform_origin ) override {
+		m_start = point( device2manip, device_point );
+		m_bounds = bounds;
+	}
+	void Transform( const Matrix4& manip2object, const Matrix4& device2manip, const DeviceVector device_point ) override {
+		Vector3 current = point( device2manip, device_point ) - m_start;
+		if( !std::isfinite( current[0] ) || !std::isfinite( current[1] ) || !std::isfinite( current[2] ) || !std::isfinite( m_start[0] ) )
+			return; // plane seen edge-on
+		current -= m_normal * vector3_dot( current, m_normal );
+
+		current = translation_local2object( current, manip2object );
+
+		if( g_modifiers.ctrl() )
+			aabb_snap_translation( current, m_bounds );
+		else
+			vector3_snap( current, GetSnapGridSize() );
+
+		m_translatable.translate( current );
+	}
+	void SetNormal( const Vector3& normal ){
+		m_normal = normal;
+	}
+};
+
 class TranslateFree : public Manipulatable
 {
 	Vector3 m_start;

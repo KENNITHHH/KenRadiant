@@ -49,6 +49,8 @@
 #include <QMenuBar>
 #include <QApplication>
 #include <QToolBar>
+#include <QSlider>
+#include <QLabel>
 #include <QStatusBar>
 #include <QBoxLayout>
 #include <QCloseEvent>
@@ -903,6 +905,7 @@ void create_edit_menu( QMenuBar *menubar ){
 	create_menu_item_with_mnemonic( menu, "&Paste", "Paste" );
 	create_menu_item_with_mnemonic( menu, "P&aste To Camera", "PasteToCamera" );
 	create_menu_item_with_mnemonic( menu, "Move To Camera", "MoveToCamera" );
+	create_menu_item_with_mnemonic( menu, "Drop To Floor", "DropSelectionToFloor" ); // KenRadiant
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "&Duplicate", "CloneSelection" );
 	create_menu_item_with_mnemonic( menu, "Duplicate, make uni&que", "CloneSelectionAndMakeUnique" );
@@ -1386,6 +1389,17 @@ void Manipulators_constructToolbar( QToolBar* toolbar ){
 extern CopiedString g_toolbarHiddenButtons;
 
 #include <QSvgGenerator>
+static QSlider *g_fovSlider = nullptr;
+static QLabel *g_fovLabel = nullptr;
+static void FovSlider_sync( float fov ){
+	const int value = int( fov + 0.5f );
+	if( g_fovSlider != nullptr && g_fovSlider->value() != value ){
+		const QSignalBlocker blocker( g_fovSlider );
+		g_fovSlider->setValue( value );
+		g_fovLabel->setText( QString( " FOV %1 " ).arg( value ) );
+	}
+}
+
 void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 	QSvgGenerator dummy; // reference symbol, so that Qt5Svg.dll required dependency is explicit, also install-dlls-msys2-mingw.sh will find it
 
@@ -1441,6 +1455,31 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 
 	toolbar_append_separator( toolbar );
 	toolbar_append_button( toolbar, "Refresh Models", "refresh_models.png", "RefreshReferences" );
+
+	{	// KenRadiant: camera field of view, right end of the toolbar (also in Preferences > Camera)
+		auto *spacer = new QWidget;
+		spacer->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Preferred );
+		toolbar->addWidget( spacer );
+
+		auto *label = new QLabel;
+		auto *slider = new QSlider( Qt::Orientation::Horizontal );
+		slider->setRange( 50, 140 );
+		slider->setFixedWidth( 140 );
+		slider->setToolTip( "3D view field of view (degrees)" );
+		const auto setLabel = [label]( int fov ){ label->setText( QString( " FOV %1 " ).arg( fov ) ); };
+		slider->setValue( std::clamp( int( Camera_getFieldOfView() + 0.5f ), 50, 140 ) );
+		setLabel( slider->value() );
+		QObject::connect( slider, &QSlider::valueChanged, [setLabel]( int fov ){
+			setLabel( fov );
+			Camera_setFieldOfView( fov );
+		} );
+		// keep the slider in sync with the preferences dialog / saved setting
+		g_fovSlider = slider;
+		g_fovLabel = label;
+		Camera_addFieldOfViewObserver( makeCallbackF( FovSlider_sync ) );
+		toolbar->addWidget( label );
+		toolbar->addWidget( slider );
+	}
 }
 
 

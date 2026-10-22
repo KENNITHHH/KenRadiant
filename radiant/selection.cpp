@@ -1033,6 +1033,7 @@ private:
 
 // state
 	bool m_undo_begun;
+	bool m_clone_on_move = false; // KenRadiant: Alt+drag on the gizmo duplicates the selection when the drag starts
 	EMode m_mode;
 	EComponentMode m_componentmode;
 
@@ -1302,6 +1303,8 @@ public:
 				if( m_pivot_moving ){
 					m_manipulator->GetManipulatable()->Construct( device2manip, device_point, m_bounds, GetPivot2World().t().vec3() );
 					m_undo_begun = false;
+					m_clone_on_move = g_modifiers == c_modifierAlt && Mode() == ePrimitive
+					               && ( ManipulatorMode() == eTranslate || ManipulatorMode() == eRotate || ManipulatorMode() == eScale );
 				}
 				else if( movingOrigin ){
 					m_transformOrigin_manipulator.GetManipulatable()->Construct( device2manip, device_point, m_bounds, GetPivot2World().t().vec3() );
@@ -1751,6 +1754,11 @@ public:
 			if ( !m_undo_begun ) {
 				m_undo_begun = true;
 				GlobalUndoSystem().start();
+				if( m_clone_on_move ){ // Unreal-style: the copy is what moves, the original stays
+					m_clone_on_move = false;
+					extern void Scene_Clone_Selected();
+					Scene_Clone_Selected();
+				}
 			}
 
 			Matrix4 device2manip;

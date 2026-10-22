@@ -1283,6 +1283,18 @@ static void camera_zoom( CamWnd& camwnd, float x, float y, float step ){
 static void wheelmove_scroll( const QWheelEvent& event, CamWnd& camwnd ){
 	camera_t& cam = camwnd.getCamera();
 
+	// KenRadiant: like Unreal, the wheel changes fly speed while the right mouse button is held in fly mode
+	if( camwnd.m_bFreeMove && ( event.buttons() & Qt::MouseButton::RightButton ) && !cam.m_orbit ){
+		const int delta = event.angleDelta().y() != 0 ? event.angleDelta().y() : event.angleDelta().x();
+		if( delta != 0 ){
+			int& speed = g_camwindow_globals_private.m_nMoveSpeed;
+			speed = std::clamp( static_cast<int>( delta > 0 ? speed * 1.25f + 0.5f : speed / 1.25f + 0.5f ), CAM_MIN_SPEED, CAM_MAX_SPEED );
+			globalOutputStream() << "Camera Move Speed: ";
+			globalWarningStream() << speed << '\n';
+		}
+		return;
+	}
+
 	const int angleDelta = ( std::abs( event.angleDelta().y() ) > std::abs( event.angleDelta().x() ) ) // normal y() goes to x() with ALT pressed
 	                      ? event.angleDelta().y()
 						  : event.angleDelta().x();
@@ -2258,6 +2270,7 @@ void Camera_ToggleFarClip(){
 
 void CamWnd_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_toggle_button( toolbar, "Cubic clip the camera view", "view_cubicclipping.png", "ToggleCubicClip" );
+	toolbar_append_button( toolbar, "Find: fly the camera to the selection (Tab)", "kr_find.png", "CameraFocusOnSelected" ); // KenRadiant
 }
 
 void CamWnd_registerShortcuts(){
@@ -2387,11 +2400,25 @@ void CamMSAAExport( const IntImportCallback& importer ){
 }
 typedef FreeCaller<void(const IntImportCallback&), CamMSAAExport> MSAAExportCaller;
 
+static std::vector<Callback<void(float)>> g_fieldOfViewObservers; // KenRadiant: toolbar FOV slider
 void fieldOfViewImport( float value ){
 	camera_t::fieldOfView = value;
 	if( g_camwnd ){
 		Camera_updateProjection( g_camwnd->getCamera() );
+		CamWnd_Update( *g_camwnd );
 	}
+	for( const auto& observer : g_fieldOfViewObservers )
+		observer( value );
+}
+float Camera_getFieldOfView(){
+	return camera_t::fieldOfView;
+}
+void Camera_setFieldOfView( float fov ){
+	if( fov != camera_t::fieldOfView )
+		fieldOfViewImport( fov );
+}
+void Camera_addFieldOfViewObserver( const Callback<void(float)>& observer ){
+	g_fieldOfViewObservers.push_back( observer );
 }
 typedef FreeCaller<void(float), fieldOfViewImport> fieldOfViewImportCaller;
 
@@ -2485,7 +2512,7 @@ void CameraSpeed_decrease(){
 
 /// \brief Initialisation for things that have the same lifespan as this module.
 void CamWnd_Construct(){
-	GlobalCommands_insert( "CenterView", makeCallbackF( GlobalCamera_ResetAngles ), QKeySequence( "End" ) );
+	GlobalCommands_insert( "CenterView", makeCallbackF( GlobalCamera_ResetAngles ), QKeySequence( "Shift+End" ) ); // KenRadiant: End drops the selection to the floor (Unreal)
 	GlobalCommands_insert( "CameraFocusOnSelected", makeCallbackF( GlobalCamera_FocusOnSelected ), QKeySequence( "Tab" ) );
 
 	GlobalToggles_insert( "ToggleCubicClip", makeCallbackF( Camera_ToggleFarClip ), ToggleItem::AddCallbackCaller( g_getfarclip_item ), QKeySequence( "Ctrl+\\" ) );

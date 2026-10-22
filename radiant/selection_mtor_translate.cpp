@@ -32,6 +32,7 @@ class TranslateManipulatorImpl final : public TranslateManipulator, public Manip
 {
 	TranslateFree m_free;
 	TranslateAxis m_axis;
+	TranslatePlane m_plane;
 	RenderableLine m_arrow_x;
 	RenderableLine m_arrow_y;
 	RenderableLine m_arrow_z;
@@ -43,11 +44,16 @@ class TranslateManipulatorImpl final : public TranslateManipulator, public Manip
 	SelectableBool m_selectable_y;
 	SelectableBool m_selectable_z;
 	SelectableBool m_selectable_screen;
+	// KenRadiant: Unreal-style plane handles; index = plane normal axis (0: YZ, 1: XZ, 2: XY)
+	RenderableQuad m_quad_plane[3];
+	RenderableArrowHead m_fill_plane[3]{ RenderableArrowHead( 12 ), RenderableArrowHead( 12 ), RenderableArrowHead( 12 ) }; // both windings
+	SelectableBool m_selectable_plane[3];
 	Pivot2World m_pivot;
 public:
 	TranslateManipulatorImpl( Translatable& translatable, std::size_t segments, float length ) :
 		m_free( translatable ),
 		m_axis( translatable ),
+		m_plane( translatable ),
 		m_arrow_head_x( 3 * 2 * ( segments << 3 ) ),
 		m_arrow_head_y( 3 * 2 * ( segments << 3 ) ),
 		m_arrow_head_z( 3 * 2 * ( segments << 3 ) ){
@@ -59,6 +65,26 @@ public:
 		draw_arrowhead( segments, length, m_arrow_head_z.m_vertices.data(), TripleRemapZXY<Vertex3f>(), TripleRemapZXY<Normal3f>() );
 
 		draw_quad( 16, m_quad_screen.m_quad );
+
+		const float a = length * 0.3f, b = length * 0.55f;
+		for( int n = 0; n < 3; ++n ){
+			const int u = ( n + 1 ) % 3, v = ( n + 2 ) % 3;
+			const float uv[4][2] = { { a, a }, { b, a }, { b, b }, { a, b } };
+			for( int i = 0; i < 4; ++i ){
+				Vector3 p( 0, 0, 0 );
+				p[u] = uv[i][0];
+				p[v] = uv[i][1];
+				m_quad_plane[n].m_quad[i].vertex = vertex3f_for_vector3( p );
+			}
+			// filled square, two triangles per side
+			const int order[12] = { 0, 1, 2, 0, 2, 3,   0, 2, 1, 0, 3, 2 };
+			for( int i = 0; i < 12; ++i ){
+				m_fill_plane[n].m_vertices[i].vertex = m_quad_plane[n].m_quad[order[i]].vertex;
+				Vector3 normal( 0, 0, 0 );
+				normal[n] = i < 6 ? 1 : -1;
+				m_fill_plane[n].m_vertices[i].normal = normal3f_for_vector3( normal );
+			}
+		}
 	}
 
 	void UpdateColours(){
@@ -69,6 +95,17 @@ public:
 		m_arrow_z.setColour( colourSelected( g_colour_z, m_selectable_z.isSelected() ) );
 		m_arrow_head_z.setColour( colourSelected( g_colour_z, m_selectable_z.isSelected() ) );
 		m_quad_screen.setColour( colourSelected( g_colour_screen, m_selectable_screen.isSelected() ) );
+		const Colour4b* plane_colours[3] = { &g_colour_x, &g_colour_y, &g_colour_z };
+		for( int n = 0; n < 3; ++n ){
+			const Colour4b colour = colourSelected( *plane_colours[n], m_selectable_plane[n].isSelected() );
+			m_quad_plane[n].setColour( colour );
+			m_fill_plane[n].setColour( Colour4b( colour.r, colour.g, colour.b, 96 ) );
+		}
+	}
+
+	/// plane handle is usable unless the plane is seen (nearly) edge-on
+	bool manipulator_show_plane( const Pivot2World& pivot, const Vector3& normal ){
+		return std::fabs( vector3_dot( pivot.m_axis_screen, normal ) ) > 0.2;
 	}
 
 	bool manipulator_show_axis( const Pivot2World& pivot, const Vector3& axis ){
@@ -105,6 +142,13 @@ public:
 
 		renderer.addRenderable( m_quad_screen, m_pivot.m_viewplaneSpace );
 
+		if( manipulator_show_plane( m_pivot, x ) )
+			renderer.addRenderable( m_quad_plane[0], m_pivot.m_worldSpace );
+		if( manipulator_show_plane( m_pivot, y ) )
+			renderer.addRenderable( m_quad_plane[1], m_pivot.m_worldSpace );
+		if( manipulator_show_plane( m_pivot, z ) )
+			renderer.addRenderable( m_quad_plane[2], m_pivot.m_worldSpace );
+
 		renderer.SetState( m_state_fill, Renderer::eWireframeOnly );
 		renderer.SetState( m_state_fill, Renderer::eFullMaterials );
 
@@ -117,9 +161,12 @@ public:
 		if ( show_z ) {
 			renderer.addRenderable( m_arrow_head_z, m_pivot.m_worldSpace );
 		}
+		for( int n = 0; n < 3; ++n )
+			if( manipulator_show_plane( m_pivot, n == 0 ? x : n == 1 ? y : z ) )
+				renderer.addRenderable( m_fill_plane[n], m_pivot.m_worldSpace );
 	}
 	void testSelect( const View& view, const Matrix4& pivot2world ) override {
-		if( g_modifiers != c_modifierNone )
+		if( g_modifiers != c_modifierNone && g_modifiers != c_modifierAlt ) // KenRadiant: Alt+drag duplicates
 			return selectionChange( nullptr );
 
 		m_pivot.update( pivot2world, view.GetModelview(), view.GetProjection(), view.GetViewport() );
@@ -175,6 +222,15 @@ public:
 				Triangles_BestPoint( local2view, EClipCull::CW, m_arrow_head_z.m_vertices.begin(), m_arrow_head_z.m_vertices.end(), best );
 				selector.addSelectable( best, &m_selectable_z );
 			}
+
+			const Vector3 normals[3] = { x, y, z };
+			for( int n = 0; n < 3; ++n ){
+				if( manipulator_show_plane( m_pivot, normals[n] ) ){
+					SelectionIntersection best;
+					Quad_BestPoint( local2view, EClipCull::None, m_quad_plane[n].m_quad, best );
+					selector.addSelectable( best, &m_selectable_plane[n] );
+				}
+			}
 		}
 
 		selectionChange( selector );
@@ -193,10 +249,13 @@ public:
 			m_axis.SetAxis( g_vector3_axis_z );
 			return &m_axis;
 		}
-		else
-		{
-			return &m_free;
+		for( int n = 0; n < 3; ++n ){
+			if ( m_selectable_plane[n].isSelected() ) {
+				m_plane.SetNormal( g_vector3_axes[n] );
+				return &m_plane;
+			}
 		}
+		return &m_free;
 	}
 
 	void setSelected( bool select ) override {
@@ -204,12 +263,17 @@ public:
 		m_selectable_y.setSelected( select );
 		m_selectable_z.setSelected( select );
 		m_selectable_screen.setSelected( select );
+		for( auto& p : m_selectable_plane )
+			p.setSelected( select );
 	}
 	bool isSelected() const override {
 		return m_selectable_x.isSelected()
 		    || m_selectable_y.isSelected()
 		    || m_selectable_z.isSelected()
-		    || m_selectable_screen.isSelected();
+		    || m_selectable_screen.isSelected()
+		    || m_selectable_plane[0].isSelected()
+		    || m_selectable_plane[1].isSelected()
+		    || m_selectable_plane[2].isSelected();
 	}
 };
 

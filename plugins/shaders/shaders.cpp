@@ -1522,7 +1522,7 @@ void LoadShaderFile( const char* filename ){
 	if ( file != 0 ) {
 		globalOutputStream() << "Parsing shaderfile " << filename << '\n';
 
-		Tokeniser& tokeniser = GlobalScriptLibrary().m_pfnNewScriptTokeniser( file->getInputStream() );
+		Tokeniser& tokeniser = GlobalScriptLibrary().m_pfnNewShaderTokeniser( file->getInputStream() );
 
 		ParseShaderFile( tokeniser, filename );
 

@@ -28,6 +28,7 @@
 #include "iundo.h"
 
 #include <vector>
+#include <limits>
 
 #include "stream/stringstream.h"
 #include "signal/isignal.h"
@@ -40,6 +41,7 @@
 #include "gtkutil/clipboard.h"
 #include "brushmanip.h"
 #include "brush.h"
+#include "brushnode.h"
 #include "patch.h"
 #include "patchmanip.h"
 #include "patchdialog.h"
@@ -1398,6 +1400,72 @@ void Selection_Clone_MakeUnique(){
 	}
 }
 
+/// KenRadiant: Unreal's End key - move the selection straight down until it rests on the brushes below it
+void Selection_DropToFloor(){
+	if ( GlobalSelectionSystem().Mode() != SelectionSystem::ePrimitive || GlobalSelectionSystem().countSelected() == 0 )
+		return;
+	const AABB bounds = GlobalSelectionSystem().getBoundsSelected();
+	if( !aabb_valid( bounds ) )
+		return;
+	const float bottom = bounds.origin.z() - bounds.extents.z();
+	// footprint samples: centre plus the corners pulled in a little, so the selection rests on the highest point below it
+	std::vector<Vector2> samples{ Vector2( bounds.origin.x(), bounds.origin.y() ) };
+	for( const float sx : { -0.95f, 0.95f } )
+		for( const float sy : { -0.95f, 0.95f } )
+			samples.emplace_back( bounds.origin.x() + sx * bounds.extents.x(), bounds.origin.y() + sy * bounds.extents.y() );
+
+	class FloorWalker : public scene::Graph::Walker
+	{
+		const std::vector<Vector2>& m_samples;
+		const float m_bottom;
+	public:
+		mutable float m_best = -std::numeric_limits<float>::max();
+		FloorWalker( const std::vector<Vector2>& samples, float bottom ) : m_samples( samples ), m_bottom( bottom ){}
+		bool pre( const scene::Path& path, scene::Instance& instance ) const override {
+			if( !path.top().get().visible() )
+				return false;
+			if( Selectable* selectable = Instance_getSelectable( instance ); selectable != nullptr && selectable->isSelected() )
+				return false; // a selected entity with its brushes, or a selected brush
+			Brush* brush = Node_getBrush( path.top() );
+			if( brush == nullptr )
+				return true;
+			for( const Vector2& xy : m_samples ){
+				// vertical line through xy: interval of z inside every face plane (n.p <= d)
+				float top = std::numeric_limits<float>::max(), low = -std::numeric_limits<float>::max();
+				bool inside = true;
+				for( Brush::const_iterator f = brush->begin(); f != brush->end() && inside; ++f ){
+					const Face& face = *( *f );
+					if( !face.contributes() )
+						continue;
+					const Plane3& plane = face.plane3();
+					const double rest = plane.dist() - plane.normal().x() * xy.x() - plane.normal().y() * xy.y();
+					if( plane.normal().z() > 1e-6 )
+						top = std::min( top, float( rest / plane.normal().z() ) );
+					else if( plane.normal().z() < -1e-6 )
+						low = std::max( low, float( rest / plane.normal().z() ) );
+					else if( rest < 0 )
+						inside = false;
+				}
+				if( inside && top >= low && top < std::numeric_limits<float>::max() && top <= m_bottom + 0.1f )
+					m_best = std::max( m_best, top );
+			}
+			return true;
+		}
+	};
+	FloorWalker walker( samples, bottom );
+	GlobalSceneGraph().traverse( walker );
+
+	if( walker.m_best == -std::numeric_limits<float>::max() ){
+		globalWarningStream() << "Drop to floor: no brush below the selection\n";
+		return;
+	}
+	const float move = walker.m_best - bottom;
+	if( std::fabs( move ) < 1e-3f )
+		return;
+	UndoableCommand undo( "dropToFloor" );
+	GlobalSelectionSystem().translateSelected( Vector3( 0, 0, move ) );
+}
+
 // called when the escape key is used (either on the main window or on an inspector)
 void Selection_Deselect(){
 	if ( GlobalSelectionSystem().Mode() == SelectionSystem::eComponent ) {
@@ -1864,6 +1932,7 @@ void Select_registerCommands(){
 	GlobalCommands_insert( "PasteToCamera", makeCallbackF( PasteToCamera ), QKeySequence( "Shift+V" ) );
 	GlobalCommands_insert( "MoveToCamera", makeCallbackF( MoveToCamera ), QKeySequence( "Ctrl+Shift+V" ) );
 	GlobalCommands_insert( "CloneSelection", makeCallbackF( Selection_Clone ), QKeySequence( "Space" ) );
+	GlobalCommands_insert( "DropSelectionToFloor", makeCallbackF( Selection_DropToFloor ), QKeySequence( "End" ) ); // KenRadiant
 	GlobalCommands_insert( "CloneSelectionAndMakeUnique", makeCallbackF( Selection_Clone_MakeUnique ), QKeySequence( "Shift+Space" ) );
 	GlobalCommands_insert( "DeleteSelection3", makeCallbackF( deleteSelection ), QKeySequence( "Delete" ) );
 	GlobalCommands_insert( "DeleteSelection2", makeCallbackF( deleteSelection ), QKeySequence( "Backspace" ) );

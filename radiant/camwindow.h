@@ -20,6 +20,7 @@
  */
 
 #pragma once
+#include "generic/callback.h"
 
 #include "generic/vector.h"
 #include "signal/signalfwd.h"
@@ -49,6 +50,10 @@ const Vector3& Camera_getOrigin( CamWnd& camwnd );
 void Camera_setOrigin( CamWnd& camwnd, const Vector3& origin );
 
 void GlobalCamera_FocusOnSelected();
+// KenRadiant
+float Camera_getFieldOfView();
+void Camera_setFieldOfView( float fov );
+void Camera_addFieldOfViewObserver( const Callback<void(float)>& observer );
 
 enum
 {

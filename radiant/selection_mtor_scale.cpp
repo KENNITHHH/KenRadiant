@@ -72,7 +72,7 @@ public:
 		renderer.addRenderable( m_quad_screen, m_pivot.m_viewpointSpace );
 	}
 	void testSelect( const View& view, const Matrix4& pivot2world ) override {
-		if( g_modifiers != c_modifierNone )
+		if( g_modifiers != c_modifierNone && g_modifiers != c_modifierAlt ) // KenRadiant: Alt+drag duplicates
 			return selectionChange( nullptr );
 
 		m_pivot.update( pivot2world, view.GetModelview(), view.GetProjection(), view.GetViewport() );

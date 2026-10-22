@@ -35,6 +35,7 @@ public:
 		m_scriptlibrary.m_pfnNewScriptTokeniser = &NewScriptTokeniser;
 		m_scriptlibrary.m_pfnNewMapTokeniser = &NewMapTokeniser;
 		m_scriptlibrary.m_pfnNewSimpleTokeniser = &NewSimpleTokeniser;
+		m_scriptlibrary.m_pfnNewShaderTokeniser = &NewShaderTokeniser;
 		m_scriptlibrary.m_pfnNewSimpleTokenWriter = &NewSimpleTokenWriter;
 	}
 	_QERScripLibTable* getTable(){

@@ -629,6 +629,30 @@ void TextureBrowser_show(){
 		GroupDialog_showPage( g_page_textures );
 }
 
+#include "iselection.h"
+#include "scenelib.h"
+#include "brushmanip.h"
+#include "patchmanip.h"
+void TextureBrowser_ShowDirectoryOfShader( TextureBrowser& texBro, const char* shader );
+/// KenRadiant (Unreal's "browse to asset", Ctrl+B): show the selected face's / brush's / patch's texture in the texture browser
+void TextureBrowser_browseToSelected(){
+	CopiedString name;
+	if( GlobalSelectionSystem().Mode() == SelectionSystem::eComponent )
+		Scene_BrushGetShader_Component_Selected( GlobalSceneGraph(), name );
+	if( name.empty() )
+		Scene_BrushGetShader_Selected( GlobalSceneGraph(), name );
+	if( name.empty() )
+		Scene_PatchGetShader_Selected( GlobalSceneGraph(), name );
+	if( name.empty() ){
+		globalWarningStream() << "Browse to texture: select a face, brush or patch first\n";
+		return;
+	}
+	TextureBrowser_show();
+	TextureBrowser_SetSelectedShader( g_TexBro, name.c_str() );
+	if( !TextureBrowser::wads )
+		TextureBrowser_ShowDirectoryOfShader( g_TexBro, name.c_str() );
+}
+
 void TextureBrowser_updateTitle(){
 	GroupDialog_updatePageTitle( g_page_textures );
 }
@@ -2121,6 +2145,7 @@ void TextureBrowser_Construct(){
 	GlobalToggles_insert( "ShowInUse", makeCallbackF( TextureBrowser_ToggleHideUnused ), ToggleItem::AddCallbackCaller( g_TexBro.m_hideunused_item ), QKeySequence( "U" ) );
 	GlobalCommands_insert( "ShowAllTextures", makeCallbackF( TextureBrowser_showAll ), QKeySequence( "Ctrl+A" ) );
 	GlobalCommands_insert( "ToggleTextures", makeCallbackF( TextureBrowser_toggleShow ), QKeySequence( "T" ) );
+	GlobalCommands_insert( "BrowseToSelectedTexture", makeCallbackF( TextureBrowser_browseToSelected ), QKeySequence( "Ctrl+B" ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleShowShaders", makeCallbackF( TextureBrowser_ToggleShowShaders ), ToggleItem::AddCallbackCaller( g_TexBro.m_showshaders_item ) );
 	GlobalToggles_insert( "ToggleShowTextures", makeCallbackF( TextureBrowser_ToggleShowTextures ), ToggleItem::AddCallbackCaller( g_TexBro.m_showtextures_item ) );
 	GlobalToggles_insert( "ToggleShowShaderlistOnly", makeCallbackF( TextureBrowser_ToggleShowShaderListOnly ), ToggleItem::AddCallbackCaller( g_TexBro.m_showshaderlistonly_item ) );
