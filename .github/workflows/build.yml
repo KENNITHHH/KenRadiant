@@ -85,6 +85,8 @@ jobs:
     if: github.ref == 'refs/heads/master' && ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' )
     needs: [windows-msys, linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create/update the "Latest Build" release (forks default to a read-only token)
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -92,8 +94,8 @@ jobs:
       - name: Create binary archives
         shell: bash
         run: |
-          mv Windows-x86_64/Windows-x86_64.zip netradiant-custom-$(date +%Y%m%d)-windows-x86_64.zip
-          mv Linux-x86_64/Linux-x86_64.7z netradiant-custom-$(date +%Y%m%d)-linux-x86_64.7z
+          mv Windows-x86_64/Windows-x86_64.zip kenradiant-$(date +%Y%m%d)-windows-x86_64.zip
+          mv Linux-x86_64/Linux-x86_64.7z kenradiant-$(date +%Y%m%d)-linux-x86_64.7z
 #         note: 7z dir/* doesn't match .bla (hidden) file in linux under dir/ but matches in subfolders  # or doesn't match there now too?
 
       - name: Get current date
@@ -106,7 +108,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           automatic_release_tag: ${{ env.MY_DATE }}
           prerelease: false
-          title: Latest Build
+          title: KenRadiant Latest Build
           files: |
             *.zip
             *.7z
