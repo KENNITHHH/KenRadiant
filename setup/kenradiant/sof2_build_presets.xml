@@ -1,0 +1,33 @@
+  <!-- KenRadiant presets: this q3map2 packs lightmaps per shader (MAX_SHADERS) and merges drawsurfaces after -light -->
+  <build name="KenRadiant: (final) BSP -meta, VIS, LIGHT -fast -super 2 -filter -bounce 2">
+  <command>[q3map2] -meta "[MapFile]"</command>
+  <command>[q3map2] -vis -saveprt "[MapFile]"</command>
+  <command>[q3map2] -light -fast -super 2 -filter -bounce 2 "[MapFile]"</command>
+  </build>
+
+  <build name="KenRadiant: (final, high quality) BSP -meta, VIS, LIGHT -super 2 -filter -bounce 4 -dirty">
+  <command>[q3map2] -meta "[MapFile]"</command>
+  <command>[q3map2] -vis -saveprt "[MapFile]"</command>
+  <command>[q3map2] -light -super 2 -filter -bounce 4 -dirty "[MapFile]"</command>
+  </build>
+
+  <build name="KenRadiant: (quick test) BSP -meta, VIS -fast, LIGHT -faster">
+  <command>[q3map2] -meta "[MapFile]"</command>
+  <command>[q3map2] -vis -saveprt -fast "[MapFile]"</command>
+  <command>[q3map2] -light -faster "[MapFile]"</command>
+  </build>
+
+  <build name="KenRadiant: (final, no surface merge) BSP -meta, VIS, LIGHT -fast -super 2 -filter -nomerge">
+  <command>[q3map2] -meta "[MapFile]"</command>
+  <command>[q3map2] -vis -saveprt "[MapFile]"</command>
+  <command>[q3map2] -light -fast -super 2 -filter -nomerge "[MapFile]"</command>
+  </build>
+
+  <build name="KenRadiant: decompile this map's .bsp to &lt;map&gt;_converted.map (exact texture alignment)">
+  <command>[q3map2] -convert -format map -readbsp "[MapFile]"</command>
+  </build>
+
+  <build name="KenRadiant: show q3map2 SOF2 features (-sof2caps)">
+  <command>[q3map2] -sof2caps</command>
+  </build>
+

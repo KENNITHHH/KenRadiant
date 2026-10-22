@@ -42,3 +42,8 @@ void DoCommandListDlg();
 
 void LoadCommandMap( const char* path );
 void SaveCommandMap( const char* path );
+
+/* KenRadiant: swap W<->Z and A<->Q in all shortcuts (QWERTY <-> AZERTY) */
+extern bool g_keyboard_azerty;
+void Shortcuts_toggleAzerty();
+

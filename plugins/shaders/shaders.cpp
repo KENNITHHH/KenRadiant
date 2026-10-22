@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <map>
 #include <list>
+#include <vector>
 
 #include "ifilesystem.h"
 #include "ishaders.h"
@@ -275,6 +276,7 @@ public:
 	ShaderParameters m_params;
 
 	TextureExpression m_textureName;
+	TextureExpression m_firstStageImage; // KenRadiant: first map/clampMap/animMap image, editor-image fallback
 	TextureExpression m_skyBox;
 	TextureExpression m_diffuse;
 	TextureExpression m_bump;
@@ -952,6 +954,37 @@ public:
 	void realise(){
 		m_pTexture = evaluateTexture( m_template.m_textureName, m_template.m_params, m_args );
 
+		/* KenRadiant: the editor image didn't load (missing qer_editorimage target, case mismatch in a pk3, ...):
+		   try what q3map2 / the game would show before giving up */
+		if ( m_pTexture->texture_number == 0 && !IsDefault() ) {
+			std::vector<CopiedString> candidates;
+			const auto add = [&candidates]( const char* name ){
+				if ( !string_empty( name ) ) {
+					candidates.emplace_back( name );
+					CopiedString lower( name );
+					string_to_lowercase( const_cast<char*>( lower.c_str() ) );
+					if ( !string_equal( lower.c_str(), name ) )
+						candidates.emplace_back( lower );
+				}
+			};
+			add( m_template.m_firstStageImage.c_str() );
+			add( m_template.getName() );
+			if ( !m_template.m_skyBox.empty() )
+				add( StringStream<64>( m_template.m_skyBox, "_ft" ) );
+			add( m_template.m_textureName.c_str() ); // lower-case retry of the original
+			for ( const CopiedString& name : candidates ) {
+				if ( string_equal( name.c_str(), m_template.m_textureName.c_str() ) )
+					continue;
+				qtexture_t* tex = evaluateTexture( TextureExpression( name.c_str() ), m_template.m_params, m_args );
+				if ( tex->texture_number != 0 ) {
+					GlobalTexturesCache().release( m_pTexture );
+					m_pTexture = tex;
+					break;
+				}
+				GlobalTexturesCache().release( tex );
+			}
+		}
+
 		if ( m_pTexture->texture_number == 0 ) {
 			m_notfound = m_pTexture;
 
@@ -1325,6 +1358,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 
 	/* no qer_editorimage: fall back to the first stage image (what q3map2 and the game show),
 	   unless an image with the shader's own name exists - that is what stock radiant used */
+	m_firstStageImage = firstStageImage.c_str();
 	if ( !hasEditorImage && !firstStageImage.empty() ) {
 		const auto fileExists = []( const char* path ){
 			if ( ArchiveFile* file = GlobalFileSystem().openFile( path ) ) {

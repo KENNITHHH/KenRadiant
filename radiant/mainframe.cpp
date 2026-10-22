@@ -78,6 +78,7 @@
 #include "camwindow.h"
 #include "csg.h"
 #include "commands.h"
+#include "gtkutil/widget.h"
 #include "console.h"
 #include "entity.h"
 #include "entityinspector.h"
@@ -924,6 +925,7 @@ void create_edit_menu( QMenuBar *menubar ){
 
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "&Shortcuts...", "Shortcuts" );
+	create_check_menu_item_with_mnemonic( menu, "AZERTY Keyboard (ZQSD)", "KeyboardAzerty" );
 	create_menu_item_with_mnemonic( menu, "Pre&ferences...", "Preferences" );
 }
 
@@ -2065,6 +2067,13 @@ void FocusAllViews(){
 #include "preferencesystem.h"
 #include "stringio.h"
 
+/* KenRadiant: QWERTY/AZERTY toggle (Edit menu) */
+ToggleItem g_keyboardAzertyItem{ BoolExportCaller( g_keyboard_azerty ) };
+static void KeyboardAzerty_toggle(){
+	Shortcuts_toggleAzerty();
+	g_keyboardAzertyItem.update();
+}
+
 void MainFrame_Construct(){
 	GlobalCommands_insert( "OpenManual", makeCallbackF( OpenHelpURL ), QKeySequence( "F1" ) );
 
@@ -2073,6 +2082,11 @@ void MainFrame_Construct(){
 	GlobalCommands_insert( "Exit", makeCallbackF( Exit ) );
 
 	GlobalCommands_insert( "Shortcuts", makeCallbackF( DoCommandListDlg ), QKeySequence( "Ctrl+Shift+P" ) );
+	{
+		GlobalToggles_insert( "KeyboardAzerty", makeCallbackF( KeyboardAzerty_toggle ), ToggleItem::AddCallbackCaller( g_keyboardAzertyItem ) );
+		/* only the check mark is a preference; the swapped keys themselves are saved in shortcuts.ini */
+		GlobalPreferenceSystem().registerPreference( "KeyboardAzerty", BoolImportStringCaller( g_keyboard_azerty ), BoolExportStringCaller( g_keyboard_azerty ) );
+	}
 	GlobalCommands_insert( "Preferences", makeCallbackF( PreferencesDialog_showDialog ), QKeySequence( "P" ) );
 
 	GlobalCommands_insert( "ToggleConsole", makeCallbackF( Console_ToggleShow ), QKeySequence( "O" ) );

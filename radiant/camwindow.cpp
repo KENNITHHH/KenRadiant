@@ -161,7 +161,7 @@ struct camwindow_globals_private_t
 	bool m_bFaceWire = true;
 	bool m_bFaceFill = true;
 	int m_MSAA = 8;
-	bool m_bShowWorkzone = true;
+	bool m_bShowWorkzone = false; // KenRadiant: off by default
 	bool m_bShowSize = true;
 };
 

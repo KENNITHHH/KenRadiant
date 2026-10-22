@@ -266,6 +266,43 @@ static void accelerator_alter( QTreeWidgetItem *item, const QKeySequence acceler
 	}
 }
 
+/* KenRadiant: QWERTY <-> AZERTY. Swaps W<->Z and A<->Q in every shortcut (modifiers kept), so WASD becomes ZQSD and
+   every other binding on those keys follows. Applying it twice restores the original layout. */
+bool g_keyboard_azerty = false;
+
+static int swapAzertyKey( int combo ){
+	const int mods = combo & int( Qt::KeyboardModifierMask );
+	int key = combo & ~int( Qt::KeyboardModifierMask );
+	switch ( key ) {
+	case Qt::Key_W: key = Qt::Key_Z; break;
+	case Qt::Key_Z: key = Qt::Key_W; break;
+	case Qt::Key_A: key = Qt::Key_Q; break;
+	case Qt::Key_Q: key = Qt::Key_A; break;
+	default: break;
+	}
+	return key | mods;
+}
+
+static QKeySequence swapAzertySequence( const QKeySequence& seq ){
+	int k[4] = { 0, 0, 0, 0 };
+	for ( int i = 0; i < seq.count() && i < 4; ++i )
+		k[i] = swapAzertyKey( int( seq[i] ) );
+	return QKeySequence( k[0], k[1], k[2], k[3] );
+}
+
+void Shortcuts_toggleAzerty(){
+	for ( const auto& [name, value] : g_shortcuts )
+		if ( !value.accelerator.isEmpty() )
+			disconnect_accelerator( name.c_str() );
+	for ( auto& [name, value] : g_shortcuts )
+		if ( !value.accelerator.isEmpty() ) {
+			value.accelerator = swapAzertySequence( value.accelerator );
+			connect_accelerator( name.c_str() );
+		}
+	g_keyboard_azerty = !g_keyboard_azerty;
+	globalOutputStream() << "keyboard layout: " << ( g_keyboard_azerty ? "AZERTY (ZQSD)" : "QWERTY (WASD)" ) << '\n';
+}
+
 void accelerator_reset_all_button_clicked( QTreeWidget *tree ){
 	for ( const auto&[name, value] : g_shortcuts ){ // at first disconnect all to avoid conflicts during connecting
 		if( value.accelerator != value.accelerator_default ){ // can just do this for all, but it breaks menu accelerator labels :b

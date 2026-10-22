@@ -1757,6 +1757,22 @@ protected:
 			m_texBro.m_parent->raise();
 		}
 
+		/* KenRadiant: Ctrl + wheel zooms the thumbnails */
+		if ( event->modifiers().testFlag( Qt::KeyboardModifier::ControlModifier ) ) {
+			static const std::size_t steps[] = { 10, 25, 50, 100, 200 }; // the values the TextureScale preference can store
+			const std::size_t cur = m_texBro.m_textureScale;
+			std::size_t next = cur;
+			if ( event->angleDelta().y() > 0 ) {
+				for ( std::size_t s : steps ) if ( s > cur ) { next = s; break; }
+			}
+			else {
+				for ( std::size_t s : steps ) if ( s < cur ) next = s;
+			}
+			if ( next != cur )
+				TextureBrowser_setScale( m_texBro, next );
+			return;
+		}
+
 		const int originy = m_texBro.getOriginY() + std::copysign( m_texBro.m_mouseWheelScrollIncrement, event->angleDelta().y() );
 		m_texBro.setOriginY( originy );
 	}
