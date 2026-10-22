@@ -1672,10 +1672,23 @@ static void ParseShaderFile( const char *filename ){
 				   tools/_hint, _areaportal, _origin, _clusterportal rely on these in stock SOF2 shaders */
 				else if ( striEqual( token, "q3map_hint" ) || striEqual( token, "q3map_areaportal" )
 				       || striEqual( token, "q3map_origin" ) || striEqual( token, "q3map_structural" )
-				       || striEqual( token, "q3map_clusterportal" ) ) {
+				       || striEqual( token, "q3map_clusterportal" ) || striEqual( token, "q3map_nolightmap" )
+				       || striEqual( token, "q3map_alphashadow" ) ) {
 					const char *parm = token + 6; // skip "q3map_"
 					if ( !ApplySurfaceParm( parm, &si.contentFlags, &si.surfaceFlags, &si.compileFlags ) )
 						Sys_FPrintf( SYS_VRB, "%s: no surfaceparm \"%s\" in this game, ignored\n", si.shader.c_str(), parm );
+				}
+
+				/* q3map_lightColor ( r g b ) (Raven, parenthesised linear 0..1 colour) */
+				else if ( striEqual( token, "q3map_lightColor" ) ) {
+					si.color.set( 0 );
+					for ( int i = 0; i < 3; ){
+						if ( !text.GetToken( false ) ) break;
+						if ( strEqual( token, "(" ) || strEqual( token, ")" ) ) continue;
+						si.color[ i++ ] = atof( token );
+					}
+					text.GetToken( false ); // closing ")" (returns false at end of line)
+					if ( vector3_max_component( si.color ) > 0 ) si.color /= vector3_max_component( si.color );
 				}
 
 				/* q3map_material (sof2) */
