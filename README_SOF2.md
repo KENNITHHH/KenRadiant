@@ -29,6 +29,10 @@ How:
 - `-game sof2` now matches Raven's sof2map defaults: `misc_model` entities are kept in the BSP (so `-convert` restores them 1:1), and baked models use the `_bsp` shader variants, **but only when that shader is actually defined**, so custom/converted props never lose their texture. Opt out with `-nokeepmodels` / `-norename`.
 - `q3map_lightColor ( r g b )` (Raven syntax) is parsed. Other Raven `q3map_*` keywords (`q3map_hint`, `q3map_areaportal`, `q3map_origin`, `q3map_nolightmap`, `q3map_alphashadow` …) already worked through ydnar's generic `q3map_<surfaceparm>` fallback.
 
+### Crash fixes
+- assimp LWO loader: out-of-bounds read on `.lwo` files with vertex colour maps (it indexed surfaces with a stale face counter). This crashed `-bsp` on CoD4toSOF2 maps, which ship their vertex-alpha blend layers as `models/cod4/blend/*_layers.lwo`. Found with AddressSanitizer on mp_strike.
+- A model that fails to load is now named in the warning (assimp's own message, e.g. "No meshes remaining", doesn't say which file).
+
 ### Build
 - No glib dependency for q3map2 (directory listing uses `std::filesystem`).
 - GCC 13 build fix.
