@@ -22,6 +22,8 @@
 namespace exactdec
 {
 
+constexpr double c_pi = 3.14159265358979323846;
+
 struct TexDef
 {
 	double shift[2] = { 0, 0 };
@@ -77,7 +79,7 @@ inline void Forward( int sv, int tv, double p, double q, double rotate, const do
 	else if ( rotate == 90 ) { s = 1; c = 0; }
 	else if ( rotate == 180 ) { s = 0; c = -1; }
 	else if ( rotate == 270 ) { s = -1; c = 0; }
-	else { const double a = rotate * ( M_PI / 180.0 ); s = std::sin( a ); c = std::cos( a ); }
+	else { const double a = rotate * ( c_pi / 180.0 ); s = std::sin( a ); c = std::cos( a ); }
 	// vecs[0] = (p,0) on (sv,tv); vecs[1] = (0,q)
 	const double sx = scale[0] ? scale[0] : 1, sy = scale[1] ? scale[1] : 1;
 	m[0][0] = c * p / sx;  m[0][1] = s * p / sx;  // coefficients on (sv, tv)
@@ -126,10 +128,10 @@ inline bool Solve( const Vector3& normal, const std::vector<DoubleVector3>& xyz,
 	const double b0 = ( xt * yy - yt * xy ) / D, b1 = ( yt * xx - xt * xy ) / D;
 
 	// invert: a = (c p, s p)/sx ; b = (-s q, c q)/sy ; prefer sx>0, then sy>0, then smaller rotation
-	const double th = std::atan2( a1 * p, a0 * p ) * ( 180.0 / M_PI );
+	const double th = std::atan2( a1 * p, a0 * p ) * ( 180.0 / c_pi );
 	double bestRot = 0, bestSx = 1, bestSy = 1; int bestKey = 99; double bestRotKey = 1e9;
 	for ( int flip = 0; flip < 2; ++flip ){
-		const double t = th + 180.0 * flip, r = t * ( M_PI / 180.0 );
+		const double t = th + 180.0 * flip, r = t * ( c_pi / 180.0 );
 		const double c = std::cos( r ), s = std::sin( r );
 		const double ka = ( a0 * c + a1 * s ) * p;
 		const double kb = ( -b0 * s + b1 * c ) * q;
