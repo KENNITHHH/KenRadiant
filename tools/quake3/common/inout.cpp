@@ -28,6 +28,7 @@
 
 #include "cmdlib.h"
 #include "inout.h"
+#include <cstring>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <algorithm>
@@ -46,7 +47,6 @@
 #include <libxml/tree.h>
 
 // utf8 conversion
-#include <glib.h>
 
 static socket_t *brdcst_socket;
 
@@ -280,9 +280,8 @@ static void xml_message_flush(){
 	{
 		mesege[mesege_len] = '\0';
 		mesege_len = 0;
-		gchar* utf8 = g_locale_to_utf8( mesege, -1, nullptr, nullptr, nullptr );
-		xmlNodeAddContent( node, (const xmlChar*)utf8 );
-		g_free( utf8 );
+		xmlNodeAddContent( node, (const xmlChar*)mesege ); // compiler output is ASCII
+
 	}
 	char level[2];
 	level[0] = (int)'0' + mesege_flag;

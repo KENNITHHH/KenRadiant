@@ -56,7 +56,22 @@
 #include <cstring>
 #include <cstdlib>
 #include <sys/stat.h>
-#include <glib.h>
+#include <filesystem>
+#include <system_error>
+#include <string>
+#include <vector>
+
+/* directory listing without glib: returns plain file/dir names (UTF-8) */
+static std::vector<std::string> ListDirNames( const char *path ){
+	std::vector<std::string> out;
+	std::error_code ec;
+	for ( std::filesystem::directory_iterator it( std::filesystem::u8path( path ), ec ), end; !ec && it != end; it.increment( ec ) ){
+		const auto u8 = it->path().filename().u8string();
+		out.emplace_back( u8.begin(), u8.end() );
+	}
+	return out;
+}
+
 
 #include "cmdlib.h"
 #include "qstringops.h"
@@ -140,7 +155,7 @@ static void vfsInitPakFile( const char *filename ){
 void vfsInitDirectory( const char *path, const char *pk3ext, const char *pk3dirext ){
 	const auto path_is_forbidden = []( const char *path ){
 		return std::ranges::any_of( g_strForbiddenDirs, [name = path_get_filename_start( path )]( const CopiedString& forbidden ){
-			return matchpattern( name, forbidden.c_str(), TRUE );
+			return matchpattern( name, forbidden.c_str(), true );
 		} );
 	};
 
@@ -158,11 +173,12 @@ void vfsInitDirectory( const char *path, const char *pk3ext, const char *pk3dire
 	const CopiedString pathCleaned = g_strDirs.emplace_back( StringStream( DirectoryCleaned( path ) ) );
 
 	if ( g_bUsePak ) {
-		if ( GDir *dir = g_dir_open( path, 0, nullptr ) ) {
+		if ( const auto names = ListDirNames( path ); !names.empty() ) {
 			std::vector<StringOutputStream> paks;
 
-			while ( const char *name = g_dir_read_name( dir ) )
+			for ( const std::string& nameStr : names )
 			{
+				const char *name = nameStr.c_str();
 				if ( path_is_forbidden( name ) )
 					continue;
 
@@ -173,7 +189,6 @@ void vfsInitDirectory( const char *path, const char *pk3ext, const char *pk3dire
 					g_strDirs.emplace_back( StringStream( pathCleaned, name, '/' ) );
 				}
 			}
-			g_dir_close( dir );
 
 			// sort paks in ascending order
 			// pakFiles are then prepended to the list, reversing the order
@@ -201,17 +216,11 @@ std::vector<CopiedString> vfsListShaderFiles( const char *shaderPath ){
 	};
 	/* search in dirs */
 	for ( const auto& strdir : g_strDirs ){
-		GDir *dir = g_dir_open( StringStream( strdir, shaderPath, '/' ), 0, nullptr );
-
-		if ( dir != nullptr ) {
-			const char* name;
-			while ( ( name = g_dir_read_name( dir ) ) )
-			{
-				if ( path_extension_is( name, "shader" ) ) {
-					insert( name );
-				}
+		for ( const std::string& name : ListDirNames( StringStream( strdir, shaderPath, '/' ) ) )
+		{
+			if ( path_extension_is( name.c_str(), "shader" ) ) {
+				insert( name.c_str() );
 			}
-			g_dir_close( dir );
 		}
 	}
 	/* search in packs */
