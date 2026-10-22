@@ -294,6 +294,10 @@ public:
 	IShader::ECull m_Cull;
 	// KenRadiant: blendFunc of the first stage of a Quake 3 shader, so translucent/additive/multiply shaders look that way in the editor
 	BlendFuncExpression m_q3BlendFunc{ "", "" };
+	// KenRadiant: sun of a sky shader, for the live light preview
+	bool m_hasSun = false;
+	float m_sun[6] = { 1, 1, 1, 0, 0, 90 }; // r g b intensity degrees elevation
+	float m_skyLight = 0;
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -896,6 +900,16 @@ public:
 		ASSERT_MESSAGE( m_refcount == 0, "deleting active shader" );
 	}
 
+	bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const override {
+		if( !m_template.m_hasSun && m_template.m_skyLight == 0 )
+			return false;
+		colour[0] = m_template.m_sun[0]; colour[1] = m_template.m_sun[1]; colour[2] = m_template.m_sun[2];
+		intensity = m_template.m_hasSun ? m_template.m_sun[3] : 0;
+		degrees = m_template.m_sun[4];
+		elevation = m_template.m_sun[5];
+		skyLight = m_template.m_skyLight;
+		return true;
+	}
 // IShaders implementation -----------------
 	void IncRef() override {
 		++m_refcount;
@@ -1326,6 +1340,15 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			else if ( string_equal_nocase( token, "qer_editorimage" ) ) {
 				RETURN_FALSE_IF_FAIL( Tokeniser_parseTextureName( tokeniser, m_textureName ) );
 				hasEditorImage = true;
+			}
+			else if ( string_equal_nocase( token, "q3map_sun" ) || string_equal_nocase( token, "q3map_sunExt" ) ) {
+				bool ok = true;
+				for( float& value : m_sun )
+					ok = ok && Tokeniser_getFloat( tokeniser, value );
+				m_hasSun = ok;
+			}
+			else if ( string_equal_nocase( token, "q3map_skyLight" ) ) {
+				Tokeniser_getFloat( tokeniser, m_skyLight );
 			}
 			else if ( string_equal_nocase( token, "qer_alphafunc" ) ) {
 				const char* alphafunc = tokeniser.getToken();

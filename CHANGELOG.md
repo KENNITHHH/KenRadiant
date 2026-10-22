@@ -3,6 +3,14 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (3)
+### Editor
+- **Live light preview** (Ctrl+L, bulb button, View → Live Light Preview): light entities (`light`, `_color`) and the sky shader's sun
+  (`q3map_sun` / `q3map_sunExt`, `q3map_skyLight`) light the 3D view in real time, with worldspawn `_ambient`. No shadows or bounce - use it for placement and colour, compile for the final look.
+- **Drag & drop models**: drag a model from the Models tab into the 3D view (it lands on the surface under the cursor and follows the mouse) or into a 2D view (top view drops it onto the floor). One Ctrl+Z removes it. Ctrl + left drag still rotates the preview.
+- **KenRadiant toolbar** on its own row, so nothing is hidden: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, FOV.
+- Texture browser zoom goes up to 400 % (Ctrl + wheel: 10, 25, 50, 100, 150, 200, 300, 400 %).
+
 ## Build 2026-10-23 (2)
 ### Editor
 - **Textures / Models tabs** under the camera (regular layouts): the model browser now sits next to the texture browser. **Ctrl + wheel** resizes model cells too.

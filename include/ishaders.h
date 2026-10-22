@@ -125,6 +125,9 @@ public:
 	virtual void forEachLayer( const ShaderLayerCallback& layer ) const = 0;
 
 	virtual qtexture_t* lightFalloffImage() const = 0;
+
+	/// KenRadiant live light preview: q3map_sun / q3map_sunExt ( r g b intensity degrees elevation ) and q3map_skyLight value of a sky shader
+	virtual bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const { return false; }
 };
 
 typedef Callback<void(const char*)> ShaderNameCallback;

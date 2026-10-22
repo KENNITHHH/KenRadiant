@@ -26,6 +26,9 @@
 //
 
 #include "xywindow.h"
+#include "modelwindow.h"
+#include <QMimeData>
+#include <QDragEnterEvent>
 
 #include "debugging/debugging.h"
 
@@ -449,6 +452,42 @@ public:
 			} )
 	{
 		setMouseTracking( true );
+		setAcceptDrops( true ); // KenRadiant: models dragged from the model browser
+	}
+
+	/// grid point under the cursor; the depth axis keeps the camera's height/position
+	Vector3 dropPoint( const QPoint& pos ) const {
+		Vector3 point = m_xywnd.XY_ToPoint( pos.x() * m_scale, pos.y() * m_scale, true );
+		NDIM1NDIM2( m_xywnd.GetViewType() )
+		const int depth = 3 - nDim1 - nDim2;
+		point[depth] = float_snapped( Camera_getOrigin( *g_pParentWnd->GetCamWnd() )[depth], GetSnapGridSize() );
+		return point;
+	}
+	void dragEnterEvent( QDragEnterEvent *event ) override {
+		if( event->mimeData()->hasFormat( c_modelDropMime ) ){
+			event->acceptProposedAction();
+			ModelDrop_begin( event->mimeData()->data( c_modelDropMime ).constData(), dropPoint( event->pos() ) );
+		}
+	}
+	void dragMoveEvent( QDragMoveEvent *event ) override {
+		if( ModelDrop_active() ){
+			event->acceptProposedAction();
+			ModelDrop_move( dropPoint( event->pos() ) );
+		}
+	}
+	void dragLeaveEvent( QDragLeaveEvent *event ) override {
+		ModelDrop_end( false );
+	}
+	void dropEvent( QDropEvent *event ) override {
+		if( ModelDrop_active() ){
+			ModelDrop_move( dropPoint( event->pos() ) );
+			ModelDrop_end( true );
+			event->acceptProposedAction();
+			if( m_xywnd.GetViewType() == XY ){ // top view: put it on the floor below, like Unreal's End
+				extern void Selection_DropToFloor();
+				Selection_DropToFloor();
+			}
+		}
 	}
 
 	~XYGLWidget() override {

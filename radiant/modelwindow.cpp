@@ -56,6 +56,8 @@
 #include <QStandardItemModel>
 #include <QScrollBar>
 #include <QOpenGLWidget>
+#include <QDrag>
+#include <QMimeData>
 
 #include "mainframe.h"
 #include "camwindow.h"
@@ -994,11 +996,21 @@ protected:
 		}
 	}
 
+	QPoint m_dragStart;
+	bool m_dragCandidate = false;
 	void mousePressEvent( QMouseEvent *event ) override {
 		setFocus();
 		const auto press = m_mouse.press( event );
+		m_dragCandidate = false;
 		if( press == MousePresses::Left2x ){
 			mouseDoubleClick();
+		}
+		else if ( press == MousePresses::Left && !event->modifiers().testFlag( Qt::KeyboardModifier::ControlModifier ) ) {
+			// KenRadiant: left drag = drag the model into a view; Ctrl + left drag rotates the preview
+			m_modBro.m_move_amount = 0;
+			m_modBro.testSelect( event->x() * m_scale, event->y() * m_scale );
+			m_dragStart = event->pos();
+			m_dragCandidate = m_modBro.m_currentFolder != nullptr && m_modBro.m_currentModelId >= 0;
 		}
 		else if ( press == MousePresses::Left || press == MousePresses::Right ) {
 			m_modBro.tracking_MouseDown();
@@ -1006,6 +1018,21 @@ protected:
 				m_modBro.testSelect( event->x() * m_scale, event->y() * m_scale );
 			}
 		}
+	}
+	void mouseMoveEvent( QMouseEvent *event ) override {
+		if( m_dragCandidate && ( event->buttons() & Qt::MouseButton::LeftButton ) && ( event->pos() - m_dragStart ).manhattanLength() > 8 ){
+			m_dragCandidate = false;
+			m_modBro.m_move_amount = 100; // not a click
+			const auto path = StringStream<128>( m_modBro.m_currentFolderPath, std::next( m_modBro.m_currentFolder->m_files.begin(), m_modBro.m_currentModelId )->c_str() );
+			auto *mime = new QMimeData;
+			mime->setData( c_modelDropMime, QByteArray( path.c_str() ) );
+			mime->setText( path.c_str() );
+			auto *drag = new QDrag( this );
+			drag->setMimeData( mime );
+			drag->exec( Qt::CopyAction );
+			m_mouse.release( event ); // the release went to the drop target
+		}
+		QOpenGLWidget::mouseMoveEvent( event );
 	}
 	void mouseDoubleClick(){
 		/* create misc_model */
@@ -1038,6 +1065,7 @@ protected:
 		}
 	}
 	void mouseReleaseEvent( QMouseEvent *event ) override {
+		m_dragCandidate = false;
 		const auto release = m_mouse.release( event );
 		if ( release == MousePresses::Left || release == MousePresses::Right ) {
 			m_modBro.tracking_MouseUp();
@@ -1411,4 +1439,67 @@ void ModelBrowser_Destroy(){
 void ModelBrowser_flushReferences(){
 	ModelGraph_clear();
 	g_ModelBrowser.queueDraw();
+}
+
+
+/* KenRadiant: model drag & drop into the views */
+#include "iundo.h"
+#include "ientity.h"
+#include "eclasslib.h"
+static NodeSmartReference* s_dropNode = nullptr;
+
+bool ModelDrop_active(){
+	return s_dropNode != nullptr;
+}
+
+static void ModelDrop_setOrigin( const Vector3& origin ){
+	if( Entity* entity = Node_getEntity( s_dropNode->get() ) ){
+		const auto value = StringStream<64>( origin.x(), ' ', origin.y(), ' ', origin.z() );
+		entity->setKeyValue( "origin", value );
+	}
+}
+
+void ModelDrop_begin( const char* modelPath, const Vector3& origin ){
+	if( s_dropNode != nullptr )
+		ModelDrop_end( false );
+	GlobalUndoSystem().start();
+	EntityClass* entityClass = GlobalEntityClassManager().findOrInsert( "misc_model", false );
+	s_dropNode = new NodeSmartReference( GlobalEntityCreator().createEntity( entityClass ) );
+	Node_getTraversable( GlobalSceneGraph().root() )->insert( *s_dropNode );
+	Node_getEntity( s_dropNode->get() )->setKeyValue( entityClass->miscmodel_key(), modelPath );
+	ModelDrop_setOrigin( origin );
+
+	scene::Path entitypath( makeReference( GlobalSceneGraph().root() ) );
+	entitypath.push( makeReference( s_dropNode->get() ) );
+	GlobalSelectionSystem().setSelectedAll( false );
+	Instance_setSelected( findInstance( entitypath ), true ); // selected = ignored by the placement ray, ready for the gizmo
+}
+
+void ModelDrop_park(){
+	if( s_dropNode != nullptr )
+		ModelDrop_setOrigin( Vector3( 0, 0, 262144 ) );
+}
+
+void ModelDrop_move( const Vector3& origin ){
+	if( s_dropNode != nullptr ){
+		ModelDrop_setOrigin( origin );
+		SceneChangeNotify();
+	}
+}
+
+void ModelDrop_end( bool keep ){
+	if( s_dropNode == nullptr )
+		return;
+	if( keep ){
+		GlobalUndoSystem().finish( "dropModel" );
+	}
+	else{
+		GlobalSelectionSystem().setSelectedAll( false );
+		Node_getTraversable( GlobalSceneGraph().root() )->erase( *s_dropNode );
+		GlobalUndoSystem().finish( "dropModel" );
+		GlobalUndoSystem().undo(); // leaves no trace in the undo history
+	}
+	delete s_dropNode;
+	s_dropNode = nullptr;
+	SceneChangeNotify();
 }

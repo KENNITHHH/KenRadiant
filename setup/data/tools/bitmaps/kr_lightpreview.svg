@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: live light preview (bulb) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 64,14 C 38,14 26,34 30,54 C 33,68 46,74 48,88 L 80,88 C 82,74 95,68 98,54 C 102,34 90,14 64,14 Z" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 50,102 78,102 M 54,116 74,116" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linecap:round" />
+</svg>

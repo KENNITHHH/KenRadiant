@@ -35,3 +35,11 @@ void ModelBrowser_flushReferences();
 
 const Vector3& ModelBrowser_getBackgroundColour();
 void ModelBrowser_setBackgroundColour( const Vector3& colour );
+
+// KenRadiant: drag a model from the model browser into the 2D/3D views (live placement, one undo step)
+constexpr const char* c_modelDropMime = "application/x-kenradiant-model";
+void ModelDrop_begin( const char* modelPath, const Vector3& origin );
+void ModelDrop_move( const Vector3& origin );
+void ModelDrop_end( bool keep );
+bool ModelDrop_active();
+void ModelDrop_park(); // moves the dragged model out of the way so the placement ray does not hit it

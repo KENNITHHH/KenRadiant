@@ -961,6 +961,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		create_menu_item_with_mnemonic( menu, "Texture Browser", "ToggleTextures" );
 	}
 	create_menu_item_with_mnemonic( menu, "Browse To Selected Texture", "BrowseToSelectedTexture" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Live Light Preview", "ToggleLightPreview" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
@@ -1376,7 +1377,6 @@ void CSG_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_button( toolbar, "CSG Wrap Merge", "selection_csgmerge.png", "CSGWrapMerge" );
 	toolbar_append_button( toolbar, "Room", "selection_makeroom.png", "CSGroom" );
 	toolbar_append_button( toolbar, "CSG Tool", "ellipsis.png", "CSGTool" );
-	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by one grid unit", "kr_bevel.png", "BrushBevel" ); // KenRadiant
 }
 
 void ComponentModes_constructToolbar( QToolBar* toolbar ){
@@ -1398,7 +1398,6 @@ void Manipulators_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_toggle_button( toolbar, "Transform (Q)", "select_mousetransform.png", "MouseTransform" ); // hardcoded shortcut tip of "MouseDragOrTransform"...
 //	toolbar_append_toggle_button( toolbar, "Build", "select_mouserotate.png", "MouseBuild" );
 	toolbar_append_toggle_button( toolbar, "UV Tool", "select_mouseuv.png", "MouseUV" );
-	toolbar_append_toggle_button( toolbar, "Gizmo in local (object) space; off = world space", "kr_localspace.png", "ToggleManipulatorLocalSpace" ); // KenRadiant
 }
 
 extern CopiedString g_toolbarHiddenButtons;
@@ -1476,8 +1475,15 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 
 /// KenRadiant: FOV slider in its own toolbar, so it can be dragged around like the others
 void create_fov_toolbar( QToolBar *toolbar ){
+	toolbar_append_button( toolbar, "Find: fly the camera to the selection (Tab)", "kr_find.png", "CameraFocusOnSelected" );
+	toolbar_append_toggle_button( toolbar, "Gizmo in local (object) space; off = world space", "kr_localspace.png", "ToggleManipulatorLocalSpace" );
+	toolbar_append_button( toolbar, "Drop to floor (End)", "kr_droptofloor.png", "DropSelectionToFloor" );
+	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by the grid size", "kr_bevel.png", "BrushBevel" );
+	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
+	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view (no shadows)", "kr_lightpreview.png", "ToggleLightPreview" );
+	toolbar_append_separator( toolbar );
 	{	// camera field of view (also in Preferences > Camera)
 
 		auto *label = new QLabel;
@@ -1744,8 +1750,10 @@ void MainFrame::Create(){
 			create_main_toolbar( toolbar, CurrentStyle() );
 		}
 		{
-			auto *toolbar = new QToolBar( "FOV Toolbar" );
-			toolbar->setObjectName( "KenRadiant_FOV_Toolbar" ); // required for proper state save/restore
+			// KenRadiant tools on their own row so nothing gets squeezed into the overflow arrow
+			window->addToolBarBreak( Qt::ToolBarArea::TopToolBarArea );
+			auto *toolbar = new QToolBar( "KenRadiant Toolbar" );
+			toolbar->setObjectName( "KenRadiant_Toolbar" ); // required for proper state save/restore
 			window->addToolBar( Qt::ToolBarArea::TopToolBarArea, toolbar );
 			create_fov_toolbar( toolbar );
 		}

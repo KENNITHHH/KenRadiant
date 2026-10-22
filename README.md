@@ -33,7 +33,10 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Fly speed / up / down** | While flying (hold right mouse): **mouse wheel** = speed, **Space** = up, **C** = down. |
 | **Game view** | **Shift+G** hides editor-only stuff (all nodraw/tool surfaces, triggers, lights, paths, portals, sounds and other point entities); again to restore. |
 | **Scale gizmo** | Cubes on the axes scale one axis, triangles between two axes scale both, the white centre cube scales uniformly (snapped to the grid). |
-| **Textures / Models tabs** | Under the camera: switch between the texture and model browser; Ctrl + wheel resizes both. |
+| **Textures / Models tabs** | Under the camera: switch between the texture and model browser; Ctrl + wheel resizes both (textures up to 400 %). |
+| **Drag & drop models** | Drag a model from the Models tab into the 3D view (lands on the surface under the cursor) or a 2D view (top view: onto the floor). |
+| **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time (no shadows). |
+| **KenRadiant toolbar** | Second toolbar row: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, FOV slider. |
 | **Face select** | Ctrl+click or **Ctrl+Shift+click** (GtkRadiant style). |
 | **Rotate gizmo** (R) | Unreal-style thick rings per axis, white outer ring rotates around the view direction. |
 | **Sky brushes** | Shown with the sky shader's editor image so you can edit them; the cloud button (or View → Show → *Sky Brushes Show Skybox*) previews the real sky. Game View turns it on automatically. |
@@ -70,6 +73,8 @@ Details in [README_SOF2.md](README_SOF2.md). Highlights:
 | Space / C while flying | Fly up / down |
 | Shift+G | Game view |
 | Shift+B | Bevel |
+| Ctrl+L | Live light preview |
+| Ctrl+Shift+click | Select faces (also Ctrl+click) |
 
 All shortcuts can be changed in Edit → Shortcuts.
 

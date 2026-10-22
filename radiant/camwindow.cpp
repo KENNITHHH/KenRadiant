@@ -26,6 +26,14 @@
 //
 
 #include "camwindow.h"
+#include "modelwindow.h"
+#include <optional>
+#include "selection_.h"
+struct testSelect_unselected_scene_point_return_t{ DoubleVector3 point; std::optional<Plane3> plane; };
+std::optional<testSelect_unselected_scene_point_return_t>
+testSelect_unselected_scene_point( const View& view, const DeviceVector device_point, const DeviceVector device_epsilon );
+#include <QMimeData>
+#include <QDragEnterEvent>
 
 #include "debugging/debugging.h"
 
@@ -57,6 +65,9 @@
 #include "renderstate.h"
 
 #include "timer.h"
+#include "gtkutil/widget.h"
+extern bool g_krLightPreview;
+ToggleItem g_lightPreview_item{ BoolExportCaller( g_krLightPreview ) };
 
 #include <QOpenGLWidget>
 
@@ -924,6 +935,9 @@ public:
 class CamWnd
 {
 	View m_view;
+public:
+	const View& getView() const { return m_view; } // KenRadiant: model drag & drop placement
+private:
 	camera_t m_Camera;
 	RadiantCameraView m_cameraview;
 #if 0
@@ -1590,6 +1604,42 @@ class CamGLWidget : public QOpenGLWidget
 public:
 	CamGLWidget( CamWnd& camwnd ) : QOpenGLWidget(), m_camwnd( camwnd ) {
 		setMouseTracking( true );
+		setAcceptDrops( true ); // KenRadiant: models dragged from the model browser
+	}
+
+	/// where a dragged model goes: the surface under the cursor, else 256 units in front of the camera
+	Vector3 dropPoint( const QPoint& pos ) const {
+		const float w = width() * m_scale, h = height() * m_scale;
+		const DeviceVector device( 2.f * pos.x() * m_scale / w - 1.f, 1.f - 2.f * pos.y() * m_scale / h );
+		ModelDrop_park();
+		if( const auto hit = testSelect_unselected_scene_point( m_camwnd.getView(), device, DeviceVector( 4.f / w, 4.f / h ) ) ){
+			return vector3_snapped( Vector3( hit->point ), GetSnapGridSize() );
+		}
+		return vector3_snapped( Camera_getOrigin( m_camwnd ) - Camera_getViewVector( m_camwnd ) * 256.f, GetSnapGridSize() );
+	}
+	void dragEnterEvent( QDragEnterEvent *event ) override {
+		if( event->mimeData()->hasFormat( c_modelDropMime ) ){
+			event->acceptProposedAction();
+			ModelDrop_begin( event->mimeData()->data( c_modelDropMime ).constData(), dropPoint( event->pos() ) );
+		}
+	}
+	void dragMoveEvent( QDragMoveEvent *event ) override {
+		if( ModelDrop_active() ){
+			event->acceptProposedAction();
+			ModelDrop_move( dropPoint( event->pos() ) );
+		}
+	}
+	void dragLeaveEvent( QDragLeaveEvent *event ) override {
+		ModelDrop_end( false );
+	}
+	void dropEvent( QDropEvent *event ) override {
+		if( ModelDrop_active() ){
+			ModelDrop_move( dropPoint( event->pos() ) );
+			ModelDrop_end( true );
+			event->acceptProposedAction();
+			activateWindow();
+			setFocus();
+		}
 	}
 
 	~CamGLWidget() override {
@@ -1938,6 +1988,85 @@ void ShowSize3dToggle(){
 	}
 }
 
+#include "kr_lightpreview.h"
+#include "stringio.h"
+#include "ientity.h"
+#include "ishaders.h"
+/// gathers the lights for the live preview: light entities (origin, "light" intensity, "_color"), worldspawn ambient,
+/// and the sun of the first loaded sky shader with q3map_sun / q3map_skyLight
+static void KrLightPreview_collect( const Vector3& viewer ){
+	struct Candidate{ KrPreviewLight light; float score; };
+	std::vector<Candidate> candidates;
+	float ambient = 0;
+	class LightWalker : public scene::Traversable::Walker
+	{
+		std::vector<Candidate>& m_candidates; float& m_ambient; const Vector3& m_viewer;
+	public:
+		LightWalker( std::vector<Candidate>& c, float& a, const Vector3& v ) : m_candidates( c ), m_ambient( a ), m_viewer( v ){}
+		bool pre( scene::Node& node ) const override {
+			Entity* entity = Node_getEntity( node );
+			if( entity == nullptr || !node.visible() )
+				return false;
+			const char* classname = entity->getClassName();
+			if( string_equal( classname, "worldspawn" ) ){
+				float a = 0;
+				if( string_parse_float( entity->getKeyValue( "_ambient" ), a ) || string_parse_float( entity->getKeyValue( "ambient" ), a ) )
+					m_ambient = a;
+				return false;
+			}
+			if( !string_equal_prefix( classname, "light" ) )
+				return false;
+			Vector3 origin, colour( 1, 1, 1 );
+			if( !string_parse_vector3( entity->getKeyValue( "origin" ), origin ) )
+				return false;
+			float intensity = 300;
+			string_parse_float( entity->getKeyValue( "light" ), intensity );
+			if( intensity <= 0 )
+				return false;
+			if( string_parse_vector3( entity->getKeyValue( "_color" ), colour ) ){
+				const float m = std::max( { colour.x(), colour.y(), colour.z() } );
+				if( m > 1 ) colour /= m; // 0-255 style values
+			}
+			KrPreviewLight light{ origin, colour * std::min( intensity / 200.f, 2.f ), intensity * 1.5f };
+			// prefer lights that reach the camera's surroundings
+			m_candidates.push_back( { light, vector3_length( origin - m_viewer ) - light.radius } );
+			return false;
+		}
+	};
+	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, viewer ) );
+	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
+	g_krLightPreviewLights.clear();
+	for( std::size_t i = 0; i < candidates.size() && i < c_krMaxPreviewLights; ++i )
+		g_krLightPreviewLights.push_back( candidates[i].light );
+
+	// sun from the sky shader
+	g_krSunColour = Vector3( 0, 0, 0 );
+	float skyLight = 0;
+	GlobalShaderSystem().beginActiveShadersIterator();
+	for( ; !GlobalShaderSystem().endActiveShadersIterator(); GlobalShaderSystem().incrementActiveShadersIterator() ){
+		IShader* shader = GlobalShaderSystem().dereferenceActiveShadersIterator();
+		float colour[3], intensity, degrees, elevation, sky;
+		if( shader->IsInUse() && ( shader->getFlags() & QER_SKY ) && shader->getSun( colour, intensity, degrees, elevation, sky ) ){
+			const float az = degrees_to_radians( degrees ), el = degrees_to_radians( elevation );
+			g_krSunDirection = Vector3( cos( el ) * cos( az ), cos( el ) * sin( az ), sin( el ) );
+			g_krSunColour = Vector3( colour[0], colour[1], colour[2] ) * std::min( intensity / 400.f, 1.5f );
+			skyLight = sky;
+			break;
+		}
+	}
+	// ambient: worldspawn _ambient (0..255 like q3map2) + a share of the sky light, never fully black
+	const float a = std::clamp( ambient / 255.f + skyLight / 1000.f, 0.12f, 0.8f );
+	g_krAmbient = Vector3( a, a, a );
+}
+
+static void LightPreview_toggle(){
+	g_krLightPreview = !g_krLightPreview;
+	g_lightPreview_item.update();
+	globalOutputStream() << "live light preview: " << ( g_krLightPreview ? "on (lights + sky shader sun, no shadows)" : "off" ) << '\n';
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
 void CamWnd::Cam_Draw(){
 //		globalOutputStream() << "Cam_Draw()\n";
 
@@ -2062,7 +2191,14 @@ void CamWnd::Cam_Draw(){
 			m_draw_size.render( renderer, m_state_text, m_view );
 		}
 
+		// KenRadiant live light preview (textured modes only)
+		g_krLightPreviewDrawing = g_krLightPreview && ( m_Camera.draw_mode == cd_texture || m_Camera.draw_mode == cd_texture_plus_wire );
+		if( g_krLightPreviewDrawing ){
+			KrLightPreview_collect( Camera_getOrigin( m_Camera ) );
+			g_krLightPreviewView = m_Camera.modelview;
+		}
 		renderer.render( m_Camera.modelview, m_Camera.projection );
+		g_krLightPreviewDrawing = false;
 	}
 
 	// prepare for 2d stuff
@@ -2270,7 +2406,6 @@ void Camera_ToggleFarClip(){
 
 void CamWnd_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_toggle_button( toolbar, "Cubic clip the camera view", "view_cubicclipping.png", "ToggleCubicClip" );
-	toolbar_append_button( toolbar, "Find: fly the camera to the selection (Tab)", "kr_find.png", "CameraFocusOnSelected" ); // KenRadiant
 }
 
 void CamWnd_registerShortcuts(){
@@ -2514,6 +2649,7 @@ void CameraSpeed_decrease(){
 void CamWnd_Construct(){
 	GlobalCommands_insert( "CenterView", makeCallbackF( GlobalCamera_ResetAngles ), QKeySequence( "Shift+End" ) ); // KenRadiant: End drops the selection to the floor (Unreal)
 	GlobalCommands_insert( "CameraFocusOnSelected", makeCallbackF( GlobalCamera_FocusOnSelected ), QKeySequence( "Tab" ) );
+	GlobalToggles_insert( "ToggleLightPreview", makeCallbackF( LightPreview_toggle ), ToggleItem::AddCallbackCaller( g_lightPreview_item ), QKeySequence( "Ctrl+L" ) ); // KenRadiant
 
 	GlobalToggles_insert( "ToggleCubicClip", makeCallbackF( Camera_ToggleFarClip ), ToggleItem::AddCallbackCaller( g_getfarclip_item ), QKeySequence( "Ctrl+\\" ) );
 	GlobalCommands_insert( "CubicClipZoomIn", makeCallbackF( Camera_CubeIn ), QKeySequence( "Ctrl+[" ) );

@@ -1787,7 +1787,7 @@ protected:
 
 		/* KenRadiant: Ctrl + wheel zooms the thumbnails */
 		if ( event->modifiers().testFlag( Qt::KeyboardModifier::ControlModifier ) ) {
-			static const std::size_t steps[] = { 10, 25, 50, 100, 200 }; // the values the TextureScale preference can store
+			static const std::size_t steps[] = { 10, 25, 50, 100, 150, 200, 300, 400 };
 			const std::size_t cur = m_texBro.m_textureScale;
 			std::size_t next = cur;
 			if ( event->angleDelta().y() > 0 ) {
@@ -2068,6 +2068,12 @@ void TextureScaleImport( TextureBrowser& textureBrowser, int value ){
 	case 4:
 		TextureBrowser_setScale( textureBrowser, 200 );
 		break;
+	case 5:
+		TextureBrowser_setScale( textureBrowser, 300 );
+		break;
+	case 6:
+		TextureBrowser_setScale( textureBrowser, 400 );
+		break;
 	}
 }
 typedef ReferenceCaller<TextureBrowser, void(int), TextureScaleImport> TextureScaleImportCaller;
@@ -2089,6 +2095,12 @@ void TextureScaleExport( TextureBrowser& textureBrowser, const IntImportCallback
 		break;
 	case 200:
 		importer( 4 );
+		break;
+	case 300:
+		importer( 5 );
+		break;
+	case 400:
+		importer( 6 );
 		break;
 	}
 }
@@ -2113,7 +2125,7 @@ void TextureBrowser_constructPreferences( PreferencesPage& page ){
 	    BoolExportCaller( g_TexBro.m_showTextureScrollbar )
 	);
 	{
-		const char* texture_scale[] = { "10%", "25%", "50%", "100%", "200%" };
+		const char* texture_scale[] = { "10%", "25%", "50%", "100%", "200%", "300%", "400%" };
 		page.appendCombo(
 		    "Texture Thumbnail Scale",
 		    StringArrayRange( texture_scale ),

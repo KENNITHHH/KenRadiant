@@ -440,6 +440,85 @@ public:
 
 GLSLSkyboxProgram g_skyboxGLSL;
 
+/* KenRadiant live light preview */
+#include "kr_lightpreview.h"
+bool g_krLightPreview = false;
+bool g_krLightPreviewDrawing = false;
+Matrix4 g_krLightPreviewView = g_matrix4_identity;
+std::vector<KrPreviewLight> g_krLightPreviewLights;
+Vector3 g_krSunDirection( 0, 0, 1 );
+Vector3 g_krSunColour( 0, 0, 0 );
+Vector3 g_krAmbient( 0.15f, 0.15f, 0.15f );
+
+class GLSLKrLightProgram : public GLProgram
+{
+public:
+	GLuint m_program = 0;
+	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient;
+	bool m_active = false;
+
+	void create(){
+		m_program = gl().glCreateProgram();
+		{
+			StringOutputStream filename( 256 );
+			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_vp.glsl" ), GL_VERTEX_SHADER );
+			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER );
+		}
+		GLSLProgram_link( m_program );
+		gl().glUseProgram( m_program );
+		u_tex = gl().glGetUniformLocation( m_program, "u_tex" );
+		u_count = gl().glGetUniformLocation( m_program, "u_count" );
+		u_pos = gl().glGetUniformLocation( m_program, "u_pos" );
+		u_col = gl().glGetUniformLocation( m_program, "u_col" );
+		u_rad = gl().glGetUniformLocation( m_program, "u_rad" );
+		u_sun_dir = gl().glGetUniformLocation( m_program, "u_sun_dir" );
+		u_sun_col = gl().glGetUniformLocation( m_program, "u_sun_col" );
+		u_ambient = gl().glGetUniformLocation( m_program, "u_ambient" );
+		gl().glUniform1i( u_tex, 0 );
+		gl().glUseProgram( 0 );
+		GlobalOpenGL_debugAssertNoErrors();
+	}
+	void destroy(){
+		gl().glDeleteProgram( m_program );
+		m_program = 0;
+	}
+	void enable() override {
+		// off, or not the 3D view: behave exactly like the fixed-function path
+		m_active = g_krLightPreview && g_krLightPreviewDrawing && m_program != 0;
+		if( !m_active )
+			return;
+		gl().glUseProgram( m_program );
+		const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxPreviewLights );
+		float pos[c_krMaxPreviewLights * 3], col[c_krMaxPreviewLights * 3], rad[c_krMaxPreviewLights];
+		for( std::size_t i = 0; i < count; ++i ){
+			const KrPreviewLight& l = g_krLightPreviewLights[i];
+			const Vector3 eye = matrix4_transformed_point( g_krLightPreviewView, l.origin );
+			pos[i * 3] = eye.x(); pos[i * 3 + 1] = eye.y(); pos[i * 3 + 2] = eye.z();
+			col[i * 3] = l.colour.x(); col[i * 3 + 1] = l.colour.y(); col[i * 3 + 2] = l.colour.z();
+			rad[i] = l.radius;
+		}
+		gl().glUniform1i( u_count, GLint( count ) );
+		if( count != 0 ){
+			gl().glUniform3fv( u_pos, GLsizei( count ), pos );
+			gl().glUniform3fv( u_col, GLsizei( count ), col );
+			gl().glUniform1fv( u_rad, GLsizei( count ), rad );
+		}
+		const Vector3 sun = vector3_normalised( matrix4_transformed_direction( g_krLightPreviewView, g_krSunDirection ) );
+		gl().glUniform3f( u_sun_dir, sun.x(), sun.y(), sun.z() );
+		gl().glUniform3f( u_sun_col, g_krSunColour.x(), g_krSunColour.y(), g_krSunColour.z() );
+		gl().glUniform3f( u_ambient, g_krAmbient.x(), g_krAmbient.y(), g_krAmbient.z() );
+		GlobalOpenGL_debugAssertNoErrors();
+	}
+	void disable() override {
+		if( m_active )
+			gl().glUseProgram( 0 );
+		m_active = false;
+	}
+	void setParameters( const Vector3& viewer, const Matrix4& localToWorld, const Vector3& origin, const Vector3& colour, const Matrix4& world2light ) override {
+	}
+};
+GLSLKrLightProgram g_krLightGLSL;
+
 
 
 bool g_vertexArray_enabled = false;
@@ -995,6 +1074,7 @@ public:
 			}
 
 			g_skyboxGLSL.create();
+			g_krLightGLSL.create();
 
 			for ( auto& shader : m_shaders )
 			{
@@ -1016,8 +1096,10 @@ public:
 				g_bumpGLSL.destroy();
 				g_depthFillGLSL.destroy();
 			}
-			if( GlobalOpenGL().contextValid )
+			if( GlobalOpenGL().contextValid ){
 				g_skyboxGLSL.destroy();
+				g_krLightGLSL.destroy();
+			}
 		}
 	}
 	bool realised(){
@@ -2003,6 +2085,11 @@ void OpenGLShader::construct( const char* name ){
 			state.m_texture = m_shader->getTexture()->texture_number;
 
 			state.m_state = RENDER_FILL | RENDER_TEXTURE | RENDER_DEPTHTEST | RENDER_COLOURWRITE | RENDER_LIGHTING | RENDER_SMOOTH;
+			// KenRadiant live light preview: the program does nothing unless the preview is on and the 3D view draws
+			if( !( m_shader->getFlags() & QER_SKY ) ){
+				state.m_state |= RENDER_PROGRAM;
+				state.m_program = &g_krLightGLSL;
+			}
 			if ( ( m_shader->getFlags() & QER_CULL ) != 0 ) {
 				if ( m_shader->getCull() == IShader::eCullBack ) {
 					state.m_state |= RENDER_CULLFACE;
