@@ -51,7 +51,7 @@ CoD-style maps VIS can't help much (mp_strike: the average cluster sees 65% of t
     q3map2 -game sof2 -fs_basepath <SoF2> -fs_game base -mergesurfaces maps\<map>.bsp
 
 - flat faces with the same shader, fog, lightmap page(s), light styles and normal, plane distances within
-  `-planerange` (64) and inside one `-cell` (1024 units), become one face of at most 64 verts (SOF2 MAX_FACE_POINTS).
+  `-planerange` (64) and inside one `-cell` (2048 units; in-game test on mp_strike: 1024 → ~12.2k srfs in view, 2048 → ~10.4k, 4096 → ~10.2k), become one face of at most 64 verts (SOF2 MAX_FACE_POINTS).
   The rearmost piece goes first, so the renderer's back-face cull (plane from the first vertex) never hides a visible piece.
 - vertex-lit triangle soups (baked misc_models) and vertex-lit faces whose shader has `surfaceparm nomarks`
   merge into soups (999 verts / 6000 indexes). Soups get no bullet marks, hence the nomarks rule. `-nosoups` disables.

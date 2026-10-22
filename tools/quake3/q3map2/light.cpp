@@ -2999,7 +2999,7 @@ int LightMain( Args& args ){
 	/* SOF2 branch: merge drawsurfaces of the finished bsp (same as a separate -mergesurfaces run) */
 	if ( g_autoMergeSurfaces ) {
 		Sys_Printf( "\n(automatic -mergesurfaces after light; -nomerge to skip)\n" );
-		MergeSurfacesBSP( source, 1024, 64, true );
+		MergeSurfacesBSP( source, 2048, 64, true );
 	}
 
 	/* return to sender */

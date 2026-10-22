@@ -294,11 +294,11 @@ int MergeSurfacesBSP( const char *bspPath, double cellSize, double planeRange, b
 }
 
 int MergeSurfacesMain( Args& args ){
-	double cellSize = 1024, planeRange = 64;
+	double cellSize = 2048, planeRange = 64;
 	bool soups = true;
 
 	if ( args.empty() ) {
-		Sys_Printf( "Usage: q3map2 -game sof2 -mergesurfaces [-cell 1024] [-planerange 64] [-nosoups] <mapname>\n" );
+		Sys_Printf( "Usage: q3map2 -game sof2 -mergesurfaces [-cell 2048] [-planerange 64] [-nosoups] <mapname>\n" );
 		return 0;
 	}
 	const char *fileName = args.takeBack();
