@@ -270,8 +270,8 @@ static void accelerator_alter( QTreeWidgetItem *item, const QKeySequence acceler
 }
 
 /* KenRadiant: QWERTY <-> AZERTY.
-   - plain letter shortcuts (no Ctrl/Alt) swap W<->Z and A<->Q, so WASD becomes ZQSD and Q/W tools stay under the same fingers;
-     Ctrl+Z, Ctrl+A, Alt+... keep their letters, as AZERTY users expect
+   - only the camera movement keys move with the layout (WASD flying -> ZQSD); every tool keeps its letter
+     (W move, E edges, R rotate, Z delete, Ctrl+Z undo ...), as in Unreal on an AZERTY keyboard
    - number-row shortcuts (1..0, Alt+6, Ctrl+3...) also answer to the character that key types on AZERTY (&, é, ", ', (, §...),
      see command_connect_accelerator() */
 bool g_keyboard_azerty = false;
@@ -312,6 +312,13 @@ static QKeySequence mapSequence( const QKeySequence& seq ){
 	return QKeySequence( k[0], k[1], k[2], k[3] );
 }
 
+static bool Shortcut_followsLayout( const char* name ){
+	return string_equal_n( name, "Camera", 6 );
+}
+/// AZERTY form of a shortcut's default
+static QKeySequence Shortcut_azerty( const char* name, const QKeySequence& def ){
+	return Shortcut_followsLayout( name ) ? mapSequence<swapAzertyKey>( def ) : def;
+}
 /// sets every shortcut that the user did not customise to the QWERTY default or its AZERTY form
 static void Shortcuts_applyLayout( bool azerty ){
 	std::vector<const char*> changed;
@@ -319,10 +326,11 @@ static void Shortcuts_applyLayout( bool azerty ){
 		const QKeySequence& def = value.accelerator_default;
 		if( def.isEmpty() )
 			continue;
-		const QKeySequence az = mapSequence<swapAzertyKey>( def );
-		const QKeySequence az1 = mapSequence<swapAzertyKey_v1>( def );
+		const QKeySequence az = Shortcut_azerty( name.c_str(), def );
 		const QKeySequence target = azerty ? az : def;
-		const bool untouched = value.accelerator == def || value.accelerator == az || value.accelerator == az1;
+		// earlier KenRadiant versions swapped W/Z A/Q in other shortcuts too
+		const bool untouched = value.accelerator == def || value.accelerator == az
+		                    || value.accelerator == mapSequence<swapAzertyKey>( def ) || value.accelerator == mapSequence<swapAzertyKey_v1>( def );
 		if( untouched && value.accelerator != target ){
 			if( value.type != 0 )
 				disconnect_accelerator( name.c_str() );
@@ -331,7 +339,7 @@ static void Shortcuts_applyLayout( bool azerty ){
 	}
 	for( const char* name : changed ){
 		auto& value = g_shortcuts.find( name )->second;
-		value.accelerator = azerty ? mapSequence<swapAzertyKey>( value.accelerator_default ) : value.accelerator_default;
+		value.accelerator = azerty ? Shortcut_azerty( name, value.accelerator_default ) : value.accelerator_default;
 	}
 	for ( const auto& [name, value] : g_shortcuts )
 		if( value.type != 0 )
@@ -341,7 +349,7 @@ static void Shortcuts_applyLayout( bool azerty ){
 void Shortcuts_toggleAzerty(){
 	g_keyboard_azerty = !g_keyboard_azerty;
 	Shortcuts_applyLayout( g_keyboard_azerty );
-	globalOutputStream() << "keyboard layout: " << ( g_keyboard_azerty ? "AZERTY (ZQSD, number row &é\"'(...)" : "QWERTY (WASD)" ) << '\n';
+	globalOutputStream() << "keyboard layout: " << ( g_keyboard_azerty ? "AZERTY (fly with ZQSD, number row &é\"'(...)" : "QWERTY (WASD)" ) << '\n';
 }
 
 /// AZERTY character on the number-row key that types \p digit on QWERTY; 0 if none. Belgian and French layouts differ on 6 and 8.
@@ -597,10 +605,13 @@ void LoadCommandMap( const char* path ){
 			globalOutputStream() << "parsed " << visitor.count() << " custom shortcuts\n";
 			// KenRadiant: shortcuts saved by the first AZERTY toggle (Ctrl+Z -> Ctrl+W ...) go back to their intended form
 			for ( auto& [name, value] : g_shortcuts ){
-				const QKeySequence az1 = mapSequence<swapAzertyKey_v1>( value.accelerator_default );
-				const QKeySequence az = mapSequence<swapAzertyKey>( value.accelerator_default );
-				if( !value.accelerator_default.isEmpty() && az1 != az && value.accelerator == az1 )
-					value.accelerator = az;
+				const QKeySequence& def = value.accelerator_default;
+				if( def.isEmpty() )
+					continue;
+				const QKeySequence target = Shortcut_azerty( name.c_str(), def ); // such states only exist with AZERTY on
+				if( value.accelerator != target
+				 && ( value.accelerator == mapSequence<swapAzertyKey_v1>( def ) || value.accelerator == mapSequence<swapAzertyKey>( def ) ) )
+					value.accelerator = target;
 			}
 		}
 		else

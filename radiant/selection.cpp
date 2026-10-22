@@ -1020,6 +1020,7 @@ class RadiantSelectionSystem final :
 	mutable LazyBounds m_lazy_bounds;
 	Matrix4 m_pivot2world_start;
 	Matrix4 m_manip2pivot_start;
+	Matrix4 m_manip2world_start; // KenRadiant: translate gizmo in local space needs world-space moves
 	Translation m_translation;
 	Rotation m_rotation;
 	Scale m_scale;
@@ -1088,7 +1089,7 @@ public:
 		m_componentmode( eDefault ),
 		m_count_primitive( SelectionChangedCaller( *this ) ),
 		m_count_component( SelectionChangedCaller( *this ) ),
-		m_translate_manipulator( New_TranslateManipulator( *this, 2, 64 ) ),
+		m_translate_manipulator( New_TranslateManipulator( *this, 2, 80 ) ),
 		m_rotate_manipulator( New_RotateManipulator( *this, 8, 64 ) ),
 		m_scale_manipulator( New_ScaleManipulator( *this, 0, 64 ) ),
 		m_skew_manipulator( New_SkewManipulator( *this, *this, *this, *this, *this, m_bounds, m_pivot2world, m_pivotIsCustom ) ),
@@ -1297,6 +1298,7 @@ public:
 				pivot.update( GetPivot2World(), view.GetModelview(), view.GetProjection(), view.GetViewport() );
 
 				m_manip2pivot_start = matrix4_multiplied_by_matrix4( matrix4_full_inverse( m_pivot2world_start ), pivot.m_worldSpace );
+				m_manip2world_start = pivot.m_worldSpace;
 
 				Matrix4 device2manip;
 				ConstructDevice2Manip( device2manip, m_pivot2world_start, view.GetModelview(), view.GetProjection(), view.GetViewport() );
@@ -1763,7 +1765,8 @@ public:
 
 			Matrix4 device2manip;
 			ConstructDevice2Manip( device2manip, m_pivot2world_start, view.GetModelview(), view.GetProjection(), view.GetViewport() );
-			m_manipulator->GetManipulatable()->Transform( m_manip2pivot_start, device2manip, device_point );
+			// translate: moves are applied in world space; with a rotated (local) gizmo the pivot frame is not the world frame
+			m_manipulator->GetManipulatable()->Transform( ManipulatorMode() == eTranslate ? m_manip2world_start : m_manip2pivot_start, device2manip, device_point );
 		}
 		else if( m_transformOrigin_manipulator.isSelected() ){
 			Matrix4 device2manip;

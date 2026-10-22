@@ -3,6 +3,18 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-22 (night)
+### Editor
+- **Bevel** (Shift+B, toolbar button, Brush → Bevel): chamfers edges by the current grid size, like Blender's bevel.
+  Edge mode (E): the selected edges; face mode (F): every edge of the selected faces; whole brushes: all their edges.
+- **Unreal-style move gizmo**: thick axis lines, plane handles drawn as an L in the two axis colours with a fill that lights up yellow, white ball in the middle for screen-plane moves, 25 % bigger.
+- **Local gizmo fixed**: moving along the object's own X/Y axes went the wrong way (only Z was right). Grid snapping now follows the gizmo's axes.
+- **Game view** (Shift+G, Filter menu): hides caulk, clip, hint/skip, triggers, lights, paths, portals, botclip, lightgrid; Shift+G again restores your filters.
+- **Fly up / down**: Space and C while flying (right mouse held). Outside flying they keep Duplicate / Deselect.
+- **FOV slider** is its own toolbar (grab the dotted handle to move it).
+- **AZERTY**: only the camera keys follow the layout (fly with ZQSD); every tool keeps its Unreal/Radiant letter (W move, E edges, R rotate, Z delete).
+  Shortcuts changed by earlier versions are put back automatically.
+
 ## Build 2026-10-22 (evening)
 ### Editor
 - **Shader preview**: `alphaFunc` stages render cut-out (masked), `blendFunc` stages render translucent, additive (glows) or multiply.

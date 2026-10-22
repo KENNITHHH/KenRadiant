@@ -143,6 +143,28 @@ void add_filter_command( unsigned int flag, const char* command, const QKeySeque
 	GlobalToggles_insert( command, ToggleFilterFlag::ToggleCaller( g_filter_items.back() ), ToggleItem::AddCallbackCaller( g_filter_items.back().m_item ), accelerator );
 }
 
+/// KenRadiant: Unreal-style game view (Shift+G) - hides editor-only stuff (tool brushes, triggers, lights, paths, portals),
+/// toggling it again restores exactly the filters that were set before
+static bool g_gameView = false;
+static unsigned int g_gameView_savedExclude = 0;
+ToggleItem g_gameView_item{ BoolExportCaller( g_gameView ) };
+void GameView_toggle(){
+	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
+	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS;
+	g_gameView = !g_gameView;
+	if( g_gameView ){
+		g_gameView_savedExclude = g_filters_globals.exclude;
+		g_filters_globals.exclude |= editorOnly;
+	}
+	else{
+		g_filters_globals.exclude = g_gameView_savedExclude;
+	}
+	for ( auto& toggle : g_filter_items )
+		toggle.m_item.update();
+	g_gameView_item.update();
+	PerformFiltering();
+}
+
 void InvertFilters(){
 	for ( auto& toggle : g_filter_items )
 	{
@@ -198,17 +220,21 @@ void Filters_constructMenu( QMenu* menu ){
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "Invert filters", "InvertFilters" );
 	create_menu_item_with_mnemonic( menu, "Reset filters", "ResetFilters" );
+	menu->addSeparator();
+	create_check_menu_item_with_mnemonic( menu, "Game View (hide editor-only)", "ToggleGameView" ); // KenRadiant
 }
 
 
 #include "preferencesystem.h"
 #include "stringio.h"
+#include "dialog.h"
 
 void ConstructFilters(){
 	GlobalPreferenceSystem().registerPreference( "SI_Exclude", SizeImportStringCaller( g_filters_globals.exclude ), SizeExportStringCaller( g_filters_globals.exclude ) );
 
 	GlobalCommands_insert( "InvertFilters", makeCallbackF( InvertFilters ) );
 	GlobalCommands_insert( "ResetFilters", makeCallbackF( ResetFilters ) );
+	GlobalToggles_insert( "ToggleGameView", makeCallbackF( GameView_toggle ), ToggleItem::AddCallbackCaller( g_gameView_item ), QKeySequence( "Shift+G" ) ); // KenRadiant
 
 	add_filter_command( EXCLUDE_WORLD, "FilterWorldBrushes", QKeySequence( "Alt+1" ) );
 	add_filter_command( EXCLUDE_ENT, "FilterEntities", QKeySequence( "Alt+2" ) );

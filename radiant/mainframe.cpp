@@ -1363,6 +1363,7 @@ void CSG_constructToolbar( QToolBar* toolbar ){
 	toolbar_append_button( toolbar, "CSG Wrap Merge", "selection_csgmerge.png", "CSGWrapMerge" );
 	toolbar_append_button( toolbar, "Room", "selection_makeroom.png", "CSGroom" );
 	toolbar_append_button( toolbar, "CSG Tool", "ellipsis.png", "CSGTool" );
+	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by one grid unit", "kr_bevel.png", "BrushBevel" ); // KenRadiant
 }
 
 void ComponentModes_constructToolbar( QToolBar* toolbar ){
@@ -1457,10 +1458,12 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 	toolbar_append_separator( toolbar );
 	toolbar_append_button( toolbar, "Refresh Models", "refresh_models.png", "RefreshReferences" );
 
-	{	// KenRadiant: camera field of view, right end of the toolbar (also in Preferences > Camera)
-		auto *spacer = new QWidget;
-		spacer->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Preferred );
-		toolbar->addWidget( spacer );
+}
+
+
+/// KenRadiant: FOV slider in its own toolbar, so it can be dragged around like the others
+void create_fov_toolbar( QToolBar *toolbar ){
+	{	// camera field of view (also in Preferences > Camera)
 
 		auto *label = new QLabel;
 		label->setContentsMargins( 16, 0, 6, 0 ); // KenRadiant: room left of "FOV"
@@ -1483,7 +1486,6 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 		toolbar->addWidget( slider );
 	}
 }
-
 
 void create_main_statusbar( QStatusBar *statusbar, QLabel *pStatusLabel[c_status__count] ){
 	statusbar->setSizeGripEnabled( false );
@@ -1725,6 +1727,12 @@ void MainFrame::Create(){
 			toolbar->setObjectName( "Main_Toolbar" ); // required for proper state save/restore
 			window->addToolBar( Qt::ToolBarArea::TopToolBarArea, toolbar );
 			create_main_toolbar( toolbar, CurrentStyle() );
+		}
+		{
+			auto *toolbar = new QToolBar( "FOV Toolbar" );
+			toolbar->setObjectName( "KenRadiant_FOV_Toolbar" ); // required for proper state save/restore
+			window->addToolBar( Qt::ToolBarArea::TopToolBarArea, toolbar );
+			create_fov_toolbar( toolbar );
 		}
 		{
 			auto *toolbar = new QToolBar( "Filter Toolbar" );

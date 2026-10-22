@@ -2558,8 +2558,8 @@ void CamWnd_Construct(){
 	GlobalShortcuts_insert( "CameraFreeMoveLeft2", QKeySequence( "Left" ) );
 	GlobalShortcuts_insert( "CameraFreeMoveRight2", QKeySequence( "Right" ) );
 
-	GlobalShortcuts_insert( "CameraFreeMoveUp" );
-	GlobalShortcuts_insert( "CameraFreeMoveDown" );
+	GlobalShortcuts_insert( "CameraFreeMoveUp", QKeySequence( "Space" ) ); // KenRadiant: while flying (right mouse held); Space = duplicate otherwise
+	GlobalShortcuts_insert( "CameraFreeMoveDown", QKeySequence( "C" ) ); // KenRadiant: while flying; C = deselect otherwise
 
 	GlobalShortcuts_insert( "CameraFreeFocus", QKeySequence( "Tab" ) );
 

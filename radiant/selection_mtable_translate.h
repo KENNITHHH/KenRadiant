@@ -45,6 +45,15 @@ inline void aabb_snap_translation( Vector3& move, const AABB& bounds ){
 }
 
 
+/// KenRadiant: grid snap along the gizmo's own axes (columns of \p manip2world); for an axis-aligned gizmo this equals vector3_snap()
+inline void translation_snap_gizmo_axes( Vector3& move, const Matrix4& manip2world ){
+	const Vector3 axes[3] = { vector3_normalised( manip2world.x().vec3() ), vector3_normalised( manip2world.y().vec3() ), vector3_normalised( manip2world.z().vec3() ) };
+	Vector3 snapped( 0, 0, 0 );
+	for( const Vector3& axis : axes )
+		snapped += axis * float_snapped( vector3_dot( move, axis ), GetSnapGridSize() );
+	move = snapped;
+}
+
 class TranslateAxis : public Manipulatable
 {
 	Vector3 m_start;
@@ -67,7 +76,7 @@ public:
 		if( g_modifiers.ctrl() )
 			aabb_snap_translation( current, m_bounds );
 		else
-			vector3_snap( current, GetSnapGridSize() );
+			translation_snap_gizmo_axes( current, manip2object );
 
 		m_translatable.translate( current );
 	}
@@ -148,7 +157,7 @@ public:
 		if( g_modifiers.ctrl() )
 			aabb_snap_translation( current, m_bounds );
 		else
-			vector3_snap( current, GetSnapGridSize() );
+			translation_snap_gizmo_axes( current, manip2object );
 
 		m_translatable.translate( current );
 	}
@@ -182,7 +191,7 @@ public:
 		if( g_modifiers.ctrl() ) // snap aabb
 			aabb_snap_translation( current, m_bounds );
 		else
-			vector3_snap( current, GetSnapGridSize() );
+			translation_snap_gizmo_axes( current, manip2object );
 
 		m_translatable.translate( current );
 	}

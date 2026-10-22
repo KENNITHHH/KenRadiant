@@ -815,6 +815,89 @@ void Scene_BrushConstructPrefab( scene::Graph& graph, EBrushPrefab type, std::si
 	}
 }
 
+#include <set>
+#include "grid.h"
+/// KenRadiant (Blender-style bevel, Shift+B): cuts selected brush edges with a 45°-style chamfer of one grid unit.
+/// Edge mode: the selected edges; face mode: every edge of the selected faces; whole brushes: all their edges.
+void Brush_bevelSelected(){
+	const double size = GetSnapGridSize();
+	const bool component = GlobalSelectionSystem().Mode() == SelectionSystem::eComponent;
+	UndoableCommand undo( "brushBevel" );
+	std::size_t count = 0;
+	Scene_forEachVisibleSelectedBrush( [&]( BrushInstance& instance ){
+		Brush& brush = instance.getBrush();
+		brush.evaluateBRep();
+		std::vector<Face*> faces;
+		for( const auto& face : brush )
+			faces.push_back( face.get() );
+
+		std::set<std::pair<std::size_t, std::size_t>> edges;
+		bool anyComponent = false;
+		std::size_t index = 0;
+		class Collect : public BrushInstanceVisitor
+		{
+		public:
+			std::set<std::pair<std::size_t, std::size_t>>& m_edges; bool& m_any; std::size_t& m_index; bool m_component;
+			Collect( std::set<std::pair<std::size_t, std::size_t>>& edges, bool& any, std::size_t& index, bool component ) : m_edges( edges ), m_any( any ), m_index( index ), m_component( component ){}
+			void visit( FaceInstance& fi ) const override {
+				const Winding& w = fi.getFace().getWinding();
+				const bool whole = m_component && fi.isSelected();
+				for( std::size_t i = 0; i < w.numpoints; ++i ){
+					if( w[i].adjacent == c_brush_maxFaces )
+						continue;
+					if( whole || ( m_component && fi.selected_edge( i ) ) || !m_component ){
+						m_edges.emplace( std::min( m_index, w[i].adjacent ), std::max( m_index, w[i].adjacent ) );
+						if( m_component ) m_any = true;
+					}
+				}
+				++m_index;
+			}
+		};
+		instance.forEachFaceInstance( Collect( edges, anyComponent, index, component ) );
+		if( component && !anyComponent )
+			return;
+
+		struct NewPlane{ DoubleVector3 p0, p1, p2; CopiedString shader; TextureProjection projection; };
+		std::vector<NewPlane> planes;
+		for( const auto& [a, b] : edges ){
+			if( a >= faces.size() || b >= faces.size() || !faces[a]->contributes() || !faces[b]->contributes() )
+				continue;
+			const Winding& w = faces[a]->getWinding();
+			std::size_t i = 0;
+			while( i < w.numpoints && w[i].adjacent != b ) ++i;
+			if( i == w.numpoints )
+				continue;
+			const DoubleVector3 P0 = w[i].vertex, P1 = w[( i + 1 ) % w.numpoints].vertex;
+			const Vector3 n1 = faces[a]->plane3().normal(), n2 = faces[b]->plane3().normal();
+			if( vector3_dot( n1, n2 ) > 0.999f || vector3_length( P1 - P0 ) < 0.1 )
+				continue; // flat or degenerate
+			const DoubleVector3 dir = vector3_normalised( P1 - P0 );
+			const auto inward = [&]( const Face& face, const Vector3& n ){
+				DoubleVector3 v = vector3_normalised( vector3_cross( dir, DoubleVector3( n ) ) );
+				if( vector3_dot( v, DoubleVector3( face.centroid() ) - P0 ) < 0 )
+					v = -v;
+				return v;
+			};
+			const DoubleVector3 Q1 = P0 + inward( *faces[a], n1 ) * size;
+			const DoubleVector3 Q2 = P0 + inward( *faces[b], n2 ) * size;
+			NewPlane np{ Q1, Q1 + dir * 64.0, Q2, faces[a]->GetShader(), {} };
+			if( vector3_dot( plane3_for_points( np.p0, np.p1, np.p2 ).normal(), n1 + n2 ) < 0 )
+				std::swap( np.p1, np.p2 );
+			faces[a]->GetTexdef( np.projection );
+			planes.push_back( np );
+		}
+		for( const NewPlane& np : planes )
+			if( brush.addPlane( np.p0, np.p1, np.p2, np.shader.c_str(), np.projection ) )
+				++count;
+		brush.removeEmptyFaces();
+	} );
+	if( count == 0 )
+		globalWarningStream() << "Bevel: select brushes, or edges/faces in component mode (E / F)\n";
+	else
+		globalOutputStream() << "Bevel: " << count << " edges, size " << size << " (grid)\n";
+	SceneChangeNotify();
+}
+
 #include "filterbar.h"
 extern bool g_brush_always_caulk;
 
@@ -1476,6 +1559,7 @@ void Brush_registerCommands(){
 	GlobalToggles_insert( "TogTexLock", makeCallbackF( Texdef_ToggleMoveLock ), ToggleItem::AddCallbackCaller( g_texdef_movelock_item ), QKeySequence( "Shift+T" ) );
 	GlobalToggles_insert( "TogTexVertexLock", makeCallbackF( Texdef_ToggleMoveVLock ), ToggleItem::AddCallbackCaller( g_texdef_moveVlock_item ) );
 
+	GlobalCommands_insert( "BrushBevel", makeCallbackF( Brush_bevelSelected ), QKeySequence( "Shift+B" ) ); // KenRadiant
 	GlobalCommands_insert( "BrushPrism", BrushPrefab::SetCaller( g_brushprism ) );
 	GlobalCommands_insert( "BrushCone", BrushPrefab::SetCaller( g_brushcone ) );
 	GlobalCommands_insert( "BrushSphere", BrushPrefab::SetCaller( g_brushsphere ) );
@@ -1500,6 +1584,8 @@ void Brush_constructMenu( QMenu* menu ){
 	create_menu_item_with_mnemonic( menu, "Sphere...", "BrushSphere" );
 	create_menu_item_with_mnemonic( menu, "Rock...", "BrushRock" );
 	create_menu_item_with_mnemonic( menu, "Icosahedron...", "BrushIcosahedron" );
+	menu->addSeparator();
+	create_menu_item_with_mnemonic( menu, "Bevel (grid size)", "BrushBevel" ); // KenRadiant
 	menu->addSeparator();
 	{
 		QMenu* submenu = menu->addMenu( "CSG" );

@@ -25,16 +25,18 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 ### Editing (Unreal Engine style)
 | Feature | How to use it |
 |---|---|
-| **Gizmo plane handles** | The coloured squares between two arrows of the move gizmo (W) move only in that plane (XY / XZ / YZ). |
+| **Unreal-style move gizmo** (W) | Thick X/Y/Z arrows; the L-shaped handles between two arrows move only in that plane (XY / XZ / YZ); the white ball moves in the screen plane. Hovered parts turn yellow. |
 | **Alt + drag to duplicate** | Hold **Alt** and drag any part of the move / rotate / scale gizmo: a copy stays behind, the selection moves. One **Ctrl+Z** undoes both. |
 | **World / Local gizmo** | Cube button on the toolbar: off = world axes, on = the object's own rotation (models / entities with `angles`; brushes are always axis-aligned). |
 | **Drop to floor** | **End** — the selection drops onto the highest brush below it (Edit → Drop To Floor). *Center View moved to Shift+End.* |
 | **Find** | Magnifier button (or **Tab**) — flies the camera to the selection. |
-| **Fly speed** | While flying (hold right mouse), the **mouse wheel** changes camera speed. |
+| **Fly speed / up / down** | While flying (hold right mouse): **mouse wheel** = speed, **Space** = up, **C** = down. |
+| **Game view** | **Shift+G** hides editor-only stuff (caulk, clip, hint, triggers, lights, paths, portals); again to restore. |
+| **Bevel** | **Shift+B** (or the toolbar button / Brush → Bevel) chamfers edges by the grid size: selected edges (E), all edges of selected faces (F), or whole brushes. |
 | **Browse to texture** | **Ctrl+B** — opens the texture browser on the texture of the selected face / brush / patch. |
-| **FOV slider** | Right end of the main toolbar. |
+| **FOV slider** | Its own small toolbar (drag the dotted handle to place it). |
 | **Thumbnail size** | **Ctrl + mouse wheel** in the texture browser (10–200 %). |
-| **AZERTY keyboard** | Edit → **AZERTY Keyboard (ZQSD)**: WASD flying becomes ZQSD, and number-row shortcuts (1–0, Alt+1…Alt+9) work on the AZERTY keys (&, é, ", ', (, §, è, !, ç, à). Ctrl+Z, Ctrl+A etc. stay as they are. |
+| **AZERTY keyboard** | Edit → **AZERTY Keyboard (ZQSD)**: flying uses ZQSD, number-row shortcuts (1–0, Alt+1…Alt+9) work on the AZERTY keys (&, é, ", ', (, §, è, !, ç, à). Tool keys keep their letters (W move, E edges, R rotate, Z delete, Ctrl+Z undo). |
 
 ### SOF2 support
 - **Shaders load like in the game**: names containing `{` (e.g. `textures/cstrike/{tk_grate`) no longer break the rest of the `.shader` file.
@@ -60,6 +62,9 @@ Details in [README_SOF2.md](README_SOF2.md). Highlights:
 | Ctrl+B | Show selected texture in the texture browser |
 | Alt + drag gizmo | Duplicate and move/rotate/scale |
 | Wheel while right mouse held | Camera fly speed |
+| Space / C while flying | Fly up / down |
+| Shift+G | Game view |
+| Shift+B | Bevel |
 
 All shortcuts can be changed in Edit → Shortcuts.
 
