@@ -1157,6 +1157,8 @@ void FreeShaders(){
 bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	// name of the qtexture_t we'll use to represent this shader (this one has the "textures\" before)
 	m_textureName = m_Name;
+	bool hasEditorImage = false;
+	CopiedString firstStageImage; // like q3map2: without qer_editorimage, show the first stage's image
 
 	tokeniser.nextLine();
 
@@ -1187,6 +1189,18 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			continue;
 		}
 
+		if ( depth == 2 && firstStageImage.empty() ) {
+			if ( string_equal_nocase( token, "map" ) || string_equal_nocase( token, "clampmap" ) || string_equal_nocase( token, "animmap" ) ) {
+				const bool anim = string_equal_nocase( token, "animmap" );
+				if ( anim ) {
+					tokeniser.getToken(); // frequency
+				}
+				if ( const char* image = tokeniser.getToken(); image != 0 && image[0] != '$' && image[0] != '*' ) {
+					firstStageImage = StringStream<64>( PathExtensionless( image ) );
+				}
+			}
+		}
+
 		if ( depth == 1 ) {
 			if ( string_equal_nocase( token, "qer_nocarve" ) ) {
 				m_nFlags |= QER_NOCARVE;
@@ -1197,6 +1211,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 			else if ( string_equal_nocase( token, "qer_editorimage" ) ) {
 				RETURN_FALSE_IF_FAIL( Tokeniser_parseTextureName( tokeniser, m_textureName ) );
+				hasEditorImage = true;
 			}
 			else if ( string_equal_nocase( token, "qer_alphafunc" ) ) {
 				const char* alphafunc = tokeniser.getToken();
@@ -1306,6 +1321,27 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				}
 			}
 		}
+	}
+
+	/* no qer_editorimage: fall back to the first stage image (what q3map2 and the game show),
+	   unless an image with the shader's own name exists - that is what stock radiant used */
+	if ( !hasEditorImage && !firstStageImage.empty() ) {
+		const auto fileExists = []( const char* path ){
+			if ( ArchiveFile* file = GlobalFileSystem().openFile( path ) ) {
+				file->release();
+				return true;
+			}
+			return false;
+		};
+		if ( !fileExists( StringStream<64>( m_Name, ".tga" ) )
+		  && !fileExists( StringStream<64>( m_Name, ".jpg" ) )
+		  && !fileExists( StringStream<64>( m_Name, ".png" ) ) ) {
+			m_textureName = firstStageImage.c_str();
+		}
+	}
+	/* skies without an image: show the box's front side */
+	if ( !hasEditorImage && firstStageImage.empty() && !m_skyBox.empty() ) {
+		m_textureName = StringStream<64>( m_skyBox, "_ft" ).c_str();
 	}
 
 	return true;
