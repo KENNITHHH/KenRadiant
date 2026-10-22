@@ -29,9 +29,24 @@ How:
 - `-game sof2` now matches Raven's sof2map defaults: `misc_model` entities are kept in the BSP (so `-convert` restores them 1:1), and baked models use the `_bsp` shader variants, **but only when that shader is actually defined**, so custom/converted props never lose their texture. Opt out with `-nokeepmodels` / `-norename`.
 - `q3map_lightColor ( r g b )` (Raven syntax) is parsed. Other Raven `q3map_*` keywords (`q3map_hint`, `q3map_areaportal`, `q3map_origin`, `q3map_nolightmap`, `q3map_alphashadow` …) already worked through ydnar's generic `q3map_<surfaceparm>` fallback.
 
+### Lightmap packing for MAX_SHADERS (light stage)
+SOF2/JK2/JA create one renderer shader per (shader, lightmap page) pair and stop at `MAX_SHADERS` (2048 in SOF2).
+Stock q3map2 scatters every shader over most lightmap pages, for three reasons:
+1. first-fit placement drops each lightmap into the first hole on *any* page;
+2. a lightmap block can hold several coplanar shaders, so secondary shaders ride along onto other shaders' pages;
+3. identical lightmaps are shared across shaders, which points surfaces at pages anywhere in the map (2/3 of mp_strike's lightmapped surfaces).
+
+With `-game sof2|jk2|ja` the light stage now packs per shader: one shader per lightmap block, pages that already hold the shader first,
+a shader only moves to a partly used page if all of its remaining lightmaps fit there, and identical-lightmap sharing only between blocks
+whose shaders are a subset of the target's. The light log prints the real pair count:
+`(shader, lightmap) pairs in the bsp`.
+
+mp_strike at `_lightmapscale 1`: **1938 → 409 pairs**, 100 → 119 lightmap pages, 98.5% of lightmapped vertices identical (≤1/255).
+`-noshaderpack` restores the stock behaviour; `-shaderpack` enables it for other games. `Q3MAP2_DEBUGPACK=1` dumps every placement to stderr.
+
 ### Crash fixes
 - assimp LWO loader: out-of-bounds read on `.lwo` files with vertex colour maps (it indexed surfaces with a stale face counter). This crashed `-bsp` on CoD4toSOF2 maps, which ship their vertex-alpha blend layers as `models/cod4/blend/*_layers.lwo`. Found with AddressSanitizer on mp_strike.
-- A model that fails to load is now named in the warning (assimp's own message, e.g. "No meshes remaining", doesn't say which file).
+- A model that fails to load is now named in the warning (assimp's own message, e.g. "No meshes remaining", doesn't say which file), and is only tried once instead of once per placement.
 
 ### Build
 - No glib dependency for q3map2 (directory listing uses `std::filesystem`).

@@ -30,6 +30,9 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include <map>
+#include <set>
+#include <algorithm>
 #include "bspfile_rbsp.h"
 #include "surface_extra.h"
 #include "timer.h"
@@ -581,6 +584,11 @@ static bool AddSurfaceToRawLightmap( int num, rawLightmap_t& lm ){
 		     info.si->lmBrightness   != lm.brightness ||
 		     info.si->lmFilterRadius != lm.filterRadius ||
 		     info.si->splotchFix     != lm.splotchFix ) {
+			return false;
+		}
+
+		/* shader-aware packing: one shader per raw lightmap, so no shader rides along onto another shader's pages */
+		if ( g_shaderAwareLightmapPacking && info.si != surfaceInfos[ lightSurfaces[ lm.firstLightSurface ] ].si ) {
 			return false;
 		}
 
@@ -1780,6 +1788,51 @@ static void SetupOutLightmap( rawLightmap_t *lm, outLightmap_t *olm ){
  */
 
 #define LIGHTMAP_RESERVE_COUNT 1
+
+/* -----------------------------------------------------------------
+   shader-aware lightmap packing (SOF2 branch)
+   Engines like SOF2/JK2/JA create one renderer shader per (shader, lightmap page)
+   pair and stop at MAX_SHADERS. First-fit packing scatters every shader over most
+   pages; here each raw lightmap prefers pages that already hold its shaders, and a
+   shader new to a page is only put there if all of that shader's remaining
+   lightmaps can follow it.
+   ----------------------------------------------------------------- */
+static std::map<const shaderInfo_t*, long> s_shaderRemainingLuxels;
+
+static const shaderInfo_t *RawLightmapPrimaryShader( const rawLightmap_t *lm ){
+	return lm->numLightSurfaces > 0 ? surfaceInfos[ lightSurfaces[ lm->firstLightSurface ] ].si : nullptr;
+}
+
+/* true when every shader of raw lightmap b also occurs in raw lightmap a: b may then reuse a's luxels
+   (twin) without creating a new (shader, lightmap) pair, since a's own surfaces already put those shaders there */
+static bool RawLightmapShadersSubset( const rawLightmap_t *b, const rawLightmap_t *a ){
+	for ( int i = 0; i < b->numLightSurfaces; ++i ){
+		const shaderInfo_t *si = surfaceInfos[ lightSurfaces[ b->firstLightSurface + i ] ].si;
+		bool found = false;
+		for ( int j = 0; j < a->numLightSurfaces && !found; ++j )
+			found = surfaceInfos[ lightSurfaces[ a->firstLightSurface + j ] ].si == si;
+		if ( !found )
+			return false;
+	}
+	return true;
+}
+
+/* number of the raw lightmap's shaders that the page does not hold yet */
+static int OutLightmapNewShaders( const rawLightmap_t *lm, const outLightmap_t *olm ){
+	int missing = 0;
+	const shaderInfo_t *seen[ 16 ];
+	int numSeen = 0;
+	for ( int i = 0; i < lm->numLightSurfaces; ++i ){
+		const shaderInfo_t *si = surfaceInfos[ lightSurfaces[ lm->firstLightSurface + i ] ].si;
+		if ( std::find( seen, seen + numSeen, si ) != seen + numSeen )
+			continue;
+		if ( numSeen < 16 )
+			seen[ numSeen++ ] = si;
+		if ( std::find( olm->shaders, olm->shaders + olm->numShaders, si ) == olm->shaders + olm->numShaders )
+			++missing;
+	}
+	return missing;
+}
 static void FindOutLightmaps( rawLightmap_t *lm, bool fastAllocate ){
 	int i, j, k, lightmapNum, xMax, yMax, x = -1, y = -1, sx, sy, ox, oy;
 	outLightmap_t       *olm;
@@ -1885,8 +1938,45 @@ static void FindOutLightmaps( rawLightmap_t *lm, bool fastAllocate ){
 			else{
 				i = ( ( numOutLightmaps - LIGHTMAP_RESERVE_COUNT ) / lightmapSearchBlockSize ) * lightmapSearchBlockSize;
 			}
-			for ( ; i < numOutLightmaps; ++i )
+
+			/* page visiting order: plain first-fit, or shader-aware */
+			std::vector<int> pageOrder;
+			if ( g_shaderAwareLightmapPacking && lightmapNum == 0 ) {
+				const shaderInfo_t *primary = RawLightmapPrimaryShader( lm );
+				const long remaining = s_shaderRemainingLuxels[ primary ];
+				struct Cand { int page, newShaders, free; };
+				std::vector<Cand> cands;
+				int numShadersLm = 0;
+				{
+					outLightmap_t empty{};
+					numShadersLm = OutLightmapNewShaders( lm, &empty );
+				}
+				for ( int p = i; p < numOutLightmaps; ++p ){
+					const outLightmap_t& o = outLightmaps[ p ];
+					if ( o.freeLuxels < lm->used || o.customWidth != lm->customWidth || o.customHeight != lm->customHeight )
+						continue;
+					const int nw = OutLightmapNewShaders( lm, &o );
+					/* a page holding none of these shaders is only worth it if the rest of the primary shader fits there too,
+					   otherwise a fresh page keeps the shader together just as cheaply */
+					if ( nw >= numShadersLm && numShadersLm > 0 && o.freeLuxels < remaining )
+						continue;
+					cands.push_back( { p, nw, o.freeLuxels } );
+				}
+				std::ranges::stable_sort( cands, []( const Cand& a, const Cand& b ){
+					if ( a.newShaders != b.newShaders ) return a.newShaders < b.newShaders;
+					return a.free < b.free; /* best fit: keep big holes for big lightmaps */
+				} );
+				for ( const Cand& c : cands )
+					pageOrder.push_back( c.page );
+			}
+			else{
+				for ( int p = i; p < numOutLightmaps; ++p )
+					pageOrder.push_back( p );
+			}
+
+			for ( const int pageIndex : pageOrder )
 			{
+				i = pageIndex;
 				/* get the output lightmap */
 				olm = &outLightmaps[ i ];
 
@@ -1987,6 +2077,18 @@ static void FindOutLightmaps( rawLightmap_t *lm, bool fastAllocate ){
 		/* if this is a style-using lightmap, it must be exported */
 		if ( lightmapNum > 0 && g_game->load != LoadRBSPFile ) {
 			olm->extLightmapNum = 0;
+		}
+
+		if ( lightmapNum == 0 ) {
+			s_shaderRemainingLuxels[ RawLightmapPrimaryShader( lm ) ] -= lm->used;
+			if ( getenv( "Q3MAP2_DEBUGPACK" ) )
+			{
+				fprintf( stderr, "PACK %d %s used=%d w=%d h=%d surfs=%d page=%d/%d :", int( lm - rawLightmaps ), RawLightmapPrimaryShader( lm )->shader.c_str(),
+				         lm->used, lm->w, lm->h, lm->numLightSurfaces, i, numOutLightmaps );
+				for ( int q = 0; q < lm->numLightSurfaces; ++q )
+					fprintf( stderr, " %s", surfaceInfos[ lightSurfaces[ lm->firstLightSurface + q ] ].si->shader.c_str() + 21 );
+				fprintf( stderr, "\n" );
+			}
 		}
 
 		/* add the surface lightmap to the bsp lightmap */
@@ -2771,6 +2873,11 @@ void StoreSurfaceLightmaps( bool fastAllocate, bool storeForReal ){
 							continue;
 						}
 
+						/* shader-aware packing: only twin when it can't spread a shader onto another lightmap page */
+						if ( g_shaderAwareLightmapPacking && !RawLightmapShadersSubset( lm2, lm ) ) {
+							continue;
+						}
+
 						/* compare them */
 						if ( CompareBSPLuxels( lm, lightmapNum, lm2, lightmapNum2 ) ) {
 							/* merge and set twin */
@@ -2842,6 +2949,14 @@ void StoreSurfaceLightmaps( bool fastAllocate, bool storeForReal ){
 		numOutLightmaps = 0;
 		numBSPLightmaps = 0;
 		numExtLightmaps = 0;
+
+		/* shader-aware packing: luxels each primary shader still has to place */
+		s_shaderRemainingLuxels.clear();
+		for ( i = 0; i < numRawLightmaps; ++i )
+		{
+			lm = &rawLightmaps[ sortLightmaps[ i ] ];
+			s_shaderRemainingLuxels[ RawLightmapPrimaryShader( lm ) ] += lm->used;
+		}
 
 		/* find output lightmap */
 		for ( i = 0; i < numRawLightmaps; ++i )
@@ -3271,6 +3386,18 @@ void StoreSurfaceLightmaps( bool fastAllocate, bool storeForReal ){
 		Sys_Printf( "%9d BSP lightmaps\n", numBSPLightmaps );
 		Sys_Printf( "%9d total lightmaps\n", numOutLightmaps );
 		Sys_Printf( "%9d unique lightmap/shader combinations\n", numLightmapShaders );
+		{
+			/* what the engine actually creates: one renderer shader per distinct (shader, lightmap) on the drawsurfaces */
+			std::set<std::pair<int, int>> pairs;
+			std::set<int> lmShaders;
+			for ( const bspDrawSurface_t& ds : bspDrawSurfaces ){
+				pairs.emplace( ds.shaderNum, ds.lightmapNum[ 0 ] );
+				if ( ds.lightmapNum[ 0 ] >= 0 )
+					lmShaders.insert( ds.shaderNum );
+			}
+			Sys_Printf( "%9zu (shader, lightmap) pairs in the bsp (%zu lightmapped shaders, %s packing)\n",
+			            pairs.size(), lmShaders.size(), g_shaderAwareLightmapPacking ? "shader-aware" : "first-fit" );
+		}
 
 		/* write map shader file */
 		WriteMapShaderFile();

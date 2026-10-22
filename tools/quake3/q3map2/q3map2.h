@@ -2131,6 +2131,7 @@ inline bool g_oneSky; /* fallback to old behavior: any sky emits total of all su
 inline int approximateTolerance;
 inline bool noCollapse;
 inline int lightmapSearchBlockSize;
+inline bool g_shaderAwareLightmapPacking = false; /* SOF2 branch: pack lightmaps per shader to stay under MAX_SHADERS */
 inline bool exportLightmaps;
 inline bool externalLightmaps;
 inline int lmCustomSizeW = LIGHTMAP_WIDTH;

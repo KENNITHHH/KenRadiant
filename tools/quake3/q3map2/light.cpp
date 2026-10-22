@@ -2143,6 +2143,10 @@ int LightMain( Args& args ){
 	int lightmapMergeSize = 0;
 	bool lightSamplesInsist = false;
 	bool fastAllocate = true;
+	bool noShaderPack = false;
+	/* SOF2: one renderer shader per (shader, lightmap page) pair, capped at MAX_SHADERS 2048 */
+	if ( strEqual( g_game->arg, "sof2" ) || strEqual( g_game->arg, "jk2" ) || strEqual( g_game->arg, "ja" ) )
+		g_shaderAwareLightmapPacking = true;
 	bool bounceStore = true;
 
 
@@ -2652,6 +2656,13 @@ int LightMain( Args& args ){
 			Sys_Printf( "Faster mode enabled\n" );
 		}
 
+		while ( args.takeArg( "-shaderpack" ) ) {
+			g_shaderAwareLightmapPacking = true;
+		}
+		while ( args.takeArg( "-noshaderpack" ) ) {
+			g_shaderAwareLightmapPacking = false;
+			noShaderPack = true;
+		}
 		while ( args.takeArg( "-slowallocate" ) ) {
 			fastAllocate = false;
 			Sys_Printf( "Slow allocation mode enabled\n" );

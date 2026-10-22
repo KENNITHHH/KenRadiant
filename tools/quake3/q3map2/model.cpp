@@ -30,6 +30,8 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include <set>
+#include <string>
 
 #include "model.h"
 #include "qspatial.h"
@@ -306,6 +308,11 @@ static AssModel *LoadModel( const char *name, int frame ){
 	if( it != s_assModels.end() ){
 		return &it->second;
 	}
+	/* don't re-import (and re-warn about) a model that already failed */
+	static std::set<std::pair<std::string, int>> s_failedModels;
+	if ( s_failedModels.contains( { name, frame } ) ) {
+		return nullptr;
+	}
 
 	unsigned flags = //aiProcessPreset_TargetRealtime_Fast
 	            //    | aiProcess_FixInfacingNormals
@@ -340,8 +347,8 @@ static AssModel *LoadModel( const char *name, int frame ){
 		return &s_assModels.emplace( ModelNameFrame{ name, frame }, AssModel( s_assImporter->GetOrphanedScene(), name ) ).first->second;
 	}
 	else{
-		Sys_Warning( "Failed to load model %s: %s\n", name, s_assImporter->GetErrorString() );
-		/* remember the failure so the same model isn't re-imported (and re-warned) for every instance */
+		Sys_Warning( "Failed to load model %s: %s (every placement of it is skipped)\n", name, s_assImporter->GetErrorString() );
+		s_failedModels.insert( { name, frame } );
 		return nullptr;
 	}
 }
