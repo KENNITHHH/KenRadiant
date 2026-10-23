@@ -888,6 +888,8 @@ $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/kr_suncalibrator.o \
 	radiant/kr_tools.o \
 	radiant/kr_terrain.o \
+	radiant/kr_maptext.o \
+	radiant/kr_misc.o \
 	radiant/clippertool.o \
 	radiant/colors.o \
 	radiant/commands.o \

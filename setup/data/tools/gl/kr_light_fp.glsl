@@ -1,14 +1,18 @@
 // KenRadiant live light preview: texture * ( ambient + shadowed sun + point lights ), lights in eye space
 uniform sampler2D u_tex;
 uniform int u_count;
-uniform vec3 u_pos[24];
-uniform vec3 u_col[24];
-uniform float u_rad[24];
+uniform vec4 u_light[96];  // per light: ( eye position, falloff ), ( colour, 0 ) - see the light loop
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
 uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
 uniform float u_minlight;  // worldspawn _minlight
+// sky light occlusion: 9 directional depth maps (zenith + 8 around) in a 3 x 3 atlas
+uniform sampler2DShadow u_skyshadow;
+uniform int u_has_sky;
+uniform mat4 u_eye2sky[9];
+uniform vec3 u_sky_dir[9];   // world space, towards the sky
+uniform float u_sky_bias;
 uniform sampler2DShadow u_shadow;
 uniform mat4 u_eye2shadow;
 uniform int u_has_shadow;
@@ -115,17 +119,37 @@ void main()
 			sun *= lit / 25.0;
 		}
 	}
-	float up = ( u_eye2world * n ).z;
-	vec3 light = u_ambient + u_sky * ( 0.55 + 0.45 * up ) + u_sun_col * sun + u_bounce;
-	for( int i = 0; i < 24; ++i ){
+	vec3 nw = u_eye2world * n;
+	// q3map2 sky light: light from every direction of the sky the surface can see (cosine weighted)
+	float skyVis = 0.0, skyAll = 0.0;
+	for( int i = 0; i < 9; ++i )
+		skyAll += max( u_sky_dir[i].z, 0.0 ); // what an open floor gets
+	for( int i = 0; i < 9; ++i ){
+		float c = max( dot( nw, u_sky_dir[i] ), 0.0 );
+		if( c <= 0.0 )
+			continue;
+		float vis = 1.0;
+		if( u_has_sky != 0 ){
+			vec4 sc = u_eye2sky[i] * vec4( v_pos, 1.0 );
+			vec2 t0 = vec2( float( i - 3 * ( i / 3 ) ), float( i / 3 ) ) / 3.0; // this direction's tile of the atlas
+			if( sc.x > t0.x && sc.x < t0.x + 0.3333 && sc.y > t0.y && sc.y < t0.y + 0.3333 && sc.z < 1.0 ){
+				float bias = u_sky_bias * ( 1.0 + 3.0 * min( sqrt( 1.0 - c * c ) / max( c, 0.05 ), 8.0 ) );
+				vis = shadow2D( u_skyshadow, vec3( sc.xy, sc.z - bias ) ).r;
+			}
+		}
+		skyVis += c * vis;
+	}
+	vec3 light = u_ambient + u_sky * ( skyVis / max( skyAll, 0.001 ) ) + u_sun_col * sun + u_bounce;
+	for( int i = 0; i < 48; ++i ){
 		if( i >= u_count )
 			break;
-		vec3 d = u_pos[i] - v_pos;
+		vec3 d = u_light[i * 2].xyz - v_pos;
+		float falloff = u_light[i * 2].w;
 		float dist = length( d );
 		// q3map2 point light, in lightmap units (1 = 255): inverse square ( light * 7500 / dist² ),
 		// or linear ( spawnflags 1: light * 7500 / 8000 - dist ), dist never below 16
 		float lndl = max( dot( n, d / max( dist, 0.001 ) ), 0.0 );
-		float att = u_rad[i] > 0.0 ? u_rad[i] / max( dist * dist, 256.0 ) : max( -u_rad[i] - dist, 0.0 ) / 255.0;
+		float att = falloff > 0.0 ? falloff / max( dist * dist, 256.0 ) : max( -falloff - dist, 0.0 ) / 255.0;
 		float c = att * lndl;
 		if( c > 0.0 && i < 8 ){
 			vec3 L = u_eye2world * ( -d );
@@ -138,7 +162,7 @@ void main()
 			else if( i == 6 && u_cube_far2.z > 0.0 ) c *= cubeShadow( u_cube6, L, u_cube_far2.z, lndl );
 			else if( i == 7 && u_cube_far2.w > 0.0 ) c *= cubeShadow( u_cube7, L, u_cube_far2.w, lndl );
 		}
-		light += u_col[i] * c;
+		light += u_light[i * 2 + 1].rgb * c;
 	}
 	light = max( light, vec3( u_minlight ) );
 	// what q3map2 does to the lightmap: compensate, gamma, saturation

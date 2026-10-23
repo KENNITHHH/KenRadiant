@@ -3,6 +3,17 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (10)
+### Editor
+- **Sky light now sees roofs**: `q3map_skyLight` in the light preview is occluded like q3map2 (9 sky directions with shadow maps), so rooms, tunnels and covered areas are dark again instead of lit like outside. Corners and walls get less sky than open floors. (View → Light Preview → Sun Shadows also turns the sky shadows on / off.)
+- **Up to 48 lights** in the preview (was 24), so fewer small lights pop in and out while you fly. Set it in the Sun Calibrator window.
+- **Map Text window** (View → Map Text Window): the .map as text. Select something in the views and the text jumps to its entity / brush (highlighted); click a line to select that brush / entity, double-click to fly there. Find box, follows your edits.
+- **Go To Coordinates** (View menu, Ctrl+Shift+G): type or paste `x y z` (an origin, a console line ...) and the camera flies there.
+- **Version and update check** at the right of the menu bar: shows this build's commit and asks GitHub at startup whether a newer build exists (click to open the download page). Help → *Check for Updates at Startup* turns it off, *Check for KenRadiant Update Now* checks on demand.
+- **Fixed: assertion "orphan shader still referenced"** when the skybox button (or Flush & Reload Shaders) reloaded shaders with a terrain in the map; the terrain look comes back right after the reload.
+- **Fixed: assertion "pointer m_shader is null"** when selecting terrain.
+- Terrain Paint: the layers are a dropdown (the window no longer grows and spams geometry warnings).
+
 ## Build 2026-10-23 (9)
 ### Editor
 - **Terrain blending in the 3D view**: q3map2 index-map terrain (a func_group with `alphamap` / `_indexmap` .pcx, `layers` and `shader`, faces with a `q3map_terrain` shader such as `textures/tools/_terrain`) shows its layers `textures/<shader>_0 ... _3` blended by the index map, with each layer's `tcMod scale`, lit by the live light preview too. The terrain stays visible in Game View.

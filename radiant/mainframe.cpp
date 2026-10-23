@@ -976,6 +976,8 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		create_check_menu_item_with_mnemonic( submenu, "Glow Shaders Fullbright (light preview)", "ToggleGlowShaders" );
 	}
 	create_menu_item_with_mnemonic( menu, "Cycle Selection Style (outline / classic)", "CycleSelectionStyle" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Map Text Window...", "MapTextWindow" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Go To Coordinates...", "GoToCoordinates" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
@@ -1252,7 +1254,8 @@ void create_help_menu( QMenuBar *menubar ){
 	create_game_help_menu( menu );
 
 	create_menu_item_with_mnemonic( menu, "Bug report", makeCallbackF( OpenBugReportURL ) );
-	create_menu_item_with_mnemonic( menu, "Check for NetRadiant update", "CheckForUpdate" ); // FIXME
+	create_menu_item_with_mnemonic( menu, "Check for KenRadiant Update Now", "CheckForKenRadiantUpdate" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Check for Updates at Startup", "ToggleCheckUpdates" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "&About", makeCallbackF( DoAbout ) );
 }
 
@@ -1809,6 +1812,8 @@ void MainFrame::Create(){
 	m_nCurrentStyle = (EViewStyle)g_Layout_viewStyle.m_value;
 
 	create_main_menu( window->menuBar(), CurrentStyle() );
+	extern void KrMisc_installMenuCorner( QMenuBar* menubar );
+	KrMisc_installMenuCorner( window->menuBar() ); // KenRadiant: version / update notice
 
 	{
 		{

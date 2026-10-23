@@ -2260,10 +2260,11 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	// ambient: worldspawn _ambient (0..255 like q3map2); q3map_skyLight as light from the sky dome (tinted a little by the sun)
 	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 1.f );
 	const Vector3 tint = vector3_length_squared( g_krSunColour ) > 0 ? vector3_normalised( g_krSun.colour ) * 1.732f : Vector3( 1, 1, 1 );
-	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 510.f, 0.f, 1.f );
+	// an open floor gets about skyLight / 400 (lightmap units); walls, corners and rooms get less - the sky maps see the roofs
+	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 400.f, 0.f, 1.5f );
 	g_krMinLight = std::clamp( minlight / 255.f, 0.f, 1.f );
-	if( ambient <= 0 && skyLight <= 0 && minlight <= 0 )
-		g_krAmbient = Vector3( 0.06f, 0.06f, 0.06f ); // never fully black
+	if( ambient <= 0 && minlight <= 0 ) // never fully black (q3map2's bounce light fills rooms a little)
+		g_krAmbient = Vector3( 1, 1, 1 ) * ( skyLight > 0 ? 0.035f : 0.06f );
 }
 
 /* ---- KenRadiant: sun shadow map for the live light preview ---- */
@@ -2412,6 +2413,105 @@ static void KrShadow_render( camera_t& camera ){
 	const Matrix4 bias( 0.5f, 0, 0, 0,  0, 0.5f, 0, 0,  0, 0, 0.5f, 0,  0.5f, 0.5f, 0.5f, 1 );
 	g_krEye2Shadow = matrix4_multiplied_by_matrix4( matrix4_multiplied_by_matrix4( bias, lightProj ),
 	                 matrix4_multiplied_by_matrix4( lightView, matrix4_full_inverse( camera.modelview ) ) );
+}
+
+/* ---- KenRadiant: sky light occlusion - 9 directional depth maps (zenith + 8 around), one 3 x 3 atlas ---- */
+static GLuint s_skyFbo = 0, s_skyTex = 0;
+static bool s_skyDirty = true;
+static Vector3 s_skyCentre( 1e9f, 0, 0 );
+static void KrSky_sceneChanged(){ s_skyDirty = true; }
+static void KrSkyShadow_render( camera_t& camera ){
+	static bool registered = false;
+	if( !registered ){
+		registered = true;
+		AddSceneChangeCallback( FreeCaller<void(), KrSky_sceneChanged>() );
+		const float e = degrees_to_radians( 40.f );
+		g_krSkyDirs[0] = Vector3( 0, 0, 1 );
+		for( int i = 0; i < 8; ++i ){
+			const float a = degrees_to_radians( 45.f * i + 22.5f );
+			g_krSkyDirs[i + 1] = Vector3( std::cos( e ) * std::cos( a ), std::cos( e ) * std::sin( a ), std::sin( e ) );
+		}
+	}
+	g_krSkyShadowTex = 0;
+	if( !g_krShadows || vector3_length_squared( g_krSkyAmbient ) == 0 )
+		return;
+	QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
+	constexpr int tile = 1024, size = tile * 3;
+	constexpr float halfExtent = 3072, depthRange = 32768;
+	if( s_skyFbo == 0 ){
+		gl().glGenTextures( 1, &s_skyTex );
+		gl().glBindTexture( GL_TEXTURE_2D, s_skyTex );
+		gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL );
+		gl().glBindTexture( GL_TEXTURE_2D, 0 );
+		f->glGenFramebuffers( 1, &s_skyFbo );
+		GLint previous = 0;
+		gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+		f->glBindFramebuffer( GL_FRAMEBUFFER, s_skyFbo );
+		f->glFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_skyTex, 0 );
+		gl().glDrawBuffer( GL_NONE );
+		gl().glReadBuffer( GL_NONE );
+		f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+		s_skyDirty = true;
+	}
+	extern int g_krMapGeneration;
+	static int generation = -1;
+	if( generation != g_krMapGeneration ){
+		generation = g_krMapGeneration;
+		s_skyDirty = true;
+	}
+	const Vector3 origin = Camera_getOrigin( camera );
+	const Vector3 centre( float_snapped( origin.x(), 512.f ), float_snapped( origin.y(), 512.f ), float_snapped( origin.z(), 512.f ) );
+	const Matrix4 proj = kr_ortho( -halfExtent, halfExtent, -halfExtent, halfExtent, 1, depthRange );
+	Matrix4 views[9];
+	for( int i = 0; i < 9; ++i ){
+		const Vector3 forward = -g_krSkyDirs[i];
+		views[i] = kr_lookat( centre - forward * ( depthRange * 0.5f ), forward );
+	}
+	// while you edit, the sky maps update at most ~4 times a second
+	static QElapsedTimer lastUpdate;
+	if( s_skyDirty || !vector3_equal( centre, s_skyCentre ) ){
+		if( s_skyDirty && lastUpdate.isValid() && lastUpdate.elapsed() < 250 && vector3_equal( centre, s_skyCentre ) )
+			QTimer::singleShot( 260, [](){ if( g_camwnd ) CamWnd_Update( *g_camwnd ); } );
+		else{
+			s_skyDirty = false;
+			s_skyCentre = centre;
+			lastUpdate.start();
+			GLint previous = 0, viewport[4];
+			gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+			gl().glGetIntegerv( GL_VIEWPORT, viewport );
+			f->glBindFramebuffer( GL_FRAMEBUFFER, s_skyFbo );
+			gl().glDepthMask( GL_TRUE );
+			gl().glViewport( 0, 0, size, size );
+			gl().glClear( GL_DEPTH_BUFFER_BIT );
+			for( int i = 0; i < 9; ++i ){
+				gl().glViewport( ( i % 3 ) * tile, ( i / 3 ) * tile, tile, tile );
+				View view( true );
+				view.Construct( proj, views[i], tile, tile );
+				ShadowRenderer renderer;
+				Scene_Render( renderer, view );
+				GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST, views[i], proj, centre );
+			}
+			f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+			gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+			gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+			gl().glDepthMask( GL_TRUE );
+		}
+	}
+	g_krSkyShadowTex = s_skyTex;
+	g_krSkyBias = ( 2 * halfExtent / tile ) / depthRange;
+	const Matrix4 eye2world = matrix4_full_inverse( camera.modelview );
+	for( int i = 0; i < 9; ++i ){
+		// clip -> [0,1] of the tile -> atlas
+		const float ox = float( i % 3 ) / 3, oy = float( i / 3 ) / 3;
+		const Matrix4 bias( 0.5f / 3, 0, 0, 0,  0, 0.5f / 3, 0, 0,  0, 0, 0.5f, 0,  ox + 0.5f / 3, oy + 0.5f / 3, 0.5f, 1 );
+		g_krEye2Sky[i] = matrix4_multiplied_by_matrix4( matrix4_multiplied_by_matrix4( bias, proj ), matrix4_multiplied_by_matrix4( views[i], eye2world ) );
+	}
 }
 
 /* ---- KenRadiant: point light shadows - depth cube maps of the nearest lights ---- */
@@ -2751,6 +2851,13 @@ void KrLightPreview_prepareSun(){
 		KrSun_readMap();
 }
 void KrSunCalibrator_show();
+Vector3 KrCamera_origin(){
+	return g_camwnd != nullptr ? Camera_getOrigin( *g_camwnd ) : Vector3( 0, 0, 0 );
+}
+void KrCamera_goTo( const Vector3& origin ){
+	if( g_camwnd != nullptr )
+		Camera_setOrigin( *g_camwnd, origin );
+}
 /// KenRadiant: the surface point in the middle of the 3D view (grid snapped), or 256 units in front of the camera
 Vector3 KrCamera_targetPoint(){
 	if( g_camwnd == nullptr )
@@ -2883,6 +2990,7 @@ void CamWnd::Cam_Draw(){
 		g_krLightPreviewView = m_Camera.modelview;
 		g_krLightPreviewDrawing = false; // the shadow passes draw plain depth
 		KrShadow_render( m_Camera );
+		KrSkyShadow_render( m_Camera );
 		KrCubeShadows_render( m_Camera );
 		g_krLightPreviewDrawing = true;
 	}
@@ -3416,7 +3524,7 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
-	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount48", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );
@@ -3428,6 +3536,10 @@ void CamWnd_Construct(){
 	GlobalCommands_insert( "CheckForProblems", makeCallbackF( KrCheckProblems_show ), QKeySequence( "Ctrl+Alt+P" ) ); // KenRadiant (Hammer: Alt+P, which opens the Plugins menu here)
 	extern void KrTerrain_registerCommands();
 	KrTerrain_registerCommands();
+	extern void KrMapText_registerCommands();
+	KrMapText_registerCommands();
+	extern void KrMisc_registerCommands();
+	KrMisc_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

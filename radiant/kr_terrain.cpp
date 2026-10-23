@@ -28,8 +28,6 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QPushButton>
-#include <QRadioButton>
-#include <QButtonGroup>
 #include <QComboBox>
 #include <QGroupBox>
 #include <QFile>
@@ -68,6 +66,7 @@ testSelect_unselected_scene_point( const View& view, const DeviceVector device_p
 
 void KrLightPreview_redraw();
 extern int g_krMapGeneration;
+bool g_krTerrainShadersRealised = true; // false while the shader system reloads
 
 namespace
 {
@@ -219,7 +218,19 @@ struct TerrainRecord : public Undoable
 				p = layers - 1;
 		glDirty = true;
 	}
+	void releaseLayers(){
+		for( IShader* s : layerShaders )
+			if( s != nullptr )
+				s->DecRef();
+		layerShaders.clear();
+	}
 	void updateLayers(){
+		if( !g_krTerrainShadersRealised ){ // shaders are being reloaded: hold nothing
+			releaseLayers();
+			tgl.layers = std::min( layers, 4 );
+			std::fill( std::begin( tgl.layerTex ), std::end( tgl.layerTex ), 0u );
+			return;
+		}
 		if( int( layerShaders.size() ) != std::min( layers, 4 ) ){
 			for( IShader* s : layerShaders )
 				if( s != nullptr )
@@ -324,12 +335,26 @@ struct TerrainRecord : public Undoable
 
 std::vector<std::unique_ptr<TerrainRecord>> g_records; // index = render state id
 
+/// shader reloads (Flush & Reload, skybox toggle, map change ...) must not find our references to the layer shaders
+class TerrainShaderObserver : public ModuleObserver
+{
+public:
+	void realise() override;
+	void unrealise() override;
+};
+TerrainShaderObserver g_terrainShaderObserver;
+
 const char* keyOf( const Entity& entity, const char* a, const char* b ){
 	const char* value = entity.getKeyValue( a );
 	return string_empty( value ) ? entity.getKeyValue( b ) : value;
 }
 
 void Terrain_clearIfNewMap(){
+	static bool attached = false;
+	if( !attached ){
+		attached = true;
+		GlobalShaderSystem().attach( g_terrainShaderObserver );
+	}
 	static int generation = -1;
 	static bool registered = false;
 	if( !registered ){
@@ -347,6 +372,16 @@ TerrainRecord* Terrain_find( const Entity* entity ){
 		if( r && r->entity == entity )
 			return r.get();
 	return nullptr;
+}
+
+void TerrainShaderObserver::realise(){
+	g_krTerrainShadersRealised = true;
+}
+void TerrainShaderObserver::unrealise(){
+	g_krTerrainShadersRealised = false;
+	for( auto& r : g_records )
+		if( r )
+			r->releaseLayers();
 }
 
 } // namespace
@@ -464,8 +499,7 @@ void Terrain_paint( TerrainRecord& r, const Vector3& point ){
 class TerrainPaintDialog : public QDialog
 {
 	QLabel* m_info;
-	QGroupBox* m_layerBox;
-	QButtonGroup* m_layers;
+	QComboBox* m_layerCombo;
 	QSlider* m_radius;
 	QSpinBox* m_radiusSpin;
 	QComboBox* m_base;
@@ -478,11 +512,16 @@ public:
 		m_info = new QLabel;
 		m_info->setWordWrap( true );
 		vbox->addWidget( m_info );
-		m_layerBox = new QGroupBox( "Layer to paint" );
-		new QVBoxLayout( m_layerBox );
-		m_layers = new QButtonGroup( this );
-		QObject::connect( m_layers, QOverload<int>::of( &QButtonGroup::buttonClicked ), []( int id ){ g_paintLayer = id; } );
-		vbox->addWidget( m_layerBox );
+		{
+			auto *row = new QHBoxLayout;
+			row->addWidget( new QLabel( "Layer to paint" ) );
+			m_layerCombo = new QComboBox;
+			m_layerCombo->setSizeAdjustPolicy( QComboBox::AdjustToMinimumContentsLengthWithIcon );
+			m_layerCombo->setMinimumContentsLength( 32 );
+			QObject::connect( m_layerCombo, QOverload<int>::of( &QComboBox::currentIndexChanged ), []( int i ){ if( i >= 0 ) g_paintLayer = i; } );
+			row->addWidget( m_layerCombo, 1 );
+			vbox->addLayout( row );
+		}
 		{
 			auto *row = new QHBoxLayout;
 			row->addWidget( new QLabel( "Radius" ) );
@@ -596,15 +635,15 @@ public:
 		globalOutputStream() << "terrain: " << entity->getClassName() << " uses " << index.toLatin1().constData() << " (" << data[1].toLatin1().constData() << " layers of " << data[0].toLatin1().constData() << ")\n";
 		KrLightPreview_redraw();
 	}
-	/// layer buttons for the terrain under the cursor
+	/// layers of the terrain under the cursor (the last one stays while the cursor is elsewhere)
 	void showTerrain( const TerrainRecord* r ){
+		if( r == nullptr && m_shown != nullptr )
+			return;
 		if( r == m_shown && r != nullptr )
 			return;
 		m_shown = r;
-		for( QAbstractButton* b : m_layers->buttons() ){
-			m_layers->removeButton( b );
-			delete b;
-		}
+		const QSignalBlocker blocker( m_layerCombo );
+		m_layerCombo->clear();
 		if( r == nullptr ){
 			m_info->setText( "Move the mouse over a terrain (a func_group with alphamap, layers and shader keys)." );
 			return;
@@ -615,16 +654,16 @@ public:
 			QString name = QString( "%1: textures/%2_%1" ).arg( k ).arg( r->shader.c_str() );
 			if( k < int( r->layerShaders.size() ) && r->layerShaders[k] != nullptr && r->layerShaders[k]->getTexture() != nullptr )
 				name += QString( "  (%1)" ).arg( r->layerShaders[k]->getTexture()->name );
-			auto *b = new QRadioButton( name );
-			m_layers->addButton( b, k );
-			m_layerBox->layout()->addWidget( b );
-			if( k == std::clamp( g_paintLayer, 0, r->layers - 1 ) )
-				b->setChecked( true );
+			m_layerCombo->addItem( name );
 		}
 		g_paintLayer = std::clamp( g_paintLayer, 0, r->layers - 1 );
+		m_layerCombo->setCurrentIndex( g_paintLayer );
 	}
+	void forget(){ m_shown = nullptr; }
 	void refreshInfo(){
 		const TerrainRecord* r = m_shown;
+		if( std::none_of( g_records.begin(), g_records.end(), [r]( const auto& p ){ return p.get() == r; } ) )
+			r = nullptr; // another map
 		m_shown = nullptr;
 		showTerrain( r );
 	}
@@ -641,6 +680,7 @@ void TerrainPaint_toggle(){
 		if( g_paintDialog == nullptr )
 			g_paintDialog = new TerrainPaintDialog( MainFrame_getWindow() );
 		g_paintDialog->fillBases();
+		g_paintDialog->forget();
 		g_paintDialog->showTerrain( nullptr );
 		g_paintDialog->show();
 		g_paintDialog->raise();

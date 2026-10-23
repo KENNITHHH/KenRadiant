@@ -468,10 +468,14 @@ KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
-int g_krPreviewLightCount = 24;
+int g_krPreviewLightCount = 48;
 unsigned int g_krCubeTex[c_krMaxCubeShadows] = {};
 float g_krCubeNear = 4, g_krCubeFar[c_krMaxCubeShadows] = {};
 Matrix4 g_krEye2World = g_matrix4_identity;
+unsigned int g_krSkyShadowTex = 0;
+Matrix4 g_krEye2Sky[9];
+Vector3 g_krSkyDirs[9];
+float g_krSkyBias = 0;
 
 /// Quake 3 waveform: base + amp * func( phase + time * freq )
 inline float KrWave( int func, const float wave[4], float time ){
@@ -494,7 +498,8 @@ class GLSLKrLightProgram : public GLProgram
 public:
 	GLuint m_program = 0;
 	GLint u_sky, u_minlight;
-	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
+	GLint u_light, u_has_sky, u_eye2sky, u_sky_dir, u_sky_bias;
+	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
@@ -511,7 +516,9 @@ public:
 		}
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
-		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_pos = u( "u_pos" ); u_col = u( "u_col" ); u_rad = u( "u_rad" );
+		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_light = u( "u_light" );
+		u_has_sky = u( "u_has_sky" ); u_eye2sky = u( "u_eye2sky" ); u_sky_dir = u( "u_sky_dir" ); u_sky_bias = u( "u_sky_bias" );
+		gl().glUniform1i( u( "u_skyshadow" ), 6 );
 		u_sky = u( "u_sky" ); u_minlight = u( "u_minlight" );
 		u_terrain = u( "u_terrain" ); u_tmins = u( "u_tmins" ); u_tsize = u( "u_tsize" ); u_tscale = u( "u_tscale" );
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
@@ -556,20 +563,25 @@ public:
 			return;
 		bind( true );
 		const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxPreviewLights );
-		float pos[c_krMaxPreviewLights * 3], col[c_krMaxPreviewLights * 3], rad[c_krMaxPreviewLights];
+		float packed[c_krMaxPreviewLights * 8];
 		for( std::size_t i = 0; i < count; ++i ){
 			const KrPreviewLight& l = g_krLightPreviewLights[i];
 			const Vector3 eye = matrix4_transformed_point( g_krLightPreviewView, l.origin );
-			pos[i * 3] = eye.x(); pos[i * 3 + 1] = eye.y(); pos[i * 3 + 2] = eye.z();
-			col[i * 3] = l.colour.x(); col[i * 3 + 1] = l.colour.y(); col[i * 3 + 2] = l.colour.z();
-			rad[i] = l.falloff;
+			float* p = packed + i * 8;
+			p[0] = eye.x(); p[1] = eye.y(); p[2] = eye.z(); p[3] = l.falloff;
+			p[4] = l.colour.x(); p[5] = l.colour.y(); p[6] = l.colour.z(); p[7] = 0;
 		}
 		gl().glUniform1i( u_count, GLint( count ) );
-		if( count != 0 ){
-			gl().glUniform3fv( u_pos, GLsizei( count ), pos );
-			gl().glUniform3fv( u_col, GLsizei( count ), col );
-			gl().glUniform1fv( u_rad, GLsizei( count ), rad );
-		}
+		if( count != 0 )
+			gl().glUniform4fv( u_light, GLsizei( count * 2 ), packed );
+		// sky light occlusion
+		gl().glUniform1i( u_has_sky, g_krShadows && g_krSkyShadowTex != 0 ? 1 : 0 );
+		gl().glUniformMatrix4fv( u_eye2sky, 9, GL_FALSE, reinterpret_cast<const float*>( g_krEye2Sky ) );
+		gl().glUniform3fv( u_sky_dir, 9, reinterpret_cast<const float*>( g_krSkyDirs ) );
+		gl().glUniform1f( u_sky_bias, g_krSkyBias );
+		gl().glActiveTexture( GL_TEXTURE6 );
+		gl().glBindTexture( GL_TEXTURE_2D, g_krShadows ? g_krSkyShadowTex : 0 );
+		gl().glActiveTexture( GL_TEXTURE0 );
 		const Vector3 sun = vector3_normalised( matrix4_transformed_direction( g_krLightPreviewView, g_krSunDirection ) );
 		gl().glUniform3f( u_sun_dir, sun.x(), sun.y(), sun.z() );
 		gl().glUniform3f( u_sun_col, g_krSunColour.x(), g_krSunColour.y(), g_krSunColour.z() );
@@ -937,8 +949,7 @@ public:
 		return *m_shader->getTexture();
 	}
 	unsigned int getFlags() const override {
-		ASSERT_NOTNULL( m_shader );
-		return m_shader->getFlags();
+		return m_shader != nullptr ? m_shader->getFlags() : 0; // KenRadiant: builtin states ($KR_TERRAIN ...) have no IShader
 	}
 	IShader& getShader() const {
 		ASSERT_NOTNULL( m_shader );

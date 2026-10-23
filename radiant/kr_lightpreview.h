@@ -22,7 +22,7 @@ extern Vector3 g_krSunColour;          // 0 = no sun
 extern Vector3 g_krAmbient;            // worldspawn _ambient
 extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
 extern float g_krMinLight;             // worldspawn _minlight
-constexpr std::size_t c_krMaxPreviewLights = 24;
+constexpr std::size_t c_krMaxPreviewLights = 48;
 
 // sun shadow map (rendered by the 3D view, read by the light preview program)
 extern bool g_krShadows;               // user toggle (on by default with the preview)
@@ -78,3 +78,9 @@ extern float g_krSunSoftness;    // shadow PCF spread in texels (q3map_sunExt de
 extern bool g_krDeformVertexes;
 extern bool g_krPolygonOffset;
 extern bool g_krGlow;
+
+// sky light occlusion: 9 directional depth maps in one atlas (rendered by the 3D view)
+extern unsigned int g_krSkyShadowTex;  // 0 = none (sky light unoccluded)
+extern Matrix4 g_krEye2Sky[9];
+extern Vector3 g_krSkyDirs[9];         // world, towards the sky
+extern float g_krSkyBias;
