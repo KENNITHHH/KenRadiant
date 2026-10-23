@@ -2250,7 +2250,7 @@ typedef ConstReferenceCaller<Colour4b, void(const StringImportCallback&), Colour
 
 
 void XYShow_registerCommands(){
-	GlobalToggles_insert( "ShowSize2d", makeCallbackF( ToggleShowSizeInfo ), ToggleItem::AddCallbackCaller( g_show_size_item ), QKeySequence( "J" ) );
+	GlobalToggles_insert( "ShowSize2d", makeCallbackF( ToggleShowSizeInfo ), ToggleItem::AddCallbackCaller( g_show_size_item ) ); // KenRadiant: J cycles the selection style
 	GlobalToggles_insert( "ToggleCrosshairs", makeCallbackF( ToggleShowCrosshair ), ToggleItem::AddCallbackCaller( g_show_crosshair_item ), QKeySequence( "Shift+X" ) );
 	GlobalToggles_insert( "ToggleGrid", makeCallbackF( ToggleShowGrid ), ToggleItem::AddCallbackCaller( g_show_grid_item ), QKeySequence( "0" ) );
 

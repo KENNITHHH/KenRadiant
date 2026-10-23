@@ -94,9 +94,11 @@ public:
 	GLushort m_linestipple_pattern;
 	OpenGLFogState m_fog;
 	GLProgram* m_program;
-	// KenRadiant: animated texture coordinates (tcMod scroll / rotate of the first stage), 0 = static
-	GLfloat m_krScroll[2] = { 0, 0 };
-	GLfloat m_krRotate = 0;
+	// KenRadiant: shader effects previewed in the 3D view (tcMod, deformVertexes, polygonOffset), glow surfaces
+	const struct KrShaderEffects* m_krFx = nullptr;
+	bool m_krEmissive = false;
+	bool m_krMatrix = false;       // (current state only) texture matrix of unit 0 is not identity
+	bool m_krPolygonOffset = false; // (current state only) GL_POLYGON_OFFSET_FILL on
 
 	OpenGLState() : m_program( 0 ){
 	}

@@ -140,6 +140,8 @@ public:
 				renderable->viewChanged();
 			}
 
+			if ( Node_isBrush( path.top() ) || Node_isPatch( path.top() ) )
+				m_renderer.Highlight( Renderer::eKrBrushLike );
 			if ( Instance_isSelected( instance ) ) {
 				if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent ) {
 					m_renderer.Highlight( Renderer::eFace );

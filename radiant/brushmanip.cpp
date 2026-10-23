@@ -1666,3 +1666,16 @@ void Brush_constructMenu( QMenu* menu ){
 	command_connect_accelerator( "Brush8Sided" );
 	command_connect_accelerator( "Brush9Sided" );
 }
+
+/// KenRadiant light preview: the sky shaders used on brush faces of the map
+std::vector<CopiedString> Scene_findSkyShaders(){
+	std::vector<CopiedString> found;
+	Scene_ForEachBrush_ForEachFace( GlobalSceneGraph(), [&found]( Face& face ){
+		if( face.getShader().shaderFlags() & QER_SKY ){
+			const char* name = face.GetShader();
+			if( std::none_of( found.begin(), found.end(), [name]( const CopiedString& s ){ return string_equal_nocase( s.c_str(), name ); } ) )
+				found.emplace_back( name );
+		}
+	} );
+	return found;
+}

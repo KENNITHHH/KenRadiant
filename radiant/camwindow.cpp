@@ -1926,8 +1926,10 @@ public:
 		m_state_stack.back().m_lights = &lights;
 	}
 	bool m_outline = false; // KenRadiant: selected objects get an outline instead of overlay + wire
+	bool m_outlineSkipBrushes = false; // ... except brushes / patches, which keep edges + tint
 	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
-		if ( m_outline && ( m_state_stack.back().m_highlight & ePrimitive ) ) {
+		if ( m_outline && ( m_state_stack.back().m_highlight & ePrimitive )
+		  && !( m_outlineSkipBrushes && ( m_state_stack.back().m_highlight & eKrBrushLike ) ) ) {
 			m_state_stack.back().m_state->addRenderable( renderable, world, m_state_stack.back().m_lights );
 			return;
 		}
@@ -1999,6 +2001,64 @@ void ShowSize3dToggle(){
 #include "stringio.h"
 #include "ientity.h"
 #include "ishaders.h"
+std::vector<CopiedString> Scene_findSkyShaders();
+KrSun g_krSun;
+static bool s_krSunDirty = true;
+static void KrSun_sceneChanged(){ s_krSunDirty = true; }
+void KrSun_changed(); // calibrator window refresh
+static void KrSun_readMap(){
+	s_krSunDirty = false;
+	g_krSun.valid = false;
+	g_krSun.shader = "";
+	for( const CopiedString& name : Scene_findSkyShaders() ){
+		IShader* shader = GlobalShaderSystem().getShaderForName( name.c_str() );
+		if( shader == nullptr )
+			continue;
+		float colour[3], intensity, degrees, elevation, sky;
+		if( shader->getSun( colour, intensity, degrees, elevation, sky ) ){
+			g_krSun.valid = true;
+			g_krSun.shader = name;
+			g_krSun.colour = Vector3( colour[0], colour[1], colour[2] );
+			g_krSun.intensity = intensity;
+			g_krSun.degrees = degrees;
+			g_krSun.elevation = elevation;
+			g_krSun.skyLight = sky;
+			shader->getSunExt( g_krSun.ext, g_krSun.deviance, g_krSun.samples, g_krSun.skyIterations );
+			shader->DecRef();
+			break;
+		}
+		shader->DecRef();
+	}
+	KrSun_changed();
+}
+static void KrSun_update(){
+	static bool registered = false;
+	if( !registered ){
+		registered = true;
+		AddSceneChangeCallback( FreeCaller<void(), KrSun_sceneChanged>() );
+	}
+	extern int g_krMapGeneration;
+	static int generation = -1;
+	static QElapsedTimer lastScan;
+	if( generation != g_krMapGeneration ){
+		generation = g_krMapGeneration;
+		g_krSun.overridden = false; // new map: back to its own sky shader
+		s_krSunDirty = true;
+	}
+	else if( s_krSunDirty && lastScan.isValid() && lastScan.elapsed() < 500 )
+		return; // dragging things around: rescan at most twice a second
+	if( !s_krSunDirty || g_krSun.overridden )
+		return;
+	lastScan.start();
+	KrSun_readMap();
+}
+void KrSun_rescan(){
+	g_krSun.overridden = false;
+	KrSun_readMap();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
 /// gathers the lights for the live preview: light entities (origin, "light" intensity, "_color"), worldspawn ambient,
 /// and the sun of the first loaded sky shader with q3map_sun / q3map_skyLight
 static void KrLightPreview_collect( const Vector3& viewer ){
@@ -2046,20 +2106,27 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	for( std::size_t i = 0; i < candidates.size() && i < c_krMaxPreviewLights; ++i )
 		g_krLightPreviewLights.push_back( candidates[i].light );
 
-	// sun from the sky shader
+	// sun from the sky shader on the map's sky brushes (rescanned when the map or the scene changes)
+	KrSun_update();
 	g_krSunColour = Vector3( 0, 0, 0 );
 	float skyLight = 0;
-	GlobalShaderSystem().beginActiveShadersIterator();
-	for( ; !GlobalShaderSystem().endActiveShadersIterator(); GlobalShaderSystem().incrementActiveShadersIterator() ){
-		IShader* shader = GlobalShaderSystem().dereferenceActiveShadersIterator();
-		float colour[3], intensity, degrees, elevation, sky;
-		if( shader->IsInUse() && ( shader->getFlags() & QER_SKY ) && shader->getSun( colour, intensity, degrees, elevation, sky ) ){
-			const float az = degrees_to_radians( degrees ), el = degrees_to_radians( elevation );
-			g_krSunDirection = Vector3( cos( el ) * cos( az ), cos( el ) * sin( az ), sin( el ) );
-			g_krSunColour = Vector3( colour[0], colour[1], colour[2] ) * std::min( intensity / 400.f, 1.5f );
-			skyLight = sky;
-			break;
-		}
+	if( g_krSun.valid ){
+		const float az = degrees_to_radians( g_krSun.degrees ), el = degrees_to_radians( g_krSun.elevation );
+		g_krSunDirection = Vector3( cos( el ) * cos( az ), cos( el ) * sin( az ), sin( el ) );
+		g_krSunColour = g_krSun.colour * std::min( g_krSun.intensity / 400.f, 1.5f );
+		skyLight = g_krSun.skyLight;
+	}
+	// sun softness from q3map_sunExt deviance (degrees): wider shadow filtering
+	g_krSunSoftness = 1 + ( g_krSun.ext ? std::clamp( g_krSun.deviance, 0.f, 30.f ) * 1.5f : 0.f );
+	// bounce approximation: a share of the direct light comes back as fill (real bounce needs a compile)
+	g_krBounceFill = Vector3( 0, 0, 0 );
+	if( g_krCompile.enabled && g_krCompile.bounce > 0 ){
+		Vector3 lights( 0, 0, 0 );
+		for( const KrPreviewLight& l : g_krLightPreviewLights )
+			lights += l.colour;
+		if( !g_krLightPreviewLights.empty() )
+			lights /= float( g_krLightPreviewLights.size() );
+		g_krBounceFill = ( g_krSunColour * 0.35f + lights * 0.1f ) * ( 1 - std::pow( 0.6f, float( g_krCompile.bounce ) ) ) * 0.6f;
 	}
 	// ambient: worldspawn _ambient (0..255 like q3map2) + a share of the sky light, never fully black
 	const float a = std::clamp( ambient / 255.f + skyLight / 1000.f, 0.12f, 0.8f );
@@ -2090,7 +2157,7 @@ public:
 	}
 };
 
-static GLuint s_shadowFbo = 0;
+static GLuint s_shadowFbo = 0, s_shadowDepthTex = 0;
 static int s_shadowSize = 0;
 static bool s_shadowDirty = true;
 static Vector3 s_shadowCentre( 1e9f, 0, 0 ), s_shadowSun( 0, 0, 0 );
@@ -2152,10 +2219,11 @@ static void KrShadow_render( camera_t& camera ){
 			g_krShadows = false;
 			return;
 		}
-		g_krShadowTex = tex;
+		s_shadowDepthTex = tex;
 		s_shadowSize = size;
 		s_shadowDirty = true;
 	}
+	g_krShadowTex = s_shadowDepthTex; // (a map without sun cleared it)
 	// the map follows the camera in 512-unit steps, so shadows only re-render when you move far
 	const Vector3 origin = Camera_getOrigin( camera );
 	const Vector3 centre( float_snapped( origin.x(), 512.f ), float_snapped( origin.y(), 512.f ), float_snapped( origin.z(), 512.f ) );
@@ -2165,6 +2233,12 @@ static void KrShadow_render( camera_t& camera ){
 	g_krShadowTexel = 1.f / size;
 	g_krShadowBiasUnit = ( 2 * halfExtent / size ) / depthRange;
 
+	extern int g_krMapGeneration;
+	static int s_shadowMapGeneration = -1;
+	if( s_shadowMapGeneration != g_krMapGeneration ){ // another map loaded: the cached depth belongs to the old one
+		s_shadowMapGeneration = g_krMapGeneration;
+		s_shadowDirty = true;
+	}
 	if( s_shadowDirty || !vector3_equal( centre, s_shadowCentre ) || !vector3_equal_epsilon( g_krSunDirection, s_shadowSun, 1e-4f ) ){
 		s_shadowDirty = false;
 		s_shadowCentre = centre;
@@ -2197,6 +2271,187 @@ static void KrShadow_render( camera_t& camera ){
 	                 matrix4_multiplied_by_matrix4( lightView, matrix4_full_inverse( camera.modelview ) ) );
 }
 
+/* ---- KenRadiant: point light shadows - depth cube maps of the nearest lights ---- */
+static Matrix4 kr_lookat_up( const Vector3& eye, const Vector3& forward, const Vector3& up ){
+	const Vector3 side = vector3_normalised( vector3_cross( forward, up ) );
+	const Vector3 u = vector3_cross( side, forward );
+	return Matrix4( side.x(), u.x(), -forward.x(), 0,
+	                side.y(), u.y(), -forward.y(), 0,
+	                side.z(), u.z(), -forward.z(), 0,
+	                -vector3_dot( side, eye ), -vector3_dot( u, eye ), vector3_dot( forward, eye ), 1 );
+}
+static Matrix4 kr_perspective90( float n, float f ){
+	return Matrix4( 1, 0, 0, 0,
+	                0, 1, 0, 0,
+	                0, 0, -( f + n ) / ( f - n ), -1,
+	                0, 0, -2 * f * n / ( f - n ), 0 );
+}
+
+struct KrCube{
+	GLuint tex = 0;
+	Vector3 origin{ 1e9f, 0, 0 };
+	float radius = 0;
+	bool dirty = true;
+	int lastUsed = 0;
+};
+static KrCube s_cubes[c_krMaxCubeShadows];
+static GLuint s_cubeFbo = 0;
+static bool s_cubesDirty = true;
+static int s_cubeFrame = 0;
+static void KrCubes_sceneChanged(){ s_cubesDirty = true; }
+
+static void KrCube_render( KrCube& cube, QOpenGLFunctions* f ){
+	constexpr int size = 512;
+	if( cube.tex == 0 ){
+		gl().glGenTextures( 1, &cube.tex );
+		gl().glBindTexture( GL_TEXTURE_CUBE_MAP, cube.tex );
+		for( int i = 0; i < 6; ++i )
+			gl().glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_COMPARE_MODE, GL_NONE );
+		gl().glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
+	}
+	static const Vector3 dirs[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+	static const Vector3 ups[6] = { { 0, -1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 0, -1, 0 }, { 0, -1, 0 } };
+	const float far = cube.radius;
+	const Matrix4 proj = kr_perspective90( g_krCubeNear, far );
+	GLint previous = 0, viewport[4];
+	gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+	gl().glGetIntegerv( GL_VIEWPORT, viewport );
+	f->glBindFramebuffer( GL_FRAMEBUFFER, s_cubeFbo );
+	gl().glDrawBuffer( GL_NONE );
+	gl().glReadBuffer( GL_NONE );
+	gl().glViewport( 0, 0, size, size );
+	for( int i = 0; i < 6; ++i ){
+		f->glFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, cube.tex, 0 );
+		gl().glDepthMask( GL_TRUE );
+		gl().glClear( GL_DEPTH_BUFFER_BIT );
+		const Matrix4 view = kr_lookat_up( cube.origin, dirs[i], ups[i] );
+		View v( true );
+		v.Construct( proj, view, size, size );
+		ShadowRenderer renderer;
+		Scene_Render( renderer, v );
+		GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST, view, proj, cube.origin );
+	}
+	f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+	gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+	gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	gl().glDepthMask( GL_TRUE );
+	cube.dirty = false;
+}
+
+/// gives the first lights of the preview list a shadow cube; re-renders a cube only when its light or the scene changes
+static void KrCubeShadows_render( camera_t& camera ){
+	static bool registered = false;
+	if( !registered ){
+		registered = true;
+		AddSceneChangeCallback( FreeCaller<void(), KrCubes_sceneChanged>() );
+	}
+	g_krEye2World = matrix4_full_inverse( camera.modelview );
+	for( auto& t : g_krCubeTex ) t = 0;
+	if( !g_krLightShadows )
+		return;
+	QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
+	if( s_cubeFbo == 0 )
+		f->glGenFramebuffers( 1, &s_cubeFbo );
+	extern int g_krMapGeneration;
+	static int generation = -1;
+	if( generation != g_krMapGeneration ){
+		generation = g_krMapGeneration;
+		s_cubesDirty = true;
+	}
+	// while you drag things around, cube maps update at most ~6 times a second
+	static QElapsedTimer lastUpdate;
+	bool allowUpdate = true;
+	if( s_cubesDirty ){
+		if( lastUpdate.isValid() && lastUpdate.elapsed() < 150 ){
+			allowUpdate = false;
+			QTimer::singleShot( 160, [](){ if( g_camwnd ) CamWnd_Update( *g_camwnd ); } );
+		}
+		else{
+			for( auto& c : s_cubes ) c.dirty = true;
+			s_cubesDirty = false;
+			lastUpdate.start();
+		}
+	}
+	++s_cubeFrame;
+	const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxCubeShadows );
+	bool used[c_krMaxCubeShadows] = {};
+	int slotCube[c_krMaxCubeShadows];
+	// keep each light on the cube it already has
+	for( std::size_t i = 0; i < count; ++i ){
+		slotCube[i] = -1;
+		const KrPreviewLight& l = g_krLightPreviewLights[i];
+		for( std::size_t c = 0; c < c_krMaxCubeShadows; ++c )
+			if( !used[c] && vector3_equal( s_cubes[c].origin, l.origin ) && s_cubes[c].radius == std::min( l.radius, 4096.f ) ){
+				slotCube[i] = int( c );
+				used[c] = true;
+				break;
+			}
+	}
+	for( std::size_t i = 0; i < count; ++i ){
+		if( slotCube[i] >= 0 )
+			continue;
+		const KrPreviewLight& l = g_krLightPreviewLights[i];
+		int best = -1; // a free cube, least recently used
+		for( std::size_t c = 0; c < c_krMaxCubeShadows; ++c )
+			if( !used[c] && ( best < 0 || s_cubes[c].lastUsed < s_cubes[best].lastUsed ) )
+				best = int( c );
+		used[best] = true;
+		slotCube[i] = best;
+		s_cubes[best].origin = l.origin;
+		s_cubes[best].radius = std::min( l.radius, 4096.f );
+		s_cubes[best].dirty = true;
+	}
+	const bool drawing = g_krLightPreviewDrawing;
+	g_krLightPreviewDrawing = false;
+	for( std::size_t i = 0; i < count; ++i ){
+		KrCube& cube = s_cubes[slotCube[i]];
+		cube.lastUsed = s_cubeFrame;
+		if( cube.dirty && ( allowUpdate || cube.tex == 0 ) )
+			KrCube_render( cube, f );
+		g_krCubeTex[i] = cube.tex;
+		g_krCubeFar[i] = cube.radius;
+	}
+	g_krLightPreviewDrawing = drawing;
+}
+
+extern bool g_krLightShadows;
+ToggleItem g_lightShadows_item{ BoolExportCaller( g_krLightShadows ) };
+static void LightShadows_toggle(){
+	g_krLightShadows = !g_krLightShadows;
+	g_lightShadows_item.update();
+	s_cubesDirty = true;
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
+ToggleItem g_deformVertexes_item{ BoolExportCaller( g_krDeformVertexes ) };
+static void DeformVertexes_toggle(){
+	g_krDeformVertexes = !g_krDeformVertexes;
+	g_deformVertexes_item.update();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+ToggleItem g_polygonOffset_item{ BoolExportCaller( g_krPolygonOffset ) };
+static void PolygonOffset_toggle(){
+	g_krPolygonOffset = !g_krPolygonOffset;
+	g_polygonOffset_item.update();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+ToggleItem g_glow_item{ BoolExportCaller( g_krGlow ) };
+static void Glow_toggle(){
+	g_krGlow = !g_krGlow;
+	g_glow_item.update();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
 extern bool g_krShadows;
 ToggleItem g_sunShadows_item{ BoolExportCaller( g_krShadows ) };
 static void SunShadows_toggle(){
@@ -2220,11 +2475,15 @@ static void AnimateShaders_toggle(){
 #include <QOpenGLFramebufferObject>
 void createShader( GLuint program, const char* filename, GLenum type );
 void GLSLProgram_link( GLuint program );
-bool g_krSelectionOutline = true;
-ToggleItem g_selectionOutline_item{ BoolExportCaller( g_krSelectionOutline ) };
-static void SelectionOutline_toggle(){
-	g_krSelectionOutline = !g_krSelectionOutline;
-	g_selectionOutline_item.update();
+/// selection look in the 3D view, cycled with J:
+/// 0 = models / entities outlined, brushes edges + tint (default), 1 = everything outlined, 2 = everything edges + tint (classic)
+int g_krSelectionStyle = 0;
+static bool KrSelection_outlineAny(){ return g_krSelectionStyle != 2; }
+static bool KrSelection_outlineBrushes(){ return g_krSelectionStyle == 1; }
+static void SelectionStyle_cycle(){
+	g_krSelectionStyle = ( g_krSelectionStyle + 1 ) % 3;
+	const char* names[] = { "models outlined, brushes edges + tint", "everything outlined", "classic (edges + tint everywhere)" };
+	globalOutputStream() << "selection style: " << names[g_krSelectionStyle] << '\n';
 	if( g_camwnd )
 		CamWnd_Update( *g_camwnd );
 }
@@ -2246,7 +2505,7 @@ public:
 	}
 	void setLights( const LightList& lights ) override {}
 	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
-		if( m_highlight.back() & ePrimitive ){
+		if( ( m_highlight.back() & ePrimitive ) && ( KrSelection_outlineBrushes() || !( m_highlight.back() & eKrBrushLike ) ) ){
 			m_mask->addRenderable( renderable, world );
 			m_any = true;
 		}
@@ -2335,6 +2594,21 @@ static void LightPreview_toggle(){
 	if( g_camwnd )
 		CamWnd_Update( *g_camwnd );
 }
+
+void KrLightPreview_enable(){
+	if( !g_krLightPreview )
+		LightPreview_toggle();
+}
+void KrLightPreview_redraw(){
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+/// reads the sun from the map now (the calibrator opens before the next preview frame)
+void KrLightPreview_prepareSun(){
+	if( !g_krSun.overridden )
+		KrSun_readMap();
+}
+void KrSunCalibrator_show();
 
 void CamWnd::Cam_Draw(){
 //		globalOutputStream() << "Cam_Draw()\n";
@@ -2455,7 +2729,10 @@ void CamWnd::Cam_Draw(){
 	if( g_krLightPreviewDrawing ){
 		KrLightPreview_collect( Camera_getOrigin( m_Camera ) );
 		g_krLightPreviewView = m_Camera.modelview;
+		g_krLightPreviewDrawing = false; // the shadow passes draw plain depth
 		KrShadow_render( m_Camera );
+		KrCubeShadows_render( m_Camera );
+		g_krLightPreviewDrawing = true;
 	}
 
 	{
@@ -2466,7 +2743,8 @@ void CamWnd::Cam_Draw(){
 		                      g_camwindow_globals_private.m_bFaceFill ? m_state_select1 : 0,
 		                      m_view.getViewer() );
 
-		renderer.m_outline = g_krSelectionOutline && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive;
+		renderer.m_outline = KrSelection_outlineAny() && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive;
+		renderer.m_outlineSkipBrushes = !KrSelection_outlineBrushes();
 		Scene_Render( renderer, m_view );
 
 		if( g_camwindow_globals_private.m_bShowWorkzone && GlobalSelectionSystem().countSelected() != 0 && GlobalSelectionSystem().ManipulatorMode() != SelectionSystem::eUV ){
@@ -2479,7 +2757,7 @@ void CamWnd::Cam_Draw(){
 
 		renderer.render( m_Camera.modelview, m_Camera.projection );
 		g_krLightPreviewDrawing = false;
-		if( g_krSelectionOutline && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
+		if( KrSelection_outlineAny() && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
 			KrOutline_draw( m_Camera, m_view );
 		// keep animated water / scrolling shaders moving (~30 fps) only while one is on screen
 		if( g_krAnimateShaders && g_krAnimatedDrawn ){
@@ -2938,8 +3216,17 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "ToggleLightPreview", makeCallbackF( LightPreview_toggle ), ToggleItem::AddCallbackCaller( g_lightPreview_item ), QKeySequence( "Ctrl+L" ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleSunShadows", makeCallbackF( SunShadows_toggle ), ToggleItem::AddCallbackCaller( g_sunShadows_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleAnimateShaders", makeCallbackF( AnimateShaders_toggle ), ToggleItem::AddCallbackCaller( g_animateShaders_item ) ); // KenRadiant
-	GlobalToggles_insert( "ToggleSelectionOutline", makeCallbackF( SelectionOutline_toggle ), ToggleItem::AddCallbackCaller( g_selectionOutline_item ) ); // KenRadiant
-	GlobalPreferenceSystem().registerPreference( "KrSelectionOutline", BoolImportStringCaller( g_krSelectionOutline ), BoolExportStringCaller( g_krSelectionOutline ) );
+	GlobalToggles_insert( "ToggleLightShadows", makeCallbackF( LightShadows_toggle ), ToggleItem::AddCallbackCaller( g_lightShadows_item ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleDeformVertexes", makeCallbackF( DeformVertexes_toggle ), ToggleItem::AddCallbackCaller( g_deformVertexes_item ) ); // KenRadiant
+	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
+	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
+	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );
+	GlobalPreferenceSystem().registerPreference( "KrGlowShaders", BoolImportStringCaller( g_krGlow ), BoolExportStringCaller( g_krGlow ) );
+	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
+	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );
 	GlobalPreferenceSystem().registerPreference( "KrAnimateShaders", BoolImportStringCaller( g_krAnimateShaders ), BoolExportStringCaller( g_krAnimateShaders ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightPreviewShadows", BoolImportStringCaller( g_krShadows ), BoolExportStringCaller( g_krShadows ) );
 

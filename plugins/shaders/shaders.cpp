@@ -267,6 +267,17 @@ typedef std::list<ShaderVariable> ShaderArguments;
 
 typedef std::pair<ShaderVariable, ShaderVariable> BlendFuncExpression;
 
+/// KenRadiant: Quake 3 wave function names -> KrShaderEffects func ids (noise animates like sin)
+inline int KrWaveFunc( const char* name ){
+	if( name == 0 ) return 0;
+	if( string_equal_nocase( name, "sin" ) || string_equal_nocase( name, "noise" ) ) return 1;
+	if( string_equal_nocase( name, "triangle" ) ) return 2;
+	if( string_equal_nocase( name, "square" ) ) return 3;
+	if( string_equal_nocase( name, "sawtooth" ) ) return 4;
+	if( string_equal_nocase( name, "inversesawtooth" ) ) return 5;
+	return 0;
+}
+
 class ShaderTemplate
 {
 	std::size_t m_refcount;
@@ -298,9 +309,11 @@ public:
 	bool m_hasSun = false;
 	float m_sun[6] = { 1, 1, 1, 0, 0, 90 }; // r g b intensity degrees elevation
 	float m_skyLight = 0;
+	float m_skyIterations = 3;
+	bool m_sunExt = false;
+	float m_sunDeviance = 0, m_sunSamples = 16; // q3map_sunExt extras
 	bool m_krEmissive = false;
-	float m_krScroll[2] = { 0, 0 };
-	float m_krRotate = 0;
+	KrShaderEffects m_krFx;
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -903,6 +916,13 @@ public:
 		ASSERT_MESSAGE( m_refcount == 0, "deleting active shader" );
 	}
 
+	bool getSunExt( bool& ext, float& deviance, float& samples, float& skyIterations ) const override {
+		ext = m_template.m_sunExt;
+		deviance = m_template.m_sunDeviance;
+		samples = m_template.m_sunSamples;
+		skyIterations = m_template.m_skyIterations;
+		return m_template.m_hasSun || m_template.m_skyLight != 0;
+	}
 	bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const override {
 		if( !m_template.m_hasSun && m_template.m_skyLight == 0 )
 			return false;
@@ -916,11 +936,8 @@ public:
 	bool isEmissive() const override {
 		return m_template.m_krEmissive;
 	}
-	bool getTcMod( float scroll[2], float& rotate ) const override {
-		scroll[0] = m_template.m_krScroll[0];
-		scroll[1] = m_template.m_krScroll[1];
-		rotate = m_template.m_krRotate;
-		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0;
+	const KrShaderEffects* getEffects() const override {
+		return m_template.m_krFx.any() ? &m_template.m_krFx : nullptr;
 	}
 // IShaders implementation -----------------
 	void IncRef() override {
@@ -1246,7 +1263,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	CopiedString stageAlphaFunc;
 	// KenRadiant: emissive / animated preview
 	bool stageAdditive = false, stageVertexLit = false, stageLightmap = false, stageGlow = false;
-	float stageScroll[2] = { 0, 0 }, stageRotate = 0;
+	KrShaderEffects stageFx; // tcMods of the current stage
 
 	tokeniser.nextLine();
 
@@ -1268,7 +1285,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				stageHasImage = false;
 				stageAlphaFunc = "";
 				stageAdditive = stageVertexLit = stageLightmap = stageGlow = false;
-				stageScroll[0] = stageScroll[1] = stageRotate = 0;
+				stageFx = KrShaderEffects(); // tcMods are per stage
 			}
 			continue;
 		}
@@ -1278,9 +1295,13 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				if( ( stageGlow || ( stageAdditive && stageNum > 1 && !stageVertexLit ) ) && !stageLightmap )
 					m_krEmissive = true;
 				if( stageHasImage && !imageStageDone ){
-					m_krScroll[0] = stageScroll[0];
-					m_krScroll[1] = stageScroll[1];
-					m_krRotate = stageRotate;
+					std::copy( std::begin( stageFx.scroll ), std::end( stageFx.scroll ), std::begin( m_krFx.scroll ) );
+					m_krFx.rotate = stageFx.rotate;
+					std::copy( std::begin( stageFx.scale ), std::end( stageFx.scale ), std::begin( m_krFx.scale ) );
+					m_krFx.stretchFunc = stageFx.stretchFunc;
+					std::copy( std::begin( stageFx.stretch ), std::end( stageFx.stretch ), std::begin( m_krFx.stretch ) );
+					m_krFx.turb = stageFx.turb;
+					std::copy( std::begin( stageFx.turbWave ), std::end( stageFx.turbWave ), std::begin( m_krFx.turbWave ) );
 				}
 			}
 			if( depth == 2 && stageHasImage && !imageStageDone ){
@@ -1336,11 +1357,25 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			else if ( string_equal_nocase( token, "tcmod" ) ) {
 				const char* kind = tokeniser.getToken();
 				if( kind != 0 && string_equal_nocase( kind, "scroll" ) ){
-					Tokeniser_getFloat( tokeniser, stageScroll[0] );
-					Tokeniser_getFloat( tokeniser, stageScroll[1] );
+					Tokeniser_getFloat( tokeniser, stageFx.scroll[0] );
+					Tokeniser_getFloat( tokeniser, stageFx.scroll[1] );
 				}
 				else if( kind != 0 && string_equal_nocase( kind, "rotate" ) ){
-					Tokeniser_getFloat( tokeniser, stageRotate );
+					Tokeniser_getFloat( tokeniser, stageFx.rotate );
+				}
+				else if( kind != 0 && string_equal_nocase( kind, "scale" ) ){
+					Tokeniser_getFloat( tokeniser, stageFx.scale[0] );
+					Tokeniser_getFloat( tokeniser, stageFx.scale[1] );
+				}
+				else if( kind != 0 && string_equal_nocase( kind, "stretch" ) ){
+					stageFx.stretchFunc = KrWaveFunc( tokeniser.getToken() );
+					for( float& v : stageFx.stretch )
+						Tokeniser_getFloat( tokeniser, v );
+				}
+				else if( kind != 0 && string_equal_nocase( kind, "turb" ) ){
+					stageFx.turb = true;
+					for( float& v : stageFx.turbWave )
+						Tokeniser_getFloat( tokeniser, v );
 				}
 				continue;
 			}
@@ -1398,9 +1433,43 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				for( float& value : m_sun )
 					ok = ok && Tokeniser_getFloat( tokeniser, value );
 				m_hasSun = ok;
+				m_sunExt = string_equal_nocase( token, "q3map_sunExt" );
+				if( ok && m_sunExt ){
+					Tokeniser_getFloat( tokeniser, m_sunDeviance );
+					Tokeniser_getFloat( tokeniser, m_sunSamples );
+				}
 			}
 			else if ( string_equal_nocase( token, "q3map_skyLight" ) ) {
 				Tokeniser_getFloat( tokeniser, m_skyLight );
+				Tokeniser_getFloat( tokeniser, m_skyIterations );
+			}
+			else if ( string_equal_nocase( token, "polygonOffset" ) ) {
+				m_krFx.polygonOffset = true;
+			}
+			else if ( string_equal_nocase( token, "deformVertexes" ) ) {
+				const char* kind = tokeniser.getToken();
+				if( kind != 0 && m_krFx.deform == 0 ){
+					if( string_equal_nocase( kind, "wave" ) ){
+						Tokeniser_getFloat( tokeniser, m_krFx.deformDiv );
+						m_krFx.deformFunc = KrWaveFunc( tokeniser.getToken() );
+						for( float& v : m_krFx.deformWave )
+							Tokeniser_getFloat( tokeniser, v );
+						m_krFx.deform = m_krFx.deformFunc != 0 ? 1 : 0;
+					}
+					else if( string_equal_nocase( kind, "move" ) ){
+						for( float& v : m_krFx.deformMove )
+							Tokeniser_getFloat( tokeniser, v );
+						m_krFx.deformFunc = KrWaveFunc( tokeniser.getToken() );
+						for( float& v : m_krFx.deformWave )
+							Tokeniser_getFloat( tokeniser, v );
+						m_krFx.deform = m_krFx.deformFunc != 0 ? 2 : 0;
+					}
+					else if( string_equal_nocase( kind, "bulge" ) ){
+						for( float& v : m_krFx.bulge )
+							Tokeniser_getFloat( tokeniser, v );
+						m_krFx.deform = 3;
+					}
+				}
 			}
 			else if ( string_equal_nocase( token, "q3map_surfacelight" ) ) {
 				m_krEmissive = true; // light emitting surface: fullbright in the light preview

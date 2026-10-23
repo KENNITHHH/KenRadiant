@@ -1312,3 +1312,18 @@ void Build_runRecentExecutedBuild(){
 	if( !g_build_project.empty() )
 		RunBSP( Project_find( g_build_project, g_lastExecutedBuild ) );
 }
+
+
+/// KenRadiant: adds (or replaces) a build preset at the top of the Build menu
+void Build_setPreset( const char* name, const std::vector<CopiedString>& commands ){
+	Build build;
+	for( const CopiedString& c : commands )
+		build.push_back( BuildCommand( c.c_str() ) );
+	auto it = std::find_if( g_build_project.begin(), g_build_project.end(), [name]( const BuildPair& p ){ return string_equal( p.first.c_str(), name ); } );
+	if( it != g_build_project.end() )
+		it->second = build;
+	else
+		g_build_project.emplace_front( name, build );
+	g_build_changed = true;
+	Build_refreshMenu( g_bsp_menu );
+}

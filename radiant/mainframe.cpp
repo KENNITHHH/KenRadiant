@@ -961,10 +961,21 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		create_menu_item_with_mnemonic( menu, "Texture Browser", "ToggleTextures" );
 	}
 	create_menu_item_with_mnemonic( menu, "Browse To Selected Texture", "BrowseToSelectedTexture" ); // KenRadiant
-	create_check_menu_item_with_mnemonic( menu, "Live Light Preview", "ToggleLightPreview" ); // KenRadiant
-	create_check_menu_item_with_mnemonic( menu, "Live Light Preview: Sun Shadows", "ToggleSunShadows" ); // KenRadiant
-	create_check_menu_item_with_mnemonic( menu, "Animate Shaders (tcMod scroll / rotate)", "ToggleAnimateShaders" ); // KenRadiant
-	create_check_menu_item_with_mnemonic( menu, "Selection Outline (Unreal style)", "ToggleSelectionOutline" ); // KenRadiant
+	{ // KenRadiant
+		QMenu* submenu = menu->addMenu( "Light Preview" );
+		create_check_menu_item_with_mnemonic( submenu, "Live Light Preview", "ToggleLightPreview" );
+		create_check_menu_item_with_mnemonic( submenu, "Sun Shadows", "ToggleSunShadows" );
+		create_check_menu_item_with_mnemonic( submenu, "Light Shadows (4 nearest lights)", "ToggleLightShadows" );
+		create_menu_item_with_mnemonic( submenu, "Sun Calibrator / Compile Preview...", "SunCalibrator" );
+	}
+	{ // KenRadiant
+		QMenu* submenu = menu->addMenu( "Shader Effects" );
+		create_check_menu_item_with_mnemonic( submenu, "Animate tcMod (scroll, rotate, stretch, turb)", "ToggleAnimateShaders" );
+		create_check_menu_item_with_mnemonic( submenu, "deformVertexes (wave, move, bulge)", "ToggleDeformVertexes" );
+		create_check_menu_item_with_mnemonic( submenu, "polygonOffset (decals in front)", "TogglePolygonOffset" );
+		create_check_menu_item_with_mnemonic( submenu, "Glow Shaders Fullbright (light preview)", "ToggleGlowShaders" );
+	}
+	create_menu_item_with_mnemonic( menu, "Cycle Selection Style (outline / classic)", "CycleSelectionStyle" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
@@ -1497,7 +1508,8 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
-	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun shadows", "kr_lightpreview.png", "ToggleLightPreview" );
+	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );
+	toolbar_append_button( toolbar, "Sun Calibrator: tweak the sky shader's q3map_sun live, preview gamma / compensate / bounce", "kr_sun.png", "SunCalibrator" );
 	toolbar_append_separator( toolbar );
 	{	// Unreal-style snapping: grid, rotation, scale
 		const auto addCombo = [toolbar]( const char* label, const char* tip, const QStringList& items, int current, auto onChange ){

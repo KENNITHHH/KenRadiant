@@ -128,10 +128,43 @@ public:
 
 	/// KenRadiant live light preview: q3map_sun / q3map_sunExt ( r g b intensity degrees elevation ) and q3map_skyLight value of a sky shader
 	virtual bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const { return false; }
+	/// q3map_sunExt deviance / samples (ext = the shader uses q3map_sunExt), q3map_skyLight iterations
+	virtual bool getSunExt( bool& ext, float& deviance, float& samples, float& skyIterations ) const { return false; }
 	/// KenRadiant: glows / q3map_surfacelight - drawn fullbright in the light preview
 	virtual bool isEmissive() const { return false; }
-	/// KenRadiant: first image stage tcMod scroll ( s t per second ) and rotate ( degrees per second ) for animated preview
-	virtual bool getTcMod( float scroll[2], float& rotate ) const { return false; }
+	/// KenRadiant: shader effects the 3D view can animate (first image stage tcMods, deformVertexes, polygonOffset)
+	virtual const struct KrShaderEffects* getEffects() const { return nullptr; }
+};
+
+/// KenRadiant: what the editor previews of a shader's animation; wave funcs: 0 none, 1 sin, 2 triangle, 3 square, 4 sawtooth, 5 inversesawtooth
+struct KrShaderEffects
+{
+	float scroll[2] = { 0, 0 };    // tcMod scroll, per second
+	float rotate = 0;              // tcMod rotate, degrees per second
+	float scale[2] = { 1, 1 };     // tcMod scale
+	int stretchFunc = 0;           // tcMod stretch func base amp phase freq
+	float stretch[4] = { 0, 0, 0, 0 };
+	bool turb = false;             // tcMod turb base amp phase freq
+	float turbWave[4] = { 0, 0, 0, 0 };
+	int deform = 0;                // deformVertexes: 0 none, 1 wave, 2 move, 3 bulge
+	int deformFunc = 0;
+	float deformDiv = 0;           // wave: spread
+	float deformWave[4] = { 0, 0, 0, 0 }; // base amp phase freq
+	float deformMove[3] = { 0, 0, 0 };
+	float bulge[3] = { 0, 0, 0 };  // width height speed
+	bool polygonOffset = false;
+	bool textureMatrix() const {
+		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0 || scale[0] != 1 || scale[1] != 1 || stretchFunc != 0;
+	}
+	bool vertexProgram() const { // needs the vertex shader
+		return turb || deform != 0;
+	}
+	bool animated() const {
+		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0 || stretchFunc != 0 || turb || deform != 0;
+	}
+	bool any() const {
+		return textureMatrix() || vertexProgram() || polygonOffset;
+	}
 };
 
 typedef Callback<void(const char*)> ShaderNameCallback;

@@ -168,7 +168,19 @@ public:
 			}
 		}
 		//globalOutputStream() << "pre snap scale: " << scale << '\n';
-		if( g_modifiers.shift() ){ // snap 2 axes equally
+		if( m_axis != g_vector3_identity ){ // KenRadiant: plane handle (Unreal) - both axes of the plane always scale by the same factor, the one you drag most
+			const Vector3 both = m_axis + m_axis2;
+			std::size_t lead = 3;
+			for( std::size_t i = 0; i < 3; ++i )
+				if( both[i] != 0 && ( lead == 3 || std::fabs( scale[i] - 1 ) > std::fabs( scale[lead] - 1 ) ) )
+					lead = i;
+			if( lead != 3 ){
+				const float factor = scale[lead];
+				for( std::size_t i = 0; i < 3; ++i )
+					scale[i] = both[i] != 0 ? factor : 1;
+			}
+		}
+		else if( g_modifiers.shift() ){ // snap 2 axes equally
 			float bestscale = ignore_axis != 0 ? scale[0] : scale[1];
 			for( std::size_t i = ignore_axis != 0 ? 1 : 2; i < 3; ++i ){
 				if( ignore_axis != i && std::fabs( scale[i] ) < std::fabs( bestscale ) ){

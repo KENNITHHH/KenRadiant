@@ -3,6 +3,16 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (5)
+### Editor
+- **Fixed: sun shadows stopped after opening another map** (also when you came back to the first map). The sun is now read from the sky shader on the map's own sky brushes.
+- **Shadows from lights**: the 4 lights nearest to the camera cast real-time shadows (cube shadow maps) in the live light preview. View → Light Preview → Light Shadows.
+- **Sun Calibrator** (sun button / View → Light Preview): sliders for colour, intensity, degrees, elevation, `q3map_sunExt` deviance (softer shadows) and samples, `q3map_skyLight`. You see the change live; **Write to shader file** updates the sky shader (unchanged numbers keep their exact text, a `.bak` is kept) and reloads shaders. **Copy lines** for shaders inside a pk3.
+- **Compile preview** in the Sun Calibrator: `-gamma`, `-compensate`, `-saturation` on the light preview, `-bounce` as an approximated fill light. **Make build preset** adds *KenRadiant: (Sun Calibrator settings)* to the Build menu.
+- **Shader effects**: `tcMod turb`, `tcMod stretch`, `tcMod scale`, `deformVertexes wave / move / bulge` animate, `polygonOffset` decals draw in front of their wall. View → Shader Effects has a toggle for each (and for glow fullbright).
+- **Selection styles (J)**, like GtkRadiant: default = models / entities orange outline, brushes edges + tint; then everything outlined; then classic. (*Show size in 2D views* no longer uses J.)
+- **Scale gizmo**: the triangle between two axes always scales both axes by the same amount.
+
 ## Build 2026-10-23 (4)
 ### Editor
 - **Sun shadows in the live light preview**: the sky shader's sun casts real-time shadows (shadow map, soft edges). Translucent, sky and fog surfaces don't cast; masked (alphaFunc) ones do. Toggle: View → Sun Shadows.

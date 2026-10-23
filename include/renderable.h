@@ -38,6 +38,7 @@ public:
 		ePrimitive = 1 << 1,
 		ePrimitiveWire = 1 << 2, //always draw wire for primitives
 		eFaceWire = 1 << 3,	//wire for selected faces
+		eKrBrushLike = 1 << 4, // KenRadiant: the node is a brush or patch (selection style: brushes keep edges + tint)
 	};
 
 	enum EStyle

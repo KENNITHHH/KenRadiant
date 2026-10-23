@@ -451,19 +451,48 @@ Vector3 g_krSunColour( 0, 0, 0 );
 Vector3 g_krAmbient( 0.15f, 0.15f, 0.15f );
 bool g_krShadows = true;
 bool g_krAnimateShaders = true;
+bool g_krDeformVertexes = true;
+bool g_krPolygonOffset = true;
+bool g_krGlow = true;
 float g_krShaderTime = 0;
 bool g_krAnimatedDrawn = false; // an animated shader was drawn this frame: the 3D view keeps redrawing
 unsigned int g_krShadowTex = 0;
 Matrix4 g_krEye2Shadow = g_matrix4_identity;
 float g_krShadowTexel = 1.f / 4096;
 float g_krShadowBiasUnit = 0;
+float g_krSunSoftness = 1;
+KrCompilePreview g_krCompile;
+Vector3 g_krBounceFill( 0, 0, 0 );
+bool g_krLightShadows = true;
+unsigned int g_krCubeTex[c_krMaxCubeShadows] = {};
+float g_krCubeNear = 4, g_krCubeFar[c_krMaxCubeShadows] = {};
+Matrix4 g_krEye2World = g_matrix4_identity;
+
+/// Quake 3 waveform: base + amp * func( phase + time * freq )
+inline float KrWave( int func, const float wave[4], float time ){
+	const float x = wave[2] + time * wave[3];
+	const float f = x - std::floor( x );
+	float v = 0;
+	switch( func ){
+	case 1: v = std::sin( x * 2 * float( c_pi ) ); break;
+	case 2: v = 4 * std::fabs( ( x - 0.25f ) - std::floor( x - 0.25f ) - 0.5f ) - 1; break;
+	case 3: v = f < 0.5f ? 1.f : -1.f; break;
+	case 4: v = f; break;
+	case 5: v = 1 - f; break;
+	}
+	return wave[0] + wave[1] * v;
+}
 
 class GLSLKrLightProgram : public GLProgram
 {
+	GLint u( const char* name ) const { return gl().glGetUniformLocation( m_program, name ); }
 public:
 	GLuint m_program = 0;
-	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_shadow, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit;
-	bool m_active = false;
+	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
+	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
+	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
+	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
+	bool m_bound = false;
 
 	void create(){
 		m_program = gl().glCreateProgram();
@@ -474,34 +503,39 @@ public:
 		}
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
-		u_tex = gl().glGetUniformLocation( m_program, "u_tex" );
-		u_count = gl().glGetUniformLocation( m_program, "u_count" );
-		u_pos = gl().glGetUniformLocation( m_program, "u_pos" );
-		u_col = gl().glGetUniformLocation( m_program, "u_col" );
-		u_rad = gl().glGetUniformLocation( m_program, "u_rad" );
-		u_sun_dir = gl().glGetUniformLocation( m_program, "u_sun_dir" );
-		u_sun_col = gl().glGetUniformLocation( m_program, "u_sun_col" );
-		u_ambient = gl().glGetUniformLocation( m_program, "u_ambient" );
-		u_shadow = gl().glGetUniformLocation( m_program, "u_shadow" );
-		u_eye2shadow = gl().glGetUniformLocation( m_program, "u_eye2shadow" );
-		u_has_shadow = gl().glGetUniformLocation( m_program, "u_has_shadow" );
-		u_texel = gl().glGetUniformLocation( m_program, "u_texel" );
-		u_bias_unit = gl().glGetUniformLocation( m_program, "u_bias_unit" );
+		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_pos = u( "u_pos" ); u_col = u( "u_col" ); u_rad = u( "u_rad" );
+		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
+		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
+		u_cube_far = u( "u_cube_far" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
+		u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
+		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
-		gl().glUniform1i( u_shadow, 7 );
+		gl().glUniform1i( u( "u_shadow" ), 7 );
+		gl().glUniform1i( u( "u_cube0" ), 8 );
+		gl().glUniform1i( u( "u_cube1" ), 9 );
+		gl().glUniform1i( u( "u_cube2" ), 10 );
+		gl().glUniform1i( u( "u_cube3" ), 11 );
 		gl().glUseProgram( 0 );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
 	void destroy(){
 		gl().glDeleteProgram( m_program );
 		m_program = 0;
+		m_bound = false;
+	}
+	void bind( bool on ){
+		if( on != m_bound ){
+			gl().glUseProgram( on ? m_program : 0 );
+			m_bound = on;
+		}
 	}
 	void enable() override {
-		// off, or not the 3D view: behave exactly like the fixed-function path
-		m_active = g_krLightPreview && g_krLightPreviewDrawing && m_program != 0;
-		if( !m_active )
+		// the lit preview only in the 3D view; otherwise the program runs just for surfaces with vertex effects (applyState)
+		m_preview = g_krLightPreview && g_krLightPreviewDrawing && m_program != 0;
+		if( !m_preview )
 			return;
-		gl().glUseProgram( m_program );
+		bind( true );
 		const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxPreviewLights );
 		float pos[c_krMaxPreviewLights * 3], col[c_krMaxPreviewLights * 3], rad[c_krMaxPreviewLights];
 		for( std::size_t i = 0; i < count; ++i ){
@@ -525,16 +559,61 @@ public:
 		gl().glUniform1i( u_has_shadow, shadow ? 1 : 0 );
 		gl().glUniform1f( u_texel, g_krShadowTexel );
 		gl().glUniform1f( u_bias_unit, g_krShadowBiasUnit );
+		gl().glUniform1f( u_soft, g_krSunSoftness );
 		gl().glUniformMatrix4fv( u_eye2shadow, 1, GL_FALSE, reinterpret_cast<const float*>( &g_krEye2Shadow ) );
 		gl().glActiveTexture( GL_TEXTURE7 );
 		gl().glBindTexture( GL_TEXTURE_2D, shadow ? g_krShadowTex : 0 );
+		// point light cube shadows
+		float far[4] = { 0, 0, 0, 0 };
+		for( std::size_t i = 0; i < c_krMaxCubeShadows; ++i ){
+			const bool on = g_krLightShadows && g_krCubeTex[i] != 0 && i < count;
+			far[i] = on ? g_krCubeFar[i] : 0;
+			gl().glActiveTexture( GL_TEXTURE8 + GLenum( i ) );
+			gl().glBindTexture( GL_TEXTURE_CUBE_MAP, on ? g_krCubeTex[i] : 0 );
+		}
 		gl().glActiveTexture( GL_TEXTURE0 );
+		gl().glUniform4f( u_cube_far, far[0], far[1], far[2], far[3] );
+		gl().glUniform1f( u_cube_near, g_krCubeNear );
+		const float m3[9] = { g_krEye2World[0], g_krEye2World[1], g_krEye2World[2],
+		                      g_krEye2World[4], g_krEye2World[5], g_krEye2World[6],
+		                      g_krEye2World[8], g_krEye2World[9], g_krEye2World[10] };
+		gl().glUniformMatrix3fv( u_eye2world, 1, GL_FALSE, m3 );
+		// compile settings preview
+		const bool c = g_krCompile.enabled;
+		gl().glUniform1f( u_gamma, c ? std::max( 0.1f, g_krCompile.gamma ) : 1.f );
+		gl().glUniform1f( u_compensate, c ? std::max( 0.1f, g_krCompile.compensate ) : 1.f );
+		gl().glUniform1f( u_saturation, c ? g_krCompile.saturation : 1.f );
+		gl().glUniform3f( u_bounce, g_krBounceFill.x(), g_krBounceFill.y(), g_krBounceFill.z() );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
+	/// per surface: lit / fullbright glow / unlit, and the vertex effects (tcMod turb, deformVertexes)
+	void applyState( const OpenGLState& state, unsigned int globalstate ){
+		const KrShaderEffects* fx = state.m_krFx;
+		const bool turb = fx != nullptr && fx->turb && g_krAnimateShaders;
+		const int deform = fx != nullptr && g_krDeformVertexes ? fx->deform : 0;
+		bind( m_preview || turb || deform != 0 );
+		if( !m_bound )
+			return;
+		if( turb || deform != 0 )
+			g_krAnimatedDrawn = true;
+		gl().glUniform1i( u_mode, m_preview ? ( state.m_krEmissive && g_krGlow ? 2 : 1 ) : 0 );
+		gl().glUniform1i( u_fflight, ( globalstate & RENDER_LIGHTING ) ? 1 : 0 );
+		gl().glUniform1f( u_time, g_krShaderTime );
+		gl().glUniform1i( u_turb_on, turb ? 1 : 0 );
+		gl().glUniform1i( u_deform, deform );
+		if( turb )
+			gl().glUniform4fv( u_turb, 1, fx->turbWave );
+		if( deform != 0 ){
+			gl().glUniform1i( u_dfunc, fx->deformFunc );
+			gl().glUniform1f( u_ddiv, fx->deformDiv );
+			gl().glUniform4fv( u_dwave, 1, fx->deformWave );
+			gl().glUniform3fv( u_dmove, 1, fx->deformMove );
+			gl().glUniform3fv( u_bulge, 1, fx->bulge );
+		}
+	}
 	void disable() override {
-		if( m_active )
-			gl().glUseProgram( 0 );
-		m_active = false;
+		bind( false );
+		m_preview = false;
 	}
 	void setParameters( const Vector3& viewer, const Matrix4& localToWorld, const Vector3& origin, const Vector3& colour, const Matrix4& world2light ) override {
 	}
@@ -1089,7 +1168,7 @@ public:
 		OpenGLState reset = current; /* reset some states */
 		reset.m_state = current.m_state & ~RENDER_TEXT; /* popmatrix after RENDER_TEXT */
 		reset.m_program = nullptr; /* disable shader */
-		reset.m_krScroll[0] = reset.m_krScroll[1] = reset.m_krRotate = 0; /* KenRadiant: identity texture matrix again */
+		reset.m_krFx = nullptr; /* KenRadiant: identity texture matrix, no polygon offset again */
 		OpenGLState_apply( reset, current, globalstate );
 	}
 	void realise() override {
@@ -1326,31 +1405,48 @@ inline void setState( unsigned int state, unsigned int delta, unsigned int flag,
 }
 
 void OpenGLState_apply( const OpenGLState& self, OpenGLState& current, unsigned int globalstate ){
-	// KenRadiant: tcMod scroll / rotate via the texture matrix of unit 0
+	// KenRadiant: tcMod scroll / rotate / scale / stretch via the texture matrix of unit 0, shader polygonOffset
 	{
-		const bool animated = g_krAnimateShaders && ( globalstate & RENDER_TEXTURE ) && ( self.m_krScroll[0] != 0 || self.m_krScroll[1] != 0 || self.m_krRotate != 0 );
-		const bool wasAnimated = current.m_krScroll[0] != 0 || current.m_krScroll[1] != 0 || current.m_krRotate != 0;
-		if( animated || wasAnimated ){
+		const KrShaderEffects* fx = ( globalstate & RENDER_TEXTURE ) ? self.m_krFx : nullptr;
+		const bool matrix = fx != nullptr && g_krAnimateShaders && fx->textureMatrix();
+		if( matrix || current.m_krMatrix ){
 			gl().glActiveTexture( GL_TEXTURE0 );
 			gl().glMatrixMode( GL_TEXTURE );
 			gl().glLoadIdentity();
-			if( animated ){
-				g_krAnimatedDrawn = true;
+			if( matrix ){
 				const float t = g_krShaderTime;
-				gl().glTranslatef( std::fmod( self.m_krScroll[0] * t, 1.f ), std::fmod( self.m_krScroll[1] * t, 1.f ), 0 );
-				if( self.m_krRotate != 0 ){ // around the texture centre, like Quake 3
+				if( fx->animated() )
+					g_krAnimatedDrawn = true;
+				// applied to the texcoord in shader order: scale, stretch, rotate, scroll
+				gl().glTranslatef( std::fmod( fx->scroll[0] * t, 1.f ), std::fmod( fx->scroll[1] * t, 1.f ), 0 );
+				if( fx->rotate != 0 ){ // around the texture centre, like Quake 3
 					gl().glTranslatef( 0.5f, 0.5f, 0 );
-					gl().glRotatef( -std::fmod( self.m_krRotate * t, 360.f ), 0, 0, 1 );
+					gl().glRotatef( -std::fmod( fx->rotate * t, 360.f ), 0, 0, 1 );
 					gl().glTranslatef( -0.5f, -0.5f, 0 );
 				}
-				current.m_krScroll[0] = self.m_krScroll[0];
-				current.m_krScroll[1] = self.m_krScroll[1];
-				current.m_krRotate = self.m_krRotate;
+				if( fx->stretchFunc != 0 ){
+					const float w = KrWave( fx->stretchFunc, fx->stretch, t );
+					const float p = std::fabs( w ) > 1e-3f ? 1.f / w : 1000.f;
+					gl().glTranslatef( 0.5f, 0.5f, 0 );
+					gl().glScalef( p, p, 1 );
+					gl().glTranslatef( -0.5f, -0.5f, 0 );
+				}
+				gl().glScalef( fx->scale[0], fx->scale[1], 1 );
+			}
+			current.m_krMatrix = matrix;
+			gl().glMatrixMode( GL_MODELVIEW );
+		}
+		const bool offset = fx != nullptr && g_krPolygonOffset && fx->polygonOffset && ( globalstate & RENDER_FILL );
+		if( offset != current.m_krPolygonOffset ){
+			if( offset ){
+				gl().glEnable( GL_POLYGON_OFFSET_FILL );
+				gl().glPolygonOffset( -1, -2 ); // decals in front of the wall they sit on
 			}
 			else{
-				current.m_krScroll[0] = current.m_krScroll[1] = current.m_krRotate = 0;
+				gl().glDisable( GL_POLYGON_OFFSET_FILL );
+				gl().glPolygonOffset( -1, 1 ); // the default the line offset uses
 			}
-			gl().glMatrixMode( GL_MODELVIEW );
+			current.m_krPolygonOffset = offset;
 		}
 	}
 
@@ -1412,6 +1508,8 @@ void OpenGLState_apply( const OpenGLState& self, OpenGLState& current, unsigned 
 			current.m_program->enable();
 		}
 	}
+	if( current.m_program == &g_krLightGLSL ) // KenRadiant: per-state light preview / deform / glow parameters
+		g_krLightGLSL.applyState( self, globalstate );
 
 	if ( delta & state & RENDER_FILL ) {
 		//qglPolygonMode ( GL_BACK, GL_LINE );
@@ -2144,22 +2242,17 @@ void OpenGLShader::construct( const char* name ){
 			state.m_texture = m_shader->getTexture()->texture_number;
 
 			state.m_state = RENDER_FILL | RENDER_TEXTURE | RENDER_DEPTHTEST | RENDER_COLOURWRITE | RENDER_LIGHTING | RENDER_SMOOTH;
-			// KenRadiant live light preview: the program does nothing unless the preview is on and the 3D view draws.
-			// glows, q3map_surfacelight and additive surfaces stay fullbright, they make light instead of receiving it
+			// KenRadiant live light preview / deformVertexes / tcMod turb: the program only runs when the preview is on
+			// in the 3D view, or for surfaces with vertex effects. Glows, q3map_surfacelight and additive surfaces
+			// draw fullbright in the preview (they make light instead of receiving it)
 			const BlendFunc blend = m_shader->getBlendFunc();
 			const bool additive = ( m_shader->getFlags() & QER_TRANS ) && blend.m_dst == BLEND_ONE;
-			if( !( m_shader->getFlags() & QER_SKY ) && !m_shader->isEmissive() && !additive ){
+			if( !( m_shader->getFlags() & QER_SKY ) ){
 				state.m_state |= RENDER_PROGRAM;
 				state.m_program = &g_krLightGLSL;
+				state.m_krEmissive = m_shader->isEmissive() || additive;
 			}
-			{
-				float scroll[2], rotate;
-				if( m_shader->getTcMod( scroll, rotate ) ){
-					state.m_krScroll[0] = scroll[0];
-					state.m_krScroll[1] = scroll[1];
-					state.m_krRotate = rotate;
-				}
-			}
+			state.m_krFx = m_shader->getEffects();
 			if ( ( m_shader->getFlags() & QER_CULL ) != 0 ) {
 				if ( m_shader->getCull() == IShader::eCullBack ) {
 					state.m_state |= RENDER_CULLFACE;
@@ -2282,6 +2375,8 @@ bool Shader_castsShadow( Shader* shader ){
 	if( glshader == nullptr || !glshader->hasIShader() )
 		return false; // editor helpers: entity boxes, wires, selection overlays
 	const int flags = glshader->getShader().getFlags();
+	if( const KrShaderEffects* fx = glshader->getShader().getEffects(); fx != nullptr && fx->deform != 0 )
+		return false; // moving surfaces (water waves) would shadow themselves
 	return !( flags & ( QER_SKY | QER_TRANS | QER_FOG ) ) || ( flags & QER_ALPHATEST ); // masked foliage casts cut-out shadows
 }
 

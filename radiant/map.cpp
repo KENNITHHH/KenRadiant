@@ -323,7 +323,9 @@ bool Map_Valid( const Map& map ){
 	return map.m_valid;
 }
 
+int g_krMapGeneration = 0; // KenRadiant: bumps on every map load / free, so cached preview data (shadow maps) is rebuilt
 void Map_SetValid( Map& map, bool valid ){
+	++g_krMapGeneration;
 	map.m_valid = valid;
 	map.m_mapValidCallbacks();
 }
