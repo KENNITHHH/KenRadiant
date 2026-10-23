@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: brush shapes (stairs + cylinder) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 10,114 V 90 H 34 V 66 H 58 V 42 H 70 V 114 Z" style="fill:none;stroke:#c0c0c0;stroke-width:7;stroke-linejoin:round" />
+  <ellipse cx="98" cy="30" rx="20" ry="8" style="fill:none;stroke:#c0c0c0;stroke-width:7" />
+  <path d="M 78,30 V 106 A 20,8 0 0 0 118,106 V 30" style="fill:none;stroke:#c0c0c0;stroke-width:7" />
+</svg>

@@ -3,6 +3,16 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (8)
+### Editor
+- **Brush Shapes** (toolbar button / Misc → Brush Shapes): Unreal-style geometry presets - Box (hollow), Cone (hollow with cap Z), Cylinder (hollow), Curved Stair, Linear Stair, Spiral Stair (sloped floor / ceiling), Sphere (tessellation 0-3). Created on the surface in the middle of the 3D view with the selected texture (caulk if none); sliders update the last created shape live until you edit something else. One Ctrl+Z removes it.
+- **Check for Problems** (Misc menu, Ctrl+Alt+P - Hammer's Alt+P opens the Plugins menu here): broken targets, missing models and textures, unknown entities, empty brush entities, degenerate and duplicate brushes, duplicate entities, no player start. Click a line to select it, double-click to fly there.
+- **Light Preview Settings** (in the Sun Calibrator window): how many lights light the preview (1-24) and how many of the nearest cast shadows (0-8, default 4).
+- **Fixed: Ctrl+Z in edge mode** lost the selected edges (vertices and edges are now remembered by the faces that meet there).
+- **Fixed: double-click** picked another object; it now keeps what you selected and opens the Entity window.
+- **Fixed: visible playerclip geometry** (trash cans, nets: `surfaceparm playerclip` without `nodraw`) was hidden by the Clip filter and Game View.
+- **Fixed: shaders like `blendFunc GL_SRC_ALPHA GL_ZERO` + alphaFunc** (airport trash can) were drawn see-through; a `GL_ZERO` destination covers what is behind it.
+
 ## Build 2026-10-23 (7)
 ### Editor
 - **Light preview brightness like q3map2 + the game**: point lights use q3map2's falloff (`light × 7500 / distance²`, `spawnflags 1` = linear), `_color` is normalised, `scale` is used; the sun and `_ambient` are in lightmap units. The result is doubled and clamped keeping its colour like the engine does, so indoor maps with many lights no longer wash out to white.

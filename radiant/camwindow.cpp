@@ -1748,7 +1748,8 @@ protected:
 	}
 	/// KenRadiant: double click an entity (model, light, door brush ...) = select it and open the entity window
 	void mouseDoubleClickEvent( QMouseEvent *event ) override {
-		if( event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier && !m_camwnd.m_bFreeMove ){
+		if( event->button() == Qt::LeftButton && ( event->modifiers() == Qt::NoModifier || event->modifiers() == Qt::ShiftModifier ) && !m_camwnd.m_bFreeMove && !g_krMeasure ){
+			m_krSwallowRelease = true; // the release of the second click must not run a click-select (it would cycle to the next object)
 			extern bool KrSelection_selectEntityAt( const View& view, const DeviceVector device_point, const DeviceVector device_epsilon );
 			const float w = width() * m_scale, h = height() * m_scale;
 			const DeviceVector device( 2.f * event->localPos().x() * m_scale / w - 1.f, 1.f - 2.f * event->localPos().y() * m_scale / h );
@@ -1778,7 +1779,12 @@ protected:
 			;
 		}
 	}
+	bool m_krSwallowRelease = false;
 	void mouseReleaseEvent( QMouseEvent *event ) override {
+		if( m_krSwallowRelease && event->button() == Qt::LeftButton ){
+			m_krSwallowRelease = false;
+			return;
+		}
 		if( g_krMeasure && !m_camwnd.m_bFreeMove && event->button() == Qt::LeftButton )
 			return;
 		if( !m_camwnd.m_bFreeMove ){
@@ -2196,7 +2202,7 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, minlight, viewer ) );
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
 	g_krLightPreviewLights.clear();
-	for( std::size_t i = 0; i < candidates.size() && i < c_krMaxPreviewLights; ++i )
+	for( std::size_t i = 0; i < candidates.size() && i < std::min( std::size_t( std::max( g_krPreviewLightCount, 1 ) ), c_krMaxPreviewLights ); ++i )
 		g_krLightPreviewLights.push_back( candidates[i].light );
 
 	// sun from the sky shader on the map's sky brushes (rescanned when the map or the scene changes)
@@ -2479,7 +2485,7 @@ static void KrCubeShadows_render( camera_t& camera ){
 		}
 	}
 	++s_cubeFrame;
-	const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxCubeShadows );
+	const std::size_t count = std::min( { g_krLightPreviewLights.size(), c_krMaxCubeShadows, std::size_t( std::clamp( g_krShadowedLights, 0, int( c_krMaxCubeShadows ) ) ) } );
 	bool used[c_krMaxCubeShadows] = {};
 	int slotCube[c_krMaxCubeShadows];
 	// keep each light on the cube it already has
@@ -2709,6 +2715,16 @@ void KrLightPreview_prepareSun(){
 		KrSun_readMap();
 }
 void KrSunCalibrator_show();
+/// KenRadiant: the surface point in the middle of the 3D view (grid snapped), or 256 units in front of the camera
+Vector3 KrCamera_targetPoint(){
+	if( g_camwnd == nullptr )
+		return Vector3( 0, 0, 0 );
+	CamWnd& cam = *g_camwnd;
+	const DeviceVector eps( 4.f / std::max( 1, cam.getCamera().width ), 4.f / std::max( 1, cam.getCamera().height ) );
+	if( const auto hit = testSelect_unselected_scene_point( cam.getView(), DeviceVector( 0, 0 ), eps ) )
+		return vector3_snapped( Vector3( hit->point ), GetSnapGridSize() );
+	return vector3_snapped( Camera_getOrigin( cam ) - Camera_getViewVector( cam ) * 256.f, GetSnapGridSize() );
+}
 
 void CamWnd::Cam_Draw(){
 //		globalOutputStream() << "Cam_Draw()\n";
@@ -3362,11 +3378,17 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "ToggleDeformVertexes", makeCallbackF( DeformVertexes_toggle ), ToggleItem::AddCallbackCaller( g_deformVertexes_item ) ); // KenRadiant
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );
 	GlobalPreferenceSystem().registerPreference( "KrGlowShaders", BoolImportStringCaller( g_krGlow ), BoolExportStringCaller( g_krGlow ) );
 	GlobalToggles_insert( "ToggleMeasure", makeCallbackF( Measure_toggle ), ToggleItem::AddCallbackCaller( g_measure_item ) ); // KenRadiant
+	extern void KrBrushShapes_show();
+	extern void KrCheckProblems_show();
+	GlobalCommands_insert( "BrushShapes", makeCallbackF( KrBrushShapes_show ) ); // KenRadiant
+	GlobalCommands_insert( "CheckForProblems", makeCallbackF( KrCheckProblems_show ), QKeySequence( "Ctrl+Alt+P" ) ); // KenRadiant (Hammer: Alt+P, which opens the Plugins menu here)
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

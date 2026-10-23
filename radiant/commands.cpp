@@ -575,7 +575,8 @@ public:
 			static const NewDefault newDefaults[] = {
 				{ "CameraFreeMoveUp", "" }, { "CameraFreeMoveDown", "" }, // Space / C while flying
 				{ "CenterView", "End" },                                   // End is drop to floor
-				{ "ShowSize2d", "J" },                                     // J cycles the selection style (GtkRadiant)
+				{ "ShowSize2d", "J" },
+				{ "CheckForProblems", "Alt+P" },                           // Alt+P is the Plugins menu                                     // J cycles the selection style (GtkRadiant)
 			};
 			bool keepDefault = false;
 			for( const auto& nd : newDefaults )

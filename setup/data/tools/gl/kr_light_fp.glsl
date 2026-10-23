@@ -21,7 +21,12 @@ uniform samplerCube u_cube0;
 uniform samplerCube u_cube1;
 uniform samplerCube u_cube2;
 uniform samplerCube u_cube3;
-uniform vec4 u_cube_far;   // 0 = no shadow for that light
+uniform samplerCube u_cube4;
+uniform samplerCube u_cube5;
+uniform samplerCube u_cube6;
+uniform samplerCube u_cube7;
+uniform vec4 u_cube_far;   // lights 0-3, 0 = no shadow for that light
+uniform vec4 u_cube_far2;  // lights 4-7
 uniform float u_cube_near;
 uniform mat3 u_eye2world;
 
@@ -99,12 +104,16 @@ void main()
 		float lndl = max( dot( n, d / max( dist, 0.001 ) ), 0.0 );
 		float att = u_rad[i] > 0.0 ? u_rad[i] / max( dist * dist, 256.0 ) : max( -u_rad[i] - dist, 0.0 ) / 255.0;
 		float c = att * lndl;
-		if( c > 0.0 && i < 4 ){
+		if( c > 0.0 && i < 8 ){
 			vec3 L = u_eye2world * ( -d );
 			if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, lndl );
 			else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, lndl );
 			else if( i == 2 && u_cube_far.z > 0.0 ) c *= cubeShadow( u_cube2, L, u_cube_far.z, lndl );
 			else if( i == 3 && u_cube_far.w > 0.0 ) c *= cubeShadow( u_cube3, L, u_cube_far.w, lndl );
+			else if( i == 4 && u_cube_far2.x > 0.0 ) c *= cubeShadow( u_cube4, L, u_cube_far2.x, lndl );
+			else if( i == 5 && u_cube_far2.y > 0.0 ) c *= cubeShadow( u_cube5, L, u_cube_far2.y, lndl );
+			else if( i == 6 && u_cube_far2.z > 0.0 ) c *= cubeShadow( u_cube6, L, u_cube_far2.z, lndl );
+			else if( i == 7 && u_cube_far2.w > 0.0 ) c *= cubeShadow( u_cube7, L, u_cube_far2.w, lndl );
 		}
 		light += u_col[i] * c;
 	}

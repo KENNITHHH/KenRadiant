@@ -38,6 +38,8 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time, with **sun shadows** and **shadows from the 4 nearest lights** (View → Light Preview). Game View keeps the light, only the light icons hide. |
 | **Sun Calibrator** | Sun button: sliders for the sky shader's `q3map_sun` / `q3map_sunExt` / `q3map_skyLight` (colour, intensity, degrees, elevation, deviance …) with live shadows; **Write to shader file** puts them in the .shader (keeps a .bak). Compile preview: `-gamma`, `-compensate`, `-saturation`, `-bounce` (approximation) on the preview, **Make build preset** adds them to the Build menu. |
 | **Surface snapping** | Magnet button (or hold **Ctrl**): dragging the white ball sticks the selection to the surface under the cursor; Alt turns it to the surface, Shift slides along it. |
+| **Brush Shapes** | Box, cone, cylinder, curved / linear / spiral stairs, sphere with sliders that update the shape live (like Unreal's geometry brushes). |
+| **Check for Problems** | Misc menu / Ctrl+Alt+P: broken targets, missing models / textures, bad brushes ... click to select, double-click to fly there. |
 | **Measure tool** | Ruler button: click two points in the 3D view to see the distance (Shift snaps to the grid). |
 | **Double-click** | Double-click an entity in the 3D view to open the Entity window. |
 | **Selection styles** | **J** cycles: models / entities get an orange outline and brushes keep edges + tint (default), everything outlined, or classic edges + tint everywhere. |

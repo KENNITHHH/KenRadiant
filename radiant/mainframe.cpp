@@ -965,8 +965,8 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		QMenu* submenu = menu->addMenu( "Light Preview" );
 		create_check_menu_item_with_mnemonic( submenu, "Live Light Preview", "ToggleLightPreview" );
 		create_check_menu_item_with_mnemonic( submenu, "Sun Shadows", "ToggleSunShadows" );
-		create_check_menu_item_with_mnemonic( submenu, "Light Shadows (4 nearest lights)", "ToggleLightShadows" );
-		create_menu_item_with_mnemonic( submenu, "Sun Calibrator / Compile Preview...", "SunCalibrator" );
+		create_check_menu_item_with_mnemonic( submenu, "Light Shadows (nearest lights, count in Light Preview Settings)", "ToggleLightShadows" );
+		create_menu_item_with_mnemonic( submenu, "Sun Calibrator / Light Preview Settings...", "SunCalibrator" );
 	}
 	{ // KenRadiant
 		QMenu* submenu = menu->addMenu( "Shader Effects" );
@@ -1204,6 +1204,8 @@ void create_misc_menu( QMenuBar *menubar ){
 
 	create_menu_item_with_mnemonic( menu, "Find Entity/Brush...", "FindBrush" );
 	create_menu_item_with_mnemonic( menu, "Map Info...", "MapInfo" );
+	create_menu_item_with_mnemonic( menu, "Check for Problems...", "CheckForProblems" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Brush Shapes...", "BrushShapes" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "&Refresh models", "RefreshReferences" );
 	create_menu_item_with_mnemonic( menu, "Set 2D &Background image...", makeCallbackF( WXY_SetBackgroundImage ) );
 	create_menu_item_with_mnemonic( menu, "Fullscreen", "Fullscreen" );
@@ -1506,6 +1508,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_toggle_button( toolbar, "Surface snapping: dragging the white ball (or free drag) sticks the selection to the surface under the cursor in the 3D view. Alt: also turn it to the surface, Shift: slide along it. Without the button: hold Ctrl", "kr_surfacesnap.png", "ToggleSurfaceSnap" );
 	toolbar_append_button( toolbar, "Drop to floor (End)", "kr_droptofloor.png", "DropSelectionToFloor" );
 	toolbar_append_toggle_button( toolbar, "Measure: click two points on surfaces in the 3D view to see the distance (Shift: snap to grid)", "kr_measure.png", "ToggleMeasure" );
+	toolbar_append_button( toolbar, "Brush Shapes: box, cone, cylinder, stairs, sphere (like Unreal's geometry brushes)", "kr_shapes.png", "BrushShapes" );
 	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by the grid size", "kr_bevel.png", "BrushBevel" );
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );

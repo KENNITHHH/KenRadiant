@@ -118,6 +118,8 @@ class SunCalibrator : public QDialog
 	KrValue m_compensate{ 0.5f, 4, 0.05f, 2 };
 	KrValue m_saturation{ 0, 2, 0.05f, 2 };
 	KrValue m_bounce{ 0, 8, 1, 0 };
+	KrValue m_lightCount{ 1, 24, 1, 0 };
+	KrValue m_shadowedLights{ 0, 8, 1, 0 };
 
 	static QWidget* row( std::initializer_list<QWidget*> widgets ){
 		auto *w = new QWidget;
@@ -305,7 +307,7 @@ class SunCalibrator : public QDialog
 
 public:
 	SunCalibrator( QWidget* parent ) : QDialog( parent, Qt::Tool ){
-		setWindowTitle( "Sun Calibrator" );
+		setWindowTitle( "Sun Calibrator / Light Preview Settings" );
 		auto *vbox = new QVBoxLayout( this );
 
 		m_shaderLabel = new QLabel;
@@ -385,6 +387,20 @@ public:
 			vbox->addLayout( buttons );
 		}
 		{
+			auto *group = new QGroupBox( "Lights" );
+			auto *grid = new QGridLayout( group );
+			int r = 0;
+			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 24", [this](){
+				g_krPreviewLightCount = int( m_lightCount.value() );
+				KrLightPreview_redraw();
+			} );
+			addValue( grid, r, "With shadows", m_shadowedLights, "How many of those (the nearest) cast shadows, up to 8. More = slower updates when you edit. Set Lights to the same number if lights without shadow shining through walls look wrong", [this](){
+				g_krShadowedLights = int( m_shadowedLights.value() );
+				KrLightPreview_redraw();
+			} );
+			vbox->addWidget( group );
+		}
+		{
 			auto *group = new QGroupBox( "Compile preview (approximation of q3map2 -light options)" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
@@ -447,6 +463,8 @@ public:
 		m_compensate.set( g_krCompile.compensate );
 		m_saturation.set( g_krCompile.saturation );
 		m_bounce.set( float( g_krCompile.bounce ) );
+		m_lightCount.set( float( g_krPreviewLightCount ) );
+		m_shadowedLights.set( float( g_krShadowedLights ) );
 		updateSwatch();
 	}
 	void sunEditedMarker(){

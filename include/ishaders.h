@@ -131,6 +131,8 @@ public:
 	virtual bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const { return false; }
 	/// q3map_sunExt deviance / samples (ext = the shader uses q3map_sunExt), q3map_skyLight iterations
 	virtual bool getSunExt( bool& ext, float& deviance, float& samples, float& skyIterations ) const { return false; }
+	/// KenRadiant: neither the shader's image nor a fallback loaded (the "shader not found" / "notex" picture is shown)
+	virtual bool krNotFound() const { return false; }
 	/// KenRadiant: glows / q3map_surfacelight - drawn fullbright in the light preview
 	virtual bool isEmissive() const { return false; }
 	/// KenRadiant: shader effects the 3D view can animate (first image stage tcMods, deformVertexes, polygonOffset)

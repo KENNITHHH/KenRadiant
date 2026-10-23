@@ -872,6 +872,9 @@ inline TexdefTypeId BrushType_getTexdefType( EBrushType type ){
 	}
 }
 
+/// KenRadiant: selected vertices / edges, each as the sorted indices of the faces meeting there (stable through undo)
+typedef std::vector<std::vector<std::size_t>> KrComponentKeys;
+
 class FaceObserver
 {
 public:
@@ -879,6 +882,8 @@ public:
 	virtual void connectivityChanged() = 0;
 	virtual void shaderChanged() = 0;
 	virtual void evaluateTransform() = 0;
+	virtual void kr_gatherSelection( KrComponentKeys& vertices, KrComponentKeys& edges ) const = 0;
+	virtual void kr_setPendingSelection( const KrComponentKeys& vertices, const KrComponentKeys& edges ) = 0;
 };
 
 class Face final :
@@ -908,6 +913,7 @@ class Face final :
 		void release() override {
 			delete this;
 		}
+		KrComponentKeys m_krVertices, m_krEdges; // KenRadiant: the brush's vertex / edge selection at that time
 	};
 
 public:
@@ -1037,12 +1043,15 @@ public:
 
 // undoable
 	UndoMemento* exportState() const override {
-		return new SavedState( *this );
+		auto *state = new SavedState( *this );
+		m_observer->kr_gatherSelection( state->m_krVertices, state->m_krEdges );
+		return state;
 	}
 	void importState( const UndoMemento* data ) override {
 		undoSave();
 
 		static_cast<const SavedState*>( data )->exportState( *this );
+		m_observer->kr_setPendingSelection( static_cast<const SavedState*>( data )->m_krVertices, static_cast<const SavedState*>( data )->m_krEdges );
 
 		planeChanged();
 		m_observer->connectivityChanged();
@@ -1497,6 +1506,11 @@ public:
 	void testSelect( SelectionTest& test, SelectionIntersection& best ) const {
 		test.TestPoint( getEdge(), best );
 	}
+	/// KenRadiant: the two faces meeting at this edge (stays the same through undo, unlike the position)
+	std::vector<std::size_t> kr_key() const {
+		const std::size_t a = m_faceVertex.getFace(), b = getFace().getWinding()[m_faceVertex.getVertex()].adjacent;
+		return { std::min( a, b ), std::max( a, b ) };
+	}
 };
 
 class SelectableVertex
@@ -1520,6 +1534,19 @@ public:
 	void testSelect( SelectionTest& test, SelectionIntersection& best ) const {
 		test.TestPoint( getVertex(), best );
 	}
+	/// KenRadiant: the faces meeting at this vertex, sorted
+	std::vector<std::size_t> kr_key() const {
+		std::vector<std::size_t> faces;
+		FaceVertexId faceVertex = m_faceVertex;
+		std::size_t guard = 0;
+		do{
+			faces.push_back( faceVertex.getFace() );
+			faceVertex = next_vertex( m_faces, faceVertex );
+		}
+		while ( faceVertex.getFace() != m_faceVertex.getFace() && ++guard < 64 );
+		std::sort( faces.begin(), faces.end() );
+		return faces;
+	}
 };
 
 class BrushObserver
@@ -1542,8 +1569,9 @@ public:
 	virtual void vertex_snap( const float snap ) = 0;
 
 	// KenRadiant: vertex / edge selection survives undo / redo
-	virtual void kr_gatherSelected( std::vector<DoubleVector3>& vertices, std::vector<Vector3>& edges ) const = 0;
-	virtual void kr_reselect( const std::vector<DoubleVector3>& vertices, const std::vector<Vector3>& edges ) = 0;
+	typedef KrComponentKeys KrKeys; // faces meeting at each selected vertex / edge
+	virtual void kr_gatherSelected( KrKeys& vertices, KrKeys& edges ) const = 0;
+	virtual void kr_reselect( const KrKeys& vertices, const KrKeys& edges ) = 0;
 
 	virtual void DEBUG_verify() const = 0;
 };
@@ -1802,6 +1830,16 @@ public:
 	}
 	typedef MemberCaller<Brush, void(), &Brush::transformChanged> TransformChangedCaller;
 
+	void kr_gatherSelection( KrComponentKeys& vertices, KrComponentKeys& edges ) const override {
+		for ( const auto *observer : m_observers )
+			observer->kr_gatherSelected( vertices, edges );
+	}
+	void kr_setPendingSelection( const KrComponentKeys& vertices, const KrComponentKeys& edges ) override {
+		if ( !vertices.empty() || !edges.empty() ){
+			m_krPendingVertices = vertices;
+			m_krPendingEdges = edges;
+		}
+	}
 	void evaluateTransform() override {
 		if ( m_transformChanged ) {
 			revertTransform();
@@ -1898,6 +1936,7 @@ public:
 
 	VertexModeVertices m_vertexModeVertices;
 	bool m_vertexModeOn{false};
+	BrushObserver::KrKeys m_krPendingVertices, m_krPendingEdges; // KenRadiant: component selection to restore after undo
 
 	void vertexModeInit(){
 		m_vertexModeOn = true;
@@ -1943,8 +1982,8 @@ public:
 		}
 
 		Faces m_faces;
-		std::vector<DoubleVector3> m_selectedVertices; // KenRadiant: selected vertices / edge centres at that time
-		std::vector<Vector3> m_selectedEdges;
+		BrushObserver::KrKeys m_selectedVertices; // KenRadiant: selected vertices / edges at that time
+		BrushObserver::KrKeys m_selectedEdges;
 	};
 
 	void undoSave(){
@@ -1968,11 +2007,8 @@ public:
 		const auto *memento = static_cast<const BrushUndoMemento*>( state );
 		appendFaces( memento->m_faces );
 		planeChanged();
-		if ( !memento->m_selectedVertices.empty() || !memento->m_selectedEdges.empty() ) {
-			evaluateBRep(); // rebuild the vertices / edges, then pick the ones that were selected
-			for ( auto *observer : m_observers )
-				observer->kr_reselect( memento->m_selectedVertices, memento->m_selectedEdges );
-		}
+		// reselected after the next rebuild of vertices / edges (buildBRep)
+		kr_setPendingSelection( memento->m_selectedVertices, memento->m_selectedEdges );
 
 		for ( auto *observer : m_observers )
 		{
@@ -3134,8 +3170,8 @@ class EdgeInstance final : public Selectable
 	FaceInstances& m_faceInstances;
 	SelectableEdge* m_edge;
 public:
-	Vector3 kr_position() const {
-		return m_edge->getEdge();
+	std::vector<std::size_t> kr_key() const {
+		return m_edge->kr_key();
 	}
 private:
 
@@ -3304,8 +3340,8 @@ public:
 		}
 		while ( faceVertex.getFace() != m_vertex->m_faceVertex.getFace() );
 	}
-	DoubleVector3 kr_position() const {
-		return m_vertex->getVertex();
+	std::vector<std::size_t> kr_key() const {
+		return m_vertex->kr_key();
 	}
 	bool vertex_select( const DoubleVector3& vertex ){
 		if( vector3_length_squared( vertex - m_vertex->getVertex() ) < ( 0.1 * 0.1 ) ){
@@ -3510,26 +3546,26 @@ public:
 		m_vertexInstances.push_back( VertexInstance( m_faceInstances, vertex ) );
 	}
 
-	void kr_gatherSelected( std::vector<DoubleVector3>& vertices, std::vector<Vector3>& edges ) const override {
+	void kr_gatherSelected( KrKeys& vertices, KrKeys& edges ) const override {
 		if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent )
 			return;
 		for ( const auto& v : m_vertexInstances )
 			if ( v.isSelected() )
-				vertices.push_back( v.kr_position() );
+				vertices.push_back( v.kr_key() );
 		for ( const auto& e : m_edgeInstances )
 			if ( e.isSelected() )
-				edges.push_back( e.kr_position() );
+				edges.push_back( e.kr_key() );
 	}
-	void kr_reselect( const std::vector<DoubleVector3>& vertices, const std::vector<Vector3>& edges ) override {
+	void kr_reselect( const KrKeys& vertices, const KrKeys& edges ) override {
 		if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent || !isSelected() )
 			return;
 		for ( auto& v : m_vertexInstances ){
-			const bool select = std::ranges::any_of( vertices, [&v]( const DoubleVector3& p ){ return vector3_length_squared( p - v.kr_position() ) < 0.1 * 0.1; } );
+			const bool select = std::ranges::find( vertices, v.kr_key() ) != vertices.end();
 			if ( select != v.isSelected() )
 				v.setSelected( select );
 		}
 		for ( auto& e : m_edgeInstances ){
-			const bool select = std::ranges::any_of( edges, [&e]( const Vector3& p ){ return vector3_length_squared( p - e.kr_position() ) < 0.1f * 0.1f; } );
+			const bool select = std::ranges::find( edges, e.kr_key() ) != edges.end();
 			if ( select != e.isSelected() )
 				e.setSelected( select );
 		}

@@ -2866,7 +2866,9 @@ StaticRegisterModule staticRegisterSelection( StaticSelectionModule::instance() 
 bool KrSelection_selectEntityAt( const View& view, const DeviceVector device_point, const DeviceVector device_epsilon ){
 	if( GlobalSelectionSystem().Mode() != SelectionSystem::ePrimitive )
 		return false;
-	getSelectionSystem().SelectPoint( view, device_point, device_epsilon, RadiantSelectionSystem::eReplace, false );
+	// something already selected (the first click of the double click, or before): keep it, don't cycle to another object
+	if( GlobalSelectionSystem().countSelected() == 0 )
+		getSelectionSystem().SelectPoint( view, device_point, device_epsilon, RadiantSelectionSystem::eReplace, false );
 	if( GlobalSelectionSystem().countSelected() == 0 )
 		return false;
 	const scene::Path& path = GlobalSelectionSystem().ultimateSelected().path();

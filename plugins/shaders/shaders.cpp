@@ -934,6 +934,9 @@ public:
 		skyLight = m_template.m_skyLight;
 		return true;
 	}
+	bool krNotFound() const override {
+		return m_notfound != 0;
+	}
 	bool isEmissive() const override {
 		return m_template.m_krEmissive;
 	}
@@ -1601,7 +1604,10 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 
 	/* first stage blends with what is behind it: show it translucent (qer_trans and skies keep their own handling) */
 	if ( !string_empty( m_q3BlendFunc.first.c_str() ) && !( m_nFlags & ( QER_TRANS | QER_SKY ) ) ) {
-		const bool opaque = string_equal_nocase( m_q3BlendFunc.first.c_str(), "gl_one" ) && string_equal_nocase( m_q3BlendFunc.second.c_str(), "gl_zero" );
+		// "X GL_ZERO" never reads what is behind (unless X is a GL_DST_* factor): it covers it, e.g. GL_SRC_ALPHA GL_ZERO + alphaFunc
+		const bool opaque = string_equal_nocase( m_q3BlendFunc.second.c_str(), "gl_zero" )
+		                 && !string_equal_prefix_nocase( m_q3BlendFunc.first.c_str(), "gl_dst" )
+		                 && !string_equal_prefix_nocase( m_q3BlendFunc.first.c_str(), "gl_one_minus_dst" );
 		if( !opaque )
 			m_nFlags |= QER_TRANS;
 	}

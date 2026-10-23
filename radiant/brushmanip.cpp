@@ -1104,11 +1104,13 @@ public:
 class filter_face_flags : public FaceFilter
 {
 	int m_flags;
+	int m_required; // KenRadiant: these must be set too
 public:
-	filter_face_flags( int flags ) : m_flags( flags ){
+	filter_face_flags( int flags, int required = 0 ) : m_flags( flags ), m_required( required ){
 	}
 	bool filter( const Face& face ) const override {
-		return ( face.getShader().shaderFlags() & m_flags ) != 0;
+		const int flags = face.getShader().shaderFlags();
+		return ( flags & m_flags ) != 0 && ( flags & m_required ) == m_required;
 	}
 };
 
@@ -1174,7 +1176,7 @@ public:
 };
 
 
-filter_face_flags g_filter_face_clip( QER_CLIP );
+filter_face_flags g_filter_face_clip( QER_CLIP, QER_NODRAW ); // KenRadiant: only invisible clip; visible playerclip geometry (trash cans, nets) stays
 filter_brush_all_faces g_filter_brush_clip( &g_filter_face_clip );
 
 filter_face_shader g_filter_face_clip_q2( "textures/clip" );
@@ -1678,4 +1680,211 @@ std::vector<CopiedString> Scene_findSkyShaders(){
 		}
 	} );
 	return found;
+}
+
+/* ---- KenRadiant: Unreal-style brush geometry presets ---- */
+#include "kr_brushshapes.h"
+namespace
+{
+struct KrPlane{ Vector3 normal; Vector3 point; };
+typedef std::vector<KrPlane> KrPiece;
+
+inline Vector3 kr_round( const Vector3& v ){
+	return Vector3( std::round( v.x() * 1000.f ) / 1000.f, std::round( v.y() * 1000.f ) / 1000.f, std::round( v.z() * 1000.f ) / 1000.f );
+}
+/// a convex polygon in XY extruded from zb to zt; top / bottom planes can be replaced (sloped)
+KrPiece kr_prism( std::vector<Vector2> poly, float zb, float zt ){
+	float area = 0;
+	for( std::size_t i = 0; i < poly.size(); ++i ){
+		const Vector2& a = poly[i], & b = poly[( i + 1 ) % poly.size()];
+		area += a.x() * b.y() - b.x() * a.y();
+	}
+	if( area < 0 )
+		std::reverse( poly.begin(), poly.end() );
+	KrPiece piece;
+	piece.push_back( { Vector3( 0, 0, 1 ), Vector3( poly[0].x(), poly[0].y(), zt ) } );
+	piece.push_back( { Vector3( 0, 0, -1 ), Vector3( poly[0].x(), poly[0].y(), zb ) } );
+	for( std::size_t i = 0; i < poly.size(); ++i ){
+		const Vector2& a = poly[i], & b = poly[( i + 1 ) % poly.size()];
+		const Vector2 e = b - a;
+		if( vector2_length( e ) < 1e-3f )
+			continue;
+		piece.push_back( { vector3_normalised( Vector3( e.y(), -e.x(), 0 ) ), Vector3( a.x(), a.y(), zb ) } );
+	}
+	return piece;
+}
+std::vector<Vector2> kr_rect( float x0, float y0, float x1, float y1 ){
+	return { Vector2( x0, y0 ), Vector2( x1, y0 ), Vector2( x1, y1 ), Vector2( x0, y1 ) };
+}
+Vector2 kr_polar( float r, float a ){
+	return Vector2( r * std::cos( a ), r * std::sin( a ) );
+}
+/// plane through three points, normal turned away from \\p inside
+KrPlane kr_plane3( const Vector3& a, const Vector3& b, const Vector3& c, const Vector3& inside ){
+	Vector3 n = vector3_normalised( vector3_cross( b - a, c - a ) );
+	if( vector3_dot( n, inside - a ) > 0 )
+		n = -n;
+	return { n, a };
+}
+
+std::vector<KrPiece> kr_shape_pieces( const KrBrushShape& s ){
+	std::vector<KrPiece> pieces;
+	const float pi2 = 2 * float( c_pi );
+	switch( s.type ){
+	case KrBrushShape::eBox: {
+		const float hx = s.x / 2, hy = s.y / 2, w = std::min( { s.wall, s.x / 2, s.y / 2, s.z / 2 } );
+		if( !s.hollow || w <= 0 )
+			pieces.push_back( kr_prism( kr_rect( -hx, -hy, hx, hy ), 0, s.z ) );
+		else{
+			pieces.push_back( kr_prism( kr_rect( -hx, -hy, hx, hy ), 0, w ) );               // floor
+			pieces.push_back( kr_prism( kr_rect( -hx, -hy, hx, hy ), s.z - w, s.z ) );       // ceiling
+			pieces.push_back( kr_prism( kr_rect( -hx, -hy, -hx + w, hy ), w, s.z - w ) );    // walls
+			pieces.push_back( kr_prism( kr_rect( hx - w, -hy, hx, hy ), w, s.z - w ) );
+			pieces.push_back( kr_prism( kr_rect( -hx + w, -hy, hx - w, -hy + w ), w, s.z - w ) );
+			pieces.push_back( kr_prism( kr_rect( -hx + w, hy - w, hx - w, hy ), w, s.z - w ) );
+		}
+		break;
+	}
+	case KrBrushShape::eCylinder: {
+		const int n = std::clamp( s.sides, 3, 64 );
+		if( !s.hollow ){
+			std::vector<Vector2> poly;
+			for( int i = 0; i < n; ++i )
+				poly.push_back( kr_polar( s.outerRadius, pi2 * i / n ) );
+			pieces.push_back( kr_prism( poly, 0, s.height ) );
+		}
+		else{
+			const float inner = std::clamp( s.innerRadius, 1.f, s.outerRadius - 1 );
+			for( int i = 0; i < n; ++i ){
+				const float a0 = pi2 * i / n, a1 = pi2 * ( i + 1 ) / n;
+				pieces.push_back( kr_prism( { kr_polar( s.outerRadius, a0 ), kr_polar( s.outerRadius, a1 ), kr_polar( inner, a1 ), kr_polar( inner, a0 ) }, 0, s.height ) );
+			}
+		}
+		break;
+	}
+	case KrBrushShape::eCone: {
+		const int n = std::clamp( s.sides, 3, 64 );
+		const Vector3 apex( 0, 0, s.height );
+		if( !s.hollow ){
+			KrPiece piece;
+			piece.push_back( { Vector3( 0, 0, -1 ), Vector3( 0, 0, 0 ) } );
+			const Vector3 inside( 0, 0, s.height * 0.25f );
+			for( int i = 0; i < n; ++i ){
+				const Vector2 a = kr_polar( s.outerRadius, pi2 * i / n ), b = kr_polar( s.outerRadius, pi2 * ( i + 1 ) / n );
+				piece.push_back( kr_plane3( Vector3( a.x(), a.y(), 0 ), Vector3( b.x(), b.y(), 0 ), apex, inside ) );
+			}
+			pieces.push_back( piece );
+		}
+		else{ // a shell between the outer cone and an inner cone (inner radius, cap height)
+			const float inner = std::clamp( s.innerRadius, 1.f, s.outerRadius - 1 );
+			const Vector3 innerApex( 0, 0, std::clamp( s.capHeight, 1.f, s.height - 1 ) );
+			for( int i = 0; i < n; ++i ){
+				const float a0 = pi2 * i / n, a1 = pi2 * ( i + 1 ) / n;
+				const Vector2 o0 = kr_polar( s.outerRadius, a0 ), o1 = kr_polar( s.outerRadius, a1 ), i0 = kr_polar( inner, a0 ), i1 = kr_polar( inner, a1 );
+				const Vector2 mid2 = kr_polar( ( s.outerRadius + inner ) / 2, ( a0 + a1 ) / 2 );
+				const Vector3 mid( mid2.x(), mid2.y(), std::min( innerApex.z(), s.height ) * 0.1f );
+				KrPiece piece;
+				piece.push_back( { Vector3( 0, 0, -1 ), Vector3( 0, 0, 0 ) } );
+				piece.push_back( kr_plane3( Vector3( o0.x(), o0.y(), 0 ), Vector3( o1.x(), o1.y(), 0 ), apex, mid ) );
+				piece.push_back( kr_plane3( Vector3( i0.x(), i0.y(), 0 ), Vector3( i1.x(), i1.y(), 0 ), innerApex, mid ) );
+				piece.push_back( { Vector3( std::sin( a0 ), -std::cos( a0 ), 0 ), Vector3( 0, 0, 0 ) } );
+				piece.push_back( { Vector3( -std::sin( a1 ), std::cos( a1 ), 0 ), Vector3( 0, 0, 0 ) } );
+				pieces.push_back( piece );
+			}
+		}
+		break;
+	}
+	case KrBrushShape::eLinearStair: {
+		const int n = std::clamp( s.numSteps, 1, 256 );
+		const float x0 = -s.stepLength * n / 2, hy = s.stepWidth / 2;
+		for( int i = 0; i < n; ++i )
+			pieces.push_back( kr_prism( kr_rect( x0 + i * s.stepLength, -hy, x0 + ( i + 1 ) * s.stepLength, hy ), 0, ( i + 1 ) * s.stepHeight + s.addToFirstStep ) );
+		break;
+	}
+	case KrBrushShape::eCurvedStair: {
+		const int n = std::clamp( s.numSteps, 1, 256 );
+		const float dir = s.counterClockwise ? 1.f : -1.f;
+		const float step = degrees_to_radians( s.curveAngle ) / n;
+		const float r0 = std::max( s.stairInnerRadius, 0.f ), r1 = r0 + s.stepWidth;
+		for( int i = 0; i < n; ++i ){
+			const float a0 = dir * step * i, a1 = dir * step * ( i + 1 );
+			std::vector<Vector2> poly = r0 > 0.5f
+			    ? std::vector<Vector2>{ kr_polar( r0, a0 ), kr_polar( r1, a0 ), kr_polar( r1, a1 ), kr_polar( r0, a1 ) }
+			    : std::vector<Vector2>{ Vector2( 0, 0 ), kr_polar( r1, a0 ), kr_polar( r1, a1 ) };
+			pieces.push_back( kr_prism( poly, 0, ( i + 1 ) * s.stepHeight + s.addToFirstStep ) );
+		}
+		break;
+	}
+	case KrBrushShape::eSpiralStair: {
+		const int n = std::clamp( s.numSteps, 1, 512 ), per = std::clamp( s.stepsPer360, 3, 128 );
+		const float dir = s.counterClockwise ? 1.f : -1.f;
+		const float step = pi2 / per;
+		const float r0 = std::max( s.stairInnerRadius, 0.f ), r1 = r0 + s.stepWidth, rm = ( r0 + r1 ) / 2;
+		for( int i = 0; i < n; ++i ){
+			const float a0 = dir * step * i, a1 = dir * step * ( i + 1 ), am = ( a0 + a1 ) / 2;
+			std::vector<Vector2> poly = r0 > 0.5f
+			    ? std::vector<Vector2>{ kr_polar( r0, a0 ), kr_polar( r1, a0 ), kr_polar( r1, a1 ), kr_polar( r0, a1 ) }
+			    : std::vector<Vector2>{ Vector2( 0, 0 ), kr_polar( r1, a0 ), kr_polar( r1, a1 ) };
+			const float zb = i * s.stepHeight, zt = zb + std::max( s.stepThickness, 1.f );
+			KrPiece piece = kr_prism( poly, zb, zt );
+			// sloped: the plane rises one step height from the step's start to its end (radial line kept level)
+			const Vector2 p0 = kr_polar( rm, a0 ), p1 = kr_polar( rm, a1 ), radial = kr_polar( 1, am );
+			const auto slope = [&]( float za, float zb2, bool up ){
+				const Vector3 A( p0.x(), p0.y(), za ), B( p1.x(), p1.y(), zb2 ), C = A + Vector3( radial.x(), radial.y(), 0 ) * 16;
+				Vector3 nrm = vector3_normalised( vector3_cross( B - A, C - A ) );
+				if( ( nrm.z() < 0 ) == up )
+					nrm = -nrm;
+				return KrPlane{ nrm, A };
+			};
+			if( s.slopedFloor )
+				piece[0] = slope( zt, zt + s.stepHeight, true );
+			if( s.slopedCeiling )
+				piece[1] = slope( zb, zb + s.stepHeight, false );
+			pieces.push_back( piece );
+		}
+		break;
+	}
+	default:
+		break;
+	}
+	return pieces;
+}
+} // namespace
+
+std::size_t KrBrushShape_build( const KrBrushShape& shape, const Vector3& origin, const char* shader ){
+	scene::Node& worldspawn = Map_FindOrInsertWorldspawn( g_map );
+	const TextureProjection projection = TextureTransform_getDefault();
+	const auto newBrush = [&]() -> Brush& {
+		NodeSmartReference node( GlobalBrushCreator().createBrush() );
+		Node_getTraversable( worldspawn )->insert( node );
+		scene::Path path( makeReference( GlobalSceneGraph().root() ) );
+		path.push( makeReference( worldspawn ) );
+		path.push( makeReference( node.get() ) );
+		selectPath( path, true );
+		return *Node_getBrush( node.get() );
+	};
+	if( shape.type == KrBrushShape::eSphere ){
+		const float r = std::max( shape.sphereRadius, 8.f );
+		Brush& brush = newBrush();
+		icosahedron::Brush_ConstructIcosahedron( brush, AABB( origin + Vector3( 0, 0, r ), Vector3( r, r, r ) ), std::clamp( shape.tessellation, 0, 3 ), false, shader, projection );
+		return 1;
+	}
+	std::size_t count = 0;
+	for( const KrPiece& piece : kr_shape_pieces( shape ) ){
+		Brush& brush = newBrush();
+		brush.clear();
+		brush.reserve( piece.size() );
+		for( const KrPlane& plane : piece ){
+			// three points with ( p2 - p0 ) x ( p1 - p0 ) = outward normal, the order radiant expects
+			const Vector3 n = plane.normal;
+			const Vector3 u = vector3_normalised( std::fabs( n.z() ) < 0.9f ? vector3_cross( n, Vector3( 0, 0, 1 ) ) : vector3_cross( n, Vector3( 1, 0, 0 ) ) );
+			const Vector3 v = vector3_cross( n, u );
+			const Vector3 p0 = kr_round( plane.point + origin );
+			brush.addPlane( p0, kr_round( p0 + v * 64 ), kr_round( p0 + u * 64 ), shader, projection );
+		}
+		brush.removeEmptyFaces();
+		++count;
+	}
+	SceneChangeNotify();
+	return count;
 }

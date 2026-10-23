@@ -643,17 +643,19 @@ public:
 class filter_patch_flags : public PatchFilter
 {
 	int m_flags;
+	int m_required; // KenRadiant: these must be set too
 public:
-	filter_patch_flags( int flags ) : m_flags( flags ){
+	filter_patch_flags( int flags, int required = 0 ) : m_flags( flags ), m_required( required ){
 	}
 	bool filter( const Patch& patch ) const override {
-		return ( patch.getShaderFlags() & m_flags ) != 0;
+		const int flags = patch.getShaderFlags();
+		return ( flags & m_flags ) != 0 && ( flags & m_required ) == m_required;
 	}
 };
 
 
 filter_patch_all g_filter_patch_all;
-filter_patch_flags g_filter_patch_clip( QER_CLIP );
+filter_patch_flags g_filter_patch_clip( QER_CLIP, QER_NODRAW ); // KenRadiant: visible playerclip patches stay
 filter_patch_shader g_filter_patch_commonclip( "textures/common/clip" );
 filter_patch_shader g_filter_patch_weapclip( "textures/common/weapclip" );
 filter_patch_flags g_filter_patch_translucent( QER_TRANS | QER_ALPHATEST );

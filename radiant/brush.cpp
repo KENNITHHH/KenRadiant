@@ -306,6 +306,14 @@ void Brush::buildBRep(){
 			for ( auto *observer : m_observers )
 				observer->vertex_select();
 		}
+		if( !m_krPendingVertices.empty() || !m_krPendingEdges.empty() ){ // KenRadiant: undo / redo keeps the vertex / edge selection
+			const auto vertices = std::move( m_krPendingVertices );
+			const auto edges = std::move( m_krPendingEdges );
+			m_krPendingVertices.clear();
+			m_krPendingEdges.clear();
+			for ( auto *observer : m_observers )
+				observer->kr_reselect( vertices, edges );
+		}
 	}
 	m_BRep_evaluation = false;
 }

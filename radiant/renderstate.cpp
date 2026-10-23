@@ -466,6 +466,8 @@ float g_krSunSoftness = 1;
 KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
+int g_krShadowedLights = 4;
+int g_krPreviewLightCount = 24;
 unsigned int g_krCubeTex[c_krMaxCubeShadows] = {};
 float g_krCubeNear = 4, g_krCubeFar[c_krMaxCubeShadows] = {};
 Matrix4 g_krEye2World = g_matrix4_identity;
@@ -492,6 +494,7 @@ public:
 	GLuint m_program = 0;
 	GLint u_sky, u_minlight;
 	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
+	GLint u_cube_far2;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -510,7 +513,7 @@ public:
 		u_sky = u( "u_sky" ); u_minlight = u( "u_minlight" );
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
-		u_cube_far = u( "u_cube_far" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
+		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
 		u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
@@ -520,6 +523,10 @@ public:
 		gl().glUniform1i( u( "u_cube1" ), 9 );
 		gl().glUniform1i( u( "u_cube2" ), 10 );
 		gl().glUniform1i( u( "u_cube3" ), 11 );
+		gl().glUniform1i( u( "u_cube4" ), 12 );
+		gl().glUniform1i( u( "u_cube5" ), 13 );
+		gl().glUniform1i( u( "u_cube6" ), 14 );
+		gl().glUniform1i( u( "u_cube7" ), 15 );
 		gl().glUseProgram( 0 );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
@@ -570,7 +577,7 @@ public:
 		gl().glActiveTexture( GL_TEXTURE7 );
 		gl().glBindTexture( GL_TEXTURE_2D, shadow ? g_krShadowTex : 0 );
 		// point light cube shadows
-		float cubeFar[4] = { 0, 0, 0, 0 };
+		float cubeFar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 		for( std::size_t i = 0; i < c_krMaxCubeShadows; ++i ){
 			const bool on = g_krLightShadows && g_krCubeTex[i] != 0 && i < count;
 			cubeFar[i] = on ? g_krCubeFar[i] : 0;
@@ -579,6 +586,7 @@ public:
 		}
 		gl().glActiveTexture( GL_TEXTURE0 );
 		gl().glUniform4f( u_cube_far, cubeFar[0], cubeFar[1], cubeFar[2], cubeFar[3] );
+		gl().glUniform4f( u_cube_far2, cubeFar[4], cubeFar[5], cubeFar[6], cubeFar[7] );
 		gl().glUniform1f( u_cube_near, g_krCubeNear );
 		const float m3[9] = { g_krEye2World[0], g_krEye2World[1], g_krEye2World[2],
 		                      g_krEye2World[4], g_krEye2World[5], g_krEye2World[6],
