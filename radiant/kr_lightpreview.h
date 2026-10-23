@@ -22,7 +22,8 @@ extern Vector3 g_krSunColour;          // 0 = no sun
 extern Vector3 g_krAmbient;            // worldspawn _ambient
 extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
 extern float g_krMinLight;             // worldspawn _minlight
-constexpr std::size_t c_krMaxPreviewLights = 48;
+constexpr std::size_t c_krMaxPreviewLights = 256;
+extern int g_krMaxPreviewLightsGPU; // what the graphics card's shader uniform space allows (<= c_krMaxPreviewLights)
 
 // sun shadow map (rendered by the 3D view, read by the light preview program)
 extern bool g_krShadows;               // user toggle (on by default with the preview)
@@ -67,7 +68,7 @@ extern Vector3 g_krBounceFill;   // approximate indirect light added by the boun
 // point light shadows (cube maps of the nearest lights)
 constexpr std::size_t c_krMaxCubeShadows = 8;
 extern int g_krShadowedLights;   // how many of the nearest lights get a shadow cube (0-8, setting)
-extern int g_krPreviewLightCount; // how many lights light the preview (1-24, setting)
+extern int g_krPreviewLightCount; // how many lights light the preview (1-256, setting)
 extern bool g_krLightShadows;
 extern unsigned int g_krCubeTex[c_krMaxCubeShadows]; // 0 = that light casts no shadow
 extern float g_krCubeNear, g_krCubeFar[c_krMaxCubeShadows];

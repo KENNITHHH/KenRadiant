@@ -31,4 +31,5 @@ bool KrTerrainPaint_active();
 /// mouse in the 3D view while the tool is on: phase 0 = press, 1 = move (button held), 2 = release, 3 = hover
 void KrTerrainPaint_mouse( int phase, const View& view, float deviceX, float deviceY, float epsX, float epsY );
 void KrTerrainPaint_drawOverlay( const Matrix4& world2screen, int width, int height );
+void KrTerrain_shutdown(); // called once when the editor closes
 void KrTerrain_saveAll(); // write changed index maps (called when the map is saved)

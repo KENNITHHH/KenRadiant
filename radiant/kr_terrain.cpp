@@ -343,6 +343,7 @@ public:
 	void unrealise() override;
 };
 TerrainShaderObserver g_terrainShaderObserver;
+bool g_terrainObserverAttached = false;
 
 const char* keyOf( const Entity& entity, const char* a, const char* b ){
 	const char* value = entity.getKeyValue( a );
@@ -350,9 +351,8 @@ const char* keyOf( const Entity& entity, const char* a, const char* b ){
 }
 
 void Terrain_clearIfNewMap(){
-	static bool attached = false;
-	if( !attached ){
-		attached = true;
+	if( !g_terrainObserverAttached ){
+		g_terrainObserverAttached = true;
 		GlobalShaderSystem().attach( g_terrainShaderObserver );
 	}
 	static int generation = -1;
@@ -677,8 +677,10 @@ void TerrainPaint_toggle(){
 	g_paint_item.update();
 	g_hover.reset();
 	if( g_paint ){
-		if( g_paintDialog == nullptr )
+		if( g_paintDialog == nullptr ){
 			g_paintDialog = new TerrainPaintDialog( MainFrame_getWindow() );
+			QObject::connect( g_paintDialog, &QObject::destroyed, [](){ g_paintDialog = nullptr; } );
+		}
 		g_paintDialog->fillBases();
 		g_paintDialog->forget();
 		g_paintDialog->showTerrain( nullptr );
@@ -748,4 +750,17 @@ void KrTerrainPaint_drawOverlay( const Matrix4& world2screen, int width, int hei
 
 void KrTerrain_registerCommands(){
 	GlobalToggles_insert( "ToggleTerrainPaint", makeCallbackF( TerrainPaint_toggle ), ToggleItem::AddCallbackCaller( g_paint_item ) );
+}
+
+/// before the modules shut down (the undo and shader systems go away): drop the terrain records while they still exist;
+/// the GL textures die with the context
+void KrTerrain_shutdown(){
+	for( auto& r : g_records )
+		if( r )
+			r->tgl.indexTex = 0;
+	g_records.clear();
+	if( g_terrainObserverAttached ){
+		g_terrainObserverAttached = false;
+		GlobalShaderSystem().detach( g_terrainShaderObserver );
+	}
 }

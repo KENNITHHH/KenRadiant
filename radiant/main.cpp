@@ -471,6 +471,10 @@ int main( int argc, char* argv[] ){
 
 	QApplication::exec();
 
+	{
+		extern void KrTerrain_shutdown();
+		KrTerrain_shutdown();
+	}
 	Map_Free();
 
 	if ( !Map_Unnamed( g_map ) ) {

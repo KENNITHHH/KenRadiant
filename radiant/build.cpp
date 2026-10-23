@@ -1327,3 +1327,17 @@ void Build_setPreset( const char* name, const std::vector<CopiedString>& command
 	g_build_changed = true;
 	Build_refreshMenu( g_bsp_menu );
 }
+
+void RunBSP( size_t buildIdx );
+/// KenRadiant: runs the Build menu entry with this name; false if there is none
+bool Build_runPreset( const char* name ){
+	std::size_t index = 0;
+	for( const BuildPair& p : g_build_project ){
+		if( string_equal( p.first.c_str(), name ) ){
+			RunBSP( index );
+			return true;
+		}
+		++index;
+	}
+	return false;
+}

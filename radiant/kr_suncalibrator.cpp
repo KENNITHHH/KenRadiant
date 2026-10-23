@@ -118,7 +118,7 @@ class SunCalibrator : public QDialog
 	KrValue m_compensate{ 0.5f, 4, 0.05f, 2 };
 	KrValue m_saturation{ 0, 2, 0.05f, 2 };
 	KrValue m_bounce{ 0, 8, 1, 0 };
-	KrValue m_lightCount{ 1, 48, 1, 0 };
+	KrValue m_lightCount{ 1, 256, 1, 0 };
 	KrValue m_shadowedLights{ 0, 8, 1, 0 };
 
 	static QWidget* row( std::initializer_list<QWidget*> widgets ){
@@ -390,7 +390,7 @@ public:
 			auto *group = new QGroupBox( "Lights" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
-			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 48", [this](){
+			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 256 (fewer if the graphics card can't hold that many; the console says how many at startup)", [this](){
 				g_krPreviewLightCount = int( m_lightCount.value() );
 				KrLightPreview_redraw();
 			} );

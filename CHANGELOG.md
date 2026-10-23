@@ -3,6 +3,15 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (11)
+### Editor
+- **Compile window** (hammer button on the toolbar, Build → Compile..., F9): tick BSP / VIS / LIGHT and their options, each with a plain explanation of what it does and what it costs; presets (Quick test, Final, High quality, Re-light only, Entities only); shows the exact q3map2 commands. *Compile* saves the map and runs them (output in the console / build monitor as usual), *Add to Build menu* keeps them as "KenRadiant: (Compile window)". Settings are remembered.
+- **Hidden caulk blocks light**: faces that aren't drawn right now (caulk / nodraw in Game View, filtered or hidden brushes, hidden layers) still cast sun, sky and light shadows in the live light preview, like in the compiled map. Tunnels with a caulk roof are no longer sunlit.
+- **Up to 256 preview lights** (default 128, was 48): the limit is what your graphics card's shader can hold (the console says "light preview: up to N lights" at startup). Lights only cost time where they reach.
+- **Map Text**: toolbar button; selecting in the views now always jumps to the line (it didn't when the selection also refreshed the text); the Find box works (Enter = next, Shift+Enter = previous, it used to press Refresh) and selects what it finds in the views, e.g. type `tree_lrg.md3`.
+- **Go To** toolbar button (crosshair).
+- **Fixed: runtime error when closing the editor** (an unreleased selection-outline state and the terrain shader observer made the shutdown assert).
+
 ## Build 2026-10-23 (10)
 ### Editor
 - **Sky light now sees roofs**: `q3map_skyLight` in the light preview is occluded like q3map2 (9 sky directions with shadow maps), so rooms, tunnels and covered areas are dark again instead of lit like outside. Corners and walls get less sky than open floors. (View → Light Preview → Sun Shadows also turns the sky shadows on / off.)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: Map Text window (page with text lines and braces) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 26,10 H 80 L 104,34 V 118 H 26 Z" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 80,10 V 34 H 104" style="fill:none;stroke:#c0c0c0;stroke-width:6;stroke-linejoin:round" />
+  <path d="M 48,52 C 40,52 42,64 36,66 C 42,68 40,80 48,80 M 82,52 C 90,52 88,64 94,66 C 88,68 90,80 82,80" style="fill:none;stroke:#ffa020;stroke-width:6;stroke-linecap:round" />
+  <path d="M 40,98 H 90" style="fill:none;stroke:#c0c0c0;stroke-width:7;stroke-linecap:round" />
+</svg>

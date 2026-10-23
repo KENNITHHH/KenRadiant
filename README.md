@@ -38,8 +38,9 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time, with **sun shadows** and **shadows from the 4 nearest lights** (View → Light Preview). Game View keeps the light, only the light icons hide. |
 | **Sun Calibrator** | Sun button: sliders for the sky shader's `q3map_sun` / `q3map_sunExt` / `q3map_skyLight` (colour, intensity, degrees, elevation, deviance …) with live shadows; **Write to shader file** puts them in the .shader (keeps a .bak). Compile preview: `-gamma`, `-compensate`, `-saturation`, `-bounce` (approximation) on the preview, **Make build preset** adds them to the Build menu. |
 | **Surface snapping** | Magnet button (or hold **Ctrl**): dragging the white ball sticks the selection to the surface under the cursor; Alt turns it to the surface, Shift slides along it. |
-| **Map Text window** | View → Map Text Window: the .map as text, synced with the selection both ways. |
-| **Go To** | Ctrl+Shift+G: fly the camera to typed / pasted coordinates. |
+| **Map Text window** | Toolbar / View → Map Text Window: the .map as text, synced with the selection both ways; Find selects what it finds. |
+| **Go To** | Toolbar / Ctrl+Shift+G: fly the camera to typed / pasted coordinates. |
+| **Compile window** | Hammer button / F9: BSP, VIS, LIGHT options with explanations, presets, runs q3map2 or adds a Build menu entry. |
 | **Terrain** | q3map2 index-map terrain (alphamap .pcx) shows its layers blended in the 3D view; **Terrain Paint** paints layers into the .pcx (saved with the map). |
 | **Brush Shapes** | Box, cone, cylinder, curved / linear / spiral stairs, sphere with sliders that update the shape live (like Unreal's geometry brushes). |
 | **Check for Problems** | Misc menu / Ctrl+Alt+P: broken targets, missing models / textures, bad brushes ... click to select, double-click to fly there. |
@@ -48,7 +49,7 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Selection styles** | **J** cycles: models / entities get an orange outline and brushes keep edges + tint (default), everything outlined, or classic edges + tint everywhere. |
 | **Snapping** | Toolbar combos: **Grid** (0.125–256), **Rot** (off, 1°, 5°, 10°, 15°, 22.5°, 45°, 90° for the rotate gizmo; hold Shift for free), **Scale** (grid sizes or fixed steps x0.0625…x1). |
 | **Shader effects** | View → Shader Effects: `tcMod scroll / rotate / scale / stretch / turb` and `deformVertexes wave / move / bulge` animate, `polygonOffset` decals sit in front, glow / additive / `q3map_surfacelight` shaders are fullbright in the light preview. |
-| **KenRadiant toolbar** | Second toolbar row: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, Sun Calibrator, Grid / Rot / Scale snap, FOV slider. |
+| **KenRadiant toolbar** | Second toolbar row: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, Sun Calibrator, Map Text, Go To, Compile, Grid / Rot / Scale snap, FOV slider. |
 | **Face select** | Ctrl+click or **Ctrl+Shift+click** (GtkRadiant style). |
 | **Rotate gizmo** (R) | Unreal-style thick rings per axis, white outer ring rotates around the view direction. |
 | **Sky brushes** | Shown with the sky shader's editor image so you can edit them; the cloud button (or View → Show → *Sky Brushes Show Skybox*) previews the real sky. Game View turns it on automatically. |

@@ -1,7 +1,10 @@
 // KenRadiant live light preview: texture * ( ambient + shadowed sun + point lights ), lights in eye space
 uniform sampler2D u_tex;
 uniform int u_count;
-uniform vec4 u_light[96];  // per light: ( eye position, falloff ), ( colour, 0 ) - see the light loop
+#ifndef KR_MAX_LIGHTS
+#define KR_MAX_LIGHTS 48
+#endif
+uniform vec4 u_light[KR_MAX_LIGHTS * 2];  // per light: ( eye position, falloff ), ( colour, reach² ) - see the light loop
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
@@ -140,12 +143,15 @@ void main()
 		skyVis += c * vis;
 	}
 	vec3 light = u_ambient + u_sky * ( skyVis / max( skyAll, 0.001 ) ) + u_sun_col * sun + u_bounce;
-	for( int i = 0; i < 48; ++i ){
+	for( int i = 0; i < KR_MAX_LIGHTS; ++i ){
 		if( i >= u_count )
 			break;
 		vec3 d = u_light[i * 2].xyz - v_pos;
+		float dd = dot( d, d );
+		if( dd > u_light[i * 2 + 1].w )
+			continue; // out of this light's reach
 		float falloff = u_light[i * 2].w;
-		float dist = length( d );
+		float dist = sqrt( dd );
 		// q3map2 point light, in lightmap units (1 = 255): inverse square ( light * 7500 / dist² ),
 		// or linear ( spawnflags 1: light * 7500 / 8000 - dist ), dist never below 16
 		float lndl = max( dot( n, d / max( dist, 0.001 ) ), 0.0 );

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: Compile window (hammer) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 58,58 18,108" style="fill:none;stroke:#c0c0c0;stroke-width:14;stroke-linecap:round" />
+  <path d="M 44,40 74,10 118,54 104,68 82,46 66,62 Z" style="fill:#ffa020;stroke:#ffa020;stroke-width:6;stroke-linejoin:round" />
+</svg>

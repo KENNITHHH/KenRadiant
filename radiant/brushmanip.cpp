@@ -1889,3 +1889,27 @@ std::size_t KrBrushShape_build( const KrBrushShape& shape, const Vector3& origin
 	SceneChangeNotify();
 	return count;
 }
+
+/// KenRadiant light preview: shadow casting brush faces that are not drawn right now (filtered: Game View, caulk / nodraw filters,
+/// hidden, hidden layers) - q3map2 compiles them, so they must still block light; triangles in world space
+#include "kr_lightpreview.h"
+void Scene_collectHiddenCasters( std::vector<Vector3>& triangles ){
+	triangles.clear();
+	Scene_forEachBrush( GlobalSceneGraph(), [&triangles]( BrushInstance& instance ){
+		const scene::Node& node = instance.path().top().get();
+		const bool nodeHidden = node.excluded( scene::Node::eFiltered | scene::Node::eHidden | scene::Node::eLayerHidden );
+		for( const auto& face : instance.getBrush() ){
+			if( !nodeHidden && !face->isFiltered() )
+				continue; // drawn into the shadow maps the normal way
+			Shader* state = face->getShader().state();
+			if( state == nullptr || !Shader_castsShadow( state ) || ( state->getFlags() & QER_ALPHATEST ) )
+				continue;
+			const Winding& w = face->getWinding();
+			for( std::size_t i = 2; i < w.numpoints; ++i ){
+				triangles.push_back( Vector3( w[0].vertex ) );
+				triangles.push_back( Vector3( w[i - 1].vertex ) );
+				triangles.push_back( Vector3( w[i].vertex ) );
+			}
+		}
+	} );
+}

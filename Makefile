@@ -890,6 +890,7 @@ $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/kr_terrain.o \
 	radiant/kr_maptext.o \
 	radiant/kr_misc.o \
+	radiant/kr_compile.o \
 	radiant/clippertool.o \
 	radiant/colors.o \
 	radiant/commands.o \

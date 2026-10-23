@@ -149,7 +149,35 @@ void printProgramLog( GLuint program ){
 	globalErrorStream() << StringRange( log.begin(), log_length ) << '\n';
 }
 
+void createShader( GLuint program, const char* filename, GLenum type );
+/// compiles with a source prefix (defines); returns false instead of asserting when it fails
+bool createShaderTry( GLuint program, const char* filename, GLenum type, const char* prefix ){
+	GLuint shader = gl().glCreateShader( type );
+	std::size_t size = file_size( filename );
+	FileInputStream file( filename );
+	if( file.failed() ){
+		gl().glDeleteShader( shader );
+		return false;
+	}
+	Array<GLchar> buffer( size );
+	size = file.read( reinterpret_cast<StreamBase::byte_type*>( buffer.data() ), size );
+	const GLchar* strings[2] = { prefix, buffer.data() };
+	GLint lengths[2] = { GLint( strlen( prefix ) ), GLint( size ) };
+	gl().glShaderSource( shader, 2, strings, lengths );
+	gl().glCompileShader( shader );
+	GLint compiled = 0;
+	gl().glGetShaderiv( shader, GL_COMPILE_STATUS, &compiled );
+	if( !compiled ){
+		printShaderLog( shader );
+		gl().glDeleteShader( shader );
+		return false;
+	}
+	gl().glAttachShader( program, shader );
+	gl().glDeleteShader( shader );
+	return true;
+}
 void createShader( GLuint program, const char* filename, GLenum type ){
+	const char* prefix = "";
 	GLuint shader = gl().glCreateShader( type );
 	GlobalOpenGL_debugAssertNoErrors();
 
@@ -161,9 +189,9 @@ void createShader( GLuint program, const char* filename, GLenum type ){
 		Array<GLchar> buffer( size );
 		size = file.read( reinterpret_cast<StreamBase::byte_type*>( buffer.data() ), size );
 
-		const GLchar* string = buffer.data();
-		GLint length = GLint( size );
-		gl().glShaderSource( shader, 1, &string, &length );
+		const GLchar* strings[2] = { prefix, buffer.data() };
+		GLint lengths[2] = { GLint( strlen( prefix ) ), GLint( size ) };
+		gl().glShaderSource( shader, 2, strings, lengths );
 	}
 
 	// compile shader
@@ -468,7 +496,8 @@ KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
-int g_krPreviewLightCount = 48;
+int g_krPreviewLightCount = 128;
+int g_krMaxPreviewLightsGPU = 48;
 unsigned int g_krCubeTex[c_krMaxCubeShadows] = {};
 float g_krCubeNear = 4, g_krCubeFar[c_krMaxCubeShadows] = {};
 Matrix4 g_krEye2World = g_matrix4_identity;
@@ -512,7 +541,22 @@ public:
 		{
 			StringOutputStream filename( 256 );
 			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_vp.glsl" ), GL_VERTEX_SHADER );
-			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER );
+			// as many lights as the card's fragment uniform space holds (2 vec4 each, ~600 components for the rest)
+			GLint components = 0;
+			gl().glGetIntegerv( GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &components );
+			int lights = std::clamp( ( int( components ) - 640 ) / 8, 16, int( c_krMaxPreviewLights ) );
+			for( ;; ){
+				const auto prefix = StringStream<32>( "#define KR_MAX_LIGHTS ", lights, '\n' );
+				if( createShaderTry( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER, prefix ) )
+					break;
+				if( lights <= 16 ){
+					globalErrorStream() << "light preview: fragment shader failed to compile\n";
+					break;
+				}
+				lights = std::max( 16, lights / 2 );
+			}
+			g_krMaxPreviewLightsGPU = lights;
+			globalOutputStream() << "light preview: up to " << lights << " lights (" << components << " fragment uniform components)\n";
 		}
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
@@ -562,14 +606,14 @@ public:
 		if( !m_preview )
 			return;
 		bind( true );
-		const std::size_t count = std::min( g_krLightPreviewLights.size(), c_krMaxPreviewLights );
-		float packed[c_krMaxPreviewLights * 8];
+		const std::size_t count = std::min( g_krLightPreviewLights.size(), std::size_t( g_krMaxPreviewLightsGPU ) );
+		static float packed[c_krMaxPreviewLights * 8];
 		for( std::size_t i = 0; i < count; ++i ){
 			const KrPreviewLight& l = g_krLightPreviewLights[i];
 			const Vector3 eye = matrix4_transformed_point( g_krLightPreviewView, l.origin );
 			float* p = packed + i * 8;
 			p[0] = eye.x(); p[1] = eye.y(); p[2] = eye.z(); p[3] = l.falloff;
-			p[4] = l.colour.x(); p[5] = l.colour.y(); p[6] = l.colour.z(); p[7] = 0;
+			p[4] = l.colour.x(); p[5] = l.colour.y(); p[6] = l.colour.z(); p[7] = l.radius * l.radius; // reach: skipped further away
 		}
 		gl().glUniform1i( u_count, GLint( count ) );
 		if( count != 0 )

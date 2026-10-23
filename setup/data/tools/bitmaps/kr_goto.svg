@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: Go To coordinates (crosshair) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="64" cy="64" r="38" style="fill:none;stroke:#c0c0c0;stroke-width:8" />
+  <path d="M 64,8 V 40 M 64,88 V 120 M 8,64 H 40 M 88,64 H 120" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linecap:round" />
+  <circle cx="64" cy="64" r="9" style="fill:#ffa020" />
+</svg>

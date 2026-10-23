@@ -1048,8 +1048,13 @@ void CamWnd_constructStatic(){
 	CamWnd::captureStates();
 }
 
+Shader* g_krMaskState = nullptr; // selection outline mask (captured on first use)
 void CamWnd_destroyStatic(){
 	CamWnd::releaseStates();
+	if( g_krMaskState != nullptr ){ // (an unreleased state asserts when the editor closes)
+		GlobalShaderCache().release( "$KR_MASK" );
+		g_krMaskState = nullptr;
+	}
 }
 
 void CamWnd_reconstructStatic(){
@@ -2232,7 +2237,7 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, minlight, viewer ) );
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
 	g_krLightPreviewLights.clear();
-	for( std::size_t i = 0; i < candidates.size() && i < std::min( std::size_t( std::max( g_krPreviewLightCount, 1 ) ), c_krMaxPreviewLights ); ++i )
+	for( std::size_t i = 0; i < candidates.size() && i < std::min( std::size_t( std::max( g_krPreviewLightCount, 1 ) ), std::size_t( g_krMaxPreviewLightsGPU ) ); ++i )
 		g_krLightPreviewLights.push_back( candidates[i].light );
 
 	// sun from the sky shader on the map's sky brushes (rescanned when the map or the scene changes)
@@ -2323,6 +2328,48 @@ static Matrix4 kr_lookat( const Vector3& eye, const Vector3& forward ){
 	                -vector3_dot( side, eye ), -vector3_dot( u, eye ), vector3_dot( forward, eye ), 1 );
 }
 
+
+/* hidden shadow casters: brush faces that are filtered out of the view (caulk / nodraw in Game View, hidden brushes,
+   hidden layers) still block light in the compiled map, so they go into every shadow pass too */
+void Scene_collectHiddenCasters( std::vector<Vector3>& triangles );
+static std::vector<Vector3> s_hiddenCasters;
+static bool s_hiddenCastersDirty = true;
+static int s_hiddenCastersGeneration = -1;
+static void KrHiddenCasters_sceneChanged(){ s_hiddenCastersDirty = true; }
+static void KrHiddenCasters_draw( const Matrix4& view, const Matrix4& proj ){
+	static bool registered = false;
+	if( !registered ){
+		registered = true;
+		AddSceneChangeCallback( FreeCaller<void(), KrHiddenCasters_sceneChanged>() );
+	}
+	extern int g_krMapGeneration;
+	if( s_hiddenCastersDirty || s_hiddenCastersGeneration != g_krMapGeneration ){
+		s_hiddenCastersDirty = false;
+		s_hiddenCastersGeneration = g_krMapGeneration;
+		Scene_collectHiddenCasters( s_hiddenCasters );
+	}
+	if( s_hiddenCasters.empty() )
+		return;
+	gl().glUseProgram( 0 );
+	gl().glMatrixMode( GL_PROJECTION );
+	gl().glLoadMatrixf( reinterpret_cast<const float*>( &proj ) );
+	gl().glMatrixMode( GL_MODELVIEW );
+	gl().glLoadMatrixf( reinterpret_cast<const float*>( &view ) );
+	gl().glDisable( GL_CULL_FACE );
+	gl().glDisable( GL_BLEND );
+	gl().glDisable( GL_ALPHA_TEST );
+	gl().glDisable( GL_TEXTURE_2D );
+	gl().glEnable( GL_DEPTH_TEST );
+	gl().glDepthFunc( GL_LESS );
+	gl().glDepthMask( GL_TRUE );
+	gl().glDisableClientState( GL_NORMAL_ARRAY );
+	gl().glDisableClientState( GL_COLOR_ARRAY );
+	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	gl().glEnableClientState( GL_VERTEX_ARRAY );
+	gl().glVertexPointer( 3, GL_FLOAT, sizeof( Vector3 ), s_hiddenCasters.data()->data() );
+	gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( s_hiddenCasters.size() ) );
+}
+
 /// renders the scene's depth from the sun into a 4096² map around the camera (only when the scene, sun or area changes)
 static void KrShadow_render( camera_t& camera ){
 	static bool registered = false;
@@ -2402,6 +2449,7 @@ static void KrShadow_render( camera_t& camera ){
 		Scene_Render( renderer, view );
 		GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST,
 		                            lightView, lightProj, centre );
+		KrHiddenCasters_draw( lightView, lightProj );
 
 		f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
 		gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
@@ -2496,6 +2544,7 @@ static void KrSkyShadow_render( camera_t& camera ){
 				ShadowRenderer renderer;
 				Scene_Render( renderer, view );
 				GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST, views[i], proj, centre );
+				KrHiddenCasters_draw( views[i], proj );
 			}
 			f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
 			gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
@@ -2578,6 +2627,7 @@ static void KrCube_render( KrCube& cube, QOpenGLFunctions* f ){
 		ShadowRenderer renderer;
 		Scene_Render( renderer, v );
 		GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST, view, proj, cube.origin );
+		KrHiddenCasters_draw( view, proj );
 	}
 	f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
 	gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
@@ -2755,7 +2805,10 @@ public:
 };
 
 static void KrOutline_draw( camera_t& camera, View& view ){
-	static Shader* mask = GlobalShaderCache().capture( "$KR_MASK" );
+	extern Shader* g_krMaskState;
+	if( g_krMaskState == nullptr )
+		g_krMaskState = GlobalShaderCache().capture( "$KR_MASK" );
+	Shader* mask = g_krMaskState;
 	static GLuint program = 0;
 	static GLint u_mask, u_texel, u_colour;
 	static QOpenGLFramebufferObject* fbo = nullptr;
@@ -3524,7 +3577,7 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
-	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount48", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount128", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );
@@ -3540,6 +3593,8 @@ void CamWnd_Construct(){
 	KrMapText_registerCommands();
 	extern void KrMisc_registerCommands();
 	KrMisc_registerCommands();
+	extern void KrCompile_registerCommands();
+	KrCompile_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

@@ -23,6 +23,8 @@
 #include <QScrollBar>
 #include <QGuiApplication>
 #include <functional>
+#include <utility>
+#include <QKeyEvent>
 
 #include "imap.h"
 #include "ientity.h"
@@ -113,6 +115,8 @@ class MapTextDialog : public QDialog
 	std::vector<TextBlock> m_blocks;
 	std::unordered_map<const scene::Node*, std::size_t> m_blockOf; // node -> block index
 	bool m_dirty = true;
+	bool m_pendingScroll = false; // a selection came in while the text was out of date: jump when rebuilt
+	QString m_lastText;
 	bool m_selecting = false; // we are selecting from the text: don't jump back
 	int m_highlighted = -1;
 
@@ -121,6 +125,8 @@ class MapTextDialog : public QDialog
 		StringOutputStream out( 1 << 20 );
 		Map_getFormat( g_map ).writeGraph( GlobalSceneGraph().root(), Map_Traverse, out );
 		const QString text = QString::fromLatin1( out.c_str() );
+		const bool same = text == m_lastText; // selecting things changes nothing in the text: keep it, just re-highlight
+		m_lastText = text;
 
 		// blocks from the writer's "// entity N" and "// brush N" comments, in scene order
 		const SceneOrder order = Scene_order();
@@ -159,6 +165,10 @@ class MapTextDialog : public QDialog
 		for( std::size_t i = 0; i < m_blocks.size(); ++i )
 			m_blockOf[m_blocks[i].brush != nullptr ? m_blocks[i].brush : m_blocks[i].entity] = i;
 
+		if( same ){
+			showSelection( std::exchange( m_pendingScroll, false ) );
+			return;
+		}
 		// keep the view where it was
 		const int scroll = m_text->verticalScrollBar()->value();
 		const int cursor = m_text->textCursor().position();
@@ -172,7 +182,7 @@ class MapTextDialog : public QDialog
 		m_text->verticalScrollBar()->setValue( scroll );
 		m_highlighted = -1;
 		m_status->setText( QString( "%1 entities, %2 lines" ).arg( order.items.size() ).arg( m_text->blockCount() ) );
-		showSelection( false );
+		showSelection( std::exchange( m_pendingScroll, false ) );
 	}
 
 	int blockAt( int position ) const {
@@ -243,6 +253,8 @@ class MapTextDialog : public QDialog
 		const QString what = m_find->text();
 		if( what.isEmpty() )
 			return;
+		if( m_dirty )
+			rebuild();
 		QTextDocument::FindFlags flags;
 		if( backwards )
 			flags |= QTextDocument::FindBackward;
@@ -250,8 +262,17 @@ class MapTextDialog : public QDialog
 			QTextCursor c = m_text->textCursor();
 			c.movePosition( backwards ? QTextCursor::End : QTextCursor::Start );
 			m_text->setTextCursor( c );
-			m_text->find( what, flags );
+			if( !m_text->find( what, flags ) ){
+				m_status->setText( QString( "\"%1\" not found" ).arg( what ) );
+				return;
+			}
 		}
+		m_text->centerCursor();
+		// select what was found in the views too
+		m_pendingScroll = false;
+		selectFromText( false );
+		const int index = blockAt( m_text->textCursor().position() );
+		m_status->setText( index >= 0 ? QString( "found \"%1\" - selected in the views" ).arg( what ) : QString( "found \"%1\"" ).arg( what ) );
 	}
 
 	class Editor : public QPlainTextEdit
@@ -281,6 +302,7 @@ public:
 			m_follow->setToolTip( "Jump to the entity / brush you select in the views" );
 			row->addWidget( m_follow );
 			auto *refresh = new QPushButton( "Refresh" );
+			refresh->setAutoDefault( false ); // Enter in the find box searches, it doesn't press Refresh
 			QObject::connect( refresh, &QPushButton::clicked, [this](){ rebuild(); } );
 			row->addWidget( refresh );
 			vbox->addLayout( row );
@@ -311,7 +333,13 @@ public:
 		m_selectionTimer.setSingleShot( true );
 		m_selectionTimer.setInterval( 0 );
 		QObject::connect( &m_selectionTimer, &QTimer::timeout, [this](){
-			if( isVisible() && !m_selecting && !m_dirty && m_follow->isChecked() )
+			if( !isVisible() || m_selecting || !m_follow->isChecked() )
+				return;
+			if( m_dirty ){ // (selecting also notifies a scene change) bring the text up to date first
+				m_pendingScroll = true;
+				rebuild();
+			}
+			else
 				showSelection( true );
 		} );
 	}
@@ -323,6 +351,11 @@ public:
 	void selectionChanged(){
 		if( !m_selecting )
 			m_selectionTimer.start();
+	}
+	void keyPressEvent( QKeyEvent* event ) override {
+		if( event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter )
+			return; // never "accept" the dialog
+		QDialog::keyPressEvent( event );
 	}
 	void showEvent( QShowEvent* event ) override {
 		QDialog::showEvent( event );
@@ -346,6 +379,7 @@ void MapText_selectionChanged( const Selectable& ){
 void MapText_show(){
 	if( g_mapText == nullptr ){
 		g_mapText = new MapTextDialog( MainFrame_getWindow() );
+		QObject::connect( g_mapText, &QObject::destroyed, [](){ g_mapText = nullptr; } ); // closing the editor: no callbacks into a deleted window
 		AddSceneChangeCallback( FreeCaller<void(), MapText_sceneChanged>() );
 		typedef FreeCaller<void(const Selectable&), MapText_selectionChanged> SelectionChangedCaller;
 		GlobalSelectionSystem().addSelectionChangeCallback( SelectionChangedCaller() );

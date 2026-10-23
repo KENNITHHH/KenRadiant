@@ -1174,6 +1174,7 @@ void create_bsp_menu( QMenuBar *menubar ){
 
 	menu->setTearOffEnabled( g_Layout_enableDetachableMenus.m_value );
 
+	create_menu_item_with_mnemonic( menu, "Compile... (choose options)", "CompileWindow" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Customize...", "BuildMenuCustomize" );
 	create_menu_item_with_mnemonic( menu, "Run recent build", "Build_runRecentExecutedBuild" );
 
@@ -1519,6 +1520,10 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
 	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );
 	toolbar_append_button( toolbar, "Sun Calibrator: tweak the sky shader's q3map_sun live, preview gamma / compensate / bounce", "kr_sun.png", "SunCalibrator" );
+	toolbar->addSeparator();
+	toolbar_append_button( toolbar, "Map Text: the .map as text, follows the selection; click a line to select it, find models / keys", "kr_maptext.png", "MapTextWindow" );
+	toolbar_append_button( toolbar, "Go To (Ctrl+Shift+G): fly the camera to typed or pasted coordinates", "kr_goto.png", "GoToCoordinates" );
+	toolbar_append_button( toolbar, "Compile (F9): choose BSP / VIS / LIGHT options with explanations and run q3map2", "kr_compile.png", "CompileWindow" );
 	toolbar_append_separator( toolbar );
 	{	// Unreal-style snapping: grid, rotation, scale
 		const auto addCombo = [toolbar]( const char* label, const char* tip, const QStringList& items, int current, auto onChange ){
