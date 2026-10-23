@@ -2317,8 +2317,7 @@ static void KrCube_render( KrCube& cube, QOpenGLFunctions* f ){
 	}
 	static const Vector3 dirs[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
 	static const Vector3 ups[6] = { { 0, -1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 }, { 0, -1, 0 }, { 0, -1, 0 } };
-	const float far = cube.radius;
-	const Matrix4 proj = kr_perspective90( g_krCubeNear, far );
+	const Matrix4 proj = kr_perspective90( g_krCubeNear, cube.radius );
 	GLint previous = 0, viewport[4];
 	gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
 	gl().glGetIntegerv( GL_VIEWPORT, viewport );

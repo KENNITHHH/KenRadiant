@@ -564,15 +564,15 @@ public:
 		gl().glActiveTexture( GL_TEXTURE7 );
 		gl().glBindTexture( GL_TEXTURE_2D, shadow ? g_krShadowTex : 0 );
 		// point light cube shadows
-		float far[4] = { 0, 0, 0, 0 };
+		float cubeFar[4] = { 0, 0, 0, 0 };
 		for( std::size_t i = 0; i < c_krMaxCubeShadows; ++i ){
 			const bool on = g_krLightShadows && g_krCubeTex[i] != 0 && i < count;
-			far[i] = on ? g_krCubeFar[i] : 0;
+			cubeFar[i] = on ? g_krCubeFar[i] : 0;
 			gl().glActiveTexture( GL_TEXTURE8 + GLenum( i ) );
 			gl().glBindTexture( GL_TEXTURE_CUBE_MAP, on ? g_krCubeTex[i] : 0 );
 		}
 		gl().glActiveTexture( GL_TEXTURE0 );
-		gl().glUniform4f( u_cube_far, far[0], far[1], far[2], far[3] );
+		gl().glUniform4f( u_cube_far, cubeFar[0], cubeFar[1], cubeFar[2], cubeFar[3] );
 		gl().glUniform1f( u_cube_near, g_krCubeNear );
 		const float m3[9] = { g_krEye2World[0], g_krEye2World[1], g_krEye2World[2],
 		                      g_krEye2World[4], g_krEye2World[5], g_krEye2World[6],
