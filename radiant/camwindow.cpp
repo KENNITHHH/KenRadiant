@@ -2331,7 +2331,7 @@ static void KrOutline_draw( camera_t& camera, View& view ){
 static void LightPreview_toggle(){
 	g_krLightPreview = !g_krLightPreview;
 	g_lightPreview_item.update();
-	globalOutputStream() << "live light preview: " << ( g_krLightPreview ? "on (lights + sky shader sun, no shadows)" : "off" ) << '\n';
+	globalOutputStream() << "live light preview: " << ( g_krLightPreview ? "on (lights + sky shader sun, sun shadows)" : "off" ) << '\n';
 	if( g_camwnd )
 		CamWnd_Update( *g_camwnd );
 }
