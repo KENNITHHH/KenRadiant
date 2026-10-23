@@ -128,6 +128,10 @@ public:
 
 	/// KenRadiant live light preview: q3map_sun / q3map_sunExt ( r g b intensity degrees elevation ) and q3map_skyLight value of a sky shader
 	virtual bool getSun( float colour[3], float& intensity, float& degrees, float& elevation, float& skyLight ) const { return false; }
+	/// KenRadiant: glows / q3map_surfacelight - drawn fullbright in the light preview
+	virtual bool isEmissive() const { return false; }
+	/// KenRadiant: first image stage tcMod scroll ( s t per second ) and rotate ( degrees per second ) for animated preview
+	virtual bool getTcMod( float scroll[2], float& rotate ) const { return false; }
 };
 
 typedef Callback<void(const char*)> ShaderNameCallback;

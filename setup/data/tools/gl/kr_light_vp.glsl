@@ -6,7 +6,7 @@ void main()
 {
 	v_pos = vec3( gl_ModelViewMatrix * gl_Vertex );
 	v_normal = gl_NormalMatrix * gl_Normal;
-	gl_TexCoord[0] = gl_MultiTexCoord0;
+	gl_TexCoord[0] = gl_TextureMatrix[0] * gl_MultiTexCoord0; // tcMod scroll/rotate
 	gl_FrontColor = gl_Color;
 	gl_Position = ftransform();
 }

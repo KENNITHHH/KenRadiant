@@ -419,6 +419,10 @@ void ToggleDragSkewModes(){
 
 
 
+// KenRadiant: Unreal-style rotation / scale snapping (toolbar combos); 0 = stock behaviour
+float g_krRotateSnap = 0;   // degrees
+float g_krScaleSnap = 0;    // scale factor step, e.g. 0.25
+
 // KenRadiant: gizmo axes in world space (default, like Unreal) or in the selected object's own rotation (models/entities with angles)
 bool g_manipulator_local_space = false;
 ToggleItem g_manipulator_space_button{ BoolExportCaller( g_manipulator_local_space ) };

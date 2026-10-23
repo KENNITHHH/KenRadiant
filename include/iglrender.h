@@ -94,6 +94,9 @@ public:
 	GLushort m_linestipple_pattern;
 	OpenGLFogState m_fog;
 	GLProgram* m_program;
+	// KenRadiant: animated texture coordinates (tcMod scroll / rotate of the first stage), 0 = static
+	GLfloat m_krScroll[2] = { 0, 0 };
+	GLfloat m_krRotate = 0;
 
 	OpenGLState() : m_program( 0 ){
 	}

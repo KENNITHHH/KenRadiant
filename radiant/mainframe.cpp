@@ -962,6 +962,9 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 	}
 	create_menu_item_with_mnemonic( menu, "Browse To Selected Texture", "BrowseToSelectedTexture" ); // KenRadiant
 	create_check_menu_item_with_mnemonic( menu, "Live Light Preview", "ToggleLightPreview" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Live Light Preview: Sun Shadows", "ToggleSunShadows" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Animate Shaders (tcMod scroll / rotate)", "ToggleAnimateShaders" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Selection Outline (Unreal style)", "ToggleSelectionOutline" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Model Browser", "ToggleModelBrowser" );
 	create_menu_item_with_mnemonic( menu, "Entity Inspector", "ToggleEntityInspector" );
 	create_menu_item_with_mnemonic( menu, "Layers Browser", "ToggleLayersBrowser" );
@@ -1473,6 +1476,18 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 }
 
 
+#include <QComboBox>
+#include "grid.h"
+extern float g_krRotateSnap;
+extern float g_krScaleSnap;
+static QComboBox* g_gridCombo = nullptr;
+static void GridCombo_sync(){
+	if( g_gridCombo != nullptr && g_gridCombo->currentIndex() != Grid_getPowerIndex() ){
+		const QSignalBlocker blocker( g_gridCombo );
+		g_gridCombo->setCurrentIndex( Grid_getPowerIndex() );
+	}
+}
+
 /// KenRadiant: FOV slider in its own toolbar, so it can be dragged around like the others
 void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_button( toolbar, "Find: fly the camera to the selection (Tab)", "kr_find.png", "CameraFocusOnSelected" );
@@ -1482,7 +1497,42 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
-	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view (no shadows)", "kr_lightpreview.png", "ToggleLightPreview" );
+	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun shadows", "kr_lightpreview.png", "ToggleLightPreview" );
+	toolbar_append_separator( toolbar );
+	{	// Unreal-style snapping: grid, rotation, scale
+		const auto addCombo = [toolbar]( const char* label, const char* tip, const QStringList& items, int current, auto onChange ){
+			auto *l = new QLabel( label );
+			l->setContentsMargins( 8, 0, 3, 0 );
+			auto *combo = new QComboBox;
+			combo->addItems( items );
+			combo->setCurrentIndex( current );
+			combo->setToolTip( tip );
+			combo->setFocusPolicy( Qt::FocusPolicy::NoFocus );
+			QObject::connect( combo, qOverload<int>( &QComboBox::currentIndexChanged ), onChange );
+			toolbar->addWidget( l );
+			toolbar->addWidget( combo );
+			return combo;
+		};
+		int count = 0;
+		const char* const* names = Grid_names( count );
+		QStringList grid;
+		for( int i = 0; i < count; ++i )
+			grid << names[i];
+		g_gridCombo = addCombo( "Grid", "Grid size (also [ and ], 1-9)", grid, Grid_getPowerIndex(), []( int index ){ Grid_setPowerIndex( index ); } );
+		AddGridChangeCallback( FreeCaller<void(), GridCombo_sync>() );
+
+		static const float rotSteps[] = { 0, 1, 5, 10, 15, 22.5f, 45, 90 };
+		int rotIndex = 0;
+		for( int i = 0; i < 8; ++i ) if( rotSteps[i] == g_krRotateSnap ) rotIndex = i;
+		addCombo( "Rot", "Rotation snap for the rotate gizmo (Shift = 15°)", { "Off", "1°", "5°", "10°", "15°", "22.5°", "45°", "90°" }, rotIndex,
+		          []( int index ){ g_krRotateSnap = rotSteps[index]; } );
+
+		static const float scaleSteps[] = { 0, 0.0625f, 0.1f, 0.25f, 0.5f, 1 };
+		int scaleIndex = 0;
+		for( int i = 0; i < 6; ++i ) if( scaleSteps[i] == g_krScaleSnap ) scaleIndex = i;
+		addCombo( "Scale", "Scale snap for the scale gizmo: Grid = sizes snap to the grid, otherwise scale factor steps", { "Grid", "x0.0625", "x0.1", "x0.25", "x0.5", "x1" }, scaleIndex,
+		          []( int index ){ g_krScaleSnap = scaleSteps[index]; } );
+	}
 	toolbar_append_separator( toolbar );
 	{	// camera field of view (also in Preferences > Camera)
 
@@ -2208,6 +2258,8 @@ void MainFrame_Construct(){
 		GlobalPreferenceSystem().registerPreference( StringStream<32>( "ExtraResourcePath", i ),
 			CopiedStringImportStringCaller( g_strExtraResourcePaths[i] ), CopiedStringExportStringCaller( g_strExtraResourcePaths[i] ) );
 
+	GlobalPreferenceSystem().registerPreference( "KrRotateSnap", FloatImportStringCaller( g_krRotateSnap ), FloatExportStringCaller( g_krRotateSnap ) );
+	GlobalPreferenceSystem().registerPreference( "KrScaleSnap", FloatImportStringCaller( g_krScaleSnap ), FloatExportStringCaller( g_krScaleSnap ) );
 	GlobalPreferenceSystem().registerPreference( "EnginePath", CopiedStringImportStringCaller( g_strEnginePath ), CopiedStringExportStringCaller( g_strEnginePath ) );
 	GlobalPreferenceSystem().registerPreference( "InstalledDevFilesPath", CopiedStringImportStringCaller( g_installedDevFilesPath ), CopiedStringExportStringCaller( g_installedDevFilesPath ) );
 	if ( g_strEnginePath.empty() )

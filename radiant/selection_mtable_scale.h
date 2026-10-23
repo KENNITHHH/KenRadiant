@@ -24,6 +24,19 @@
 #include "selection_.h"
 #include "grid.h"
 
+/// KenRadiant: toolbar scale snap - each changed component lands on a multiple of the step (0.25 -> 0.25, 0.5, 0.75 ...)
+inline void scale_snap_steps( Vector3& scale ){
+	extern float g_krScaleSnap;
+	if( g_krScaleSnap <= 0 )
+		return;
+	for( std::size_t i = 0; i < 3; ++i ){
+		if( std::fabs( scale[i] - 1 ) > 1e-4f ){
+			const float sign = scale[i] < 0 ? -1.f : 1.f;
+			scale[i] = sign * std::max( g_krScaleSnap, float_snapped( std::fabs( scale[i] ), g_krScaleSnap ) );
+		}
+	}
+}
+
 class ScaleAxis : public Manipulatable
 {
 	Vector3 m_start;
@@ -86,6 +99,7 @@ public:
 			}
 		}
 		//globalOutputStream() << "scale: " << scale << '\n';
+		scale_snap_steps( scale );
 		m_scalable.scale( scale );
 	}
 
@@ -169,6 +183,7 @@ public:
 			}
 		}
 		//globalOutputStream() << "scale: " << scale << '\n';
+		scale_snap_steps( scale );
 		m_scalable.scale( scale );
 	}
 	void SetAxes( const Vector3& axis, const Vector3& axis2 ){
@@ -193,9 +208,13 @@ public:
 		const DeviceVector delta = device_point - m_start; // device units: the view is 2 wide
 		const float amount = float( delta.x() + delta.y() );
 		float scale = amount >= 0 ? 1 + 2 * amount : 1 / ( 1 - 2 * amount );
-		// snap so the largest side of the selection lands on the grid
+		extern float g_krScaleSnap;
+		// snap so the largest side of the selection lands on the grid (or on the toolbar scale step)
 		const float size = 2 * std::max( { m_bounds.extents[0], m_bounds.extents[1], m_bounds.extents[2] } );
-		if( size > 0 && GetSnapGridSize() > 0 ){
+		if( g_krScaleSnap > 0 ){
+			scale = std::max( g_krScaleSnap, float( float_snapped( scale, g_krScaleSnap ) ) );
+		}
+		else if( size > 0 && GetSnapGridSize() > 0 ){
 			const float snapped = std::max( float( GetSnapGridSize() ), float( float_snapped( size * scale, GetSnapGridSize() ) ) );
 			scale = snapped / size;
 		}

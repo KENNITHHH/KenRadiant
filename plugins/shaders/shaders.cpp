@@ -298,6 +298,9 @@ public:
 	bool m_hasSun = false;
 	float m_sun[6] = { 1, 1, 1, 0, 0, 90 }; // r g b intensity degrees elevation
 	float m_skyLight = 0;
+	bool m_krEmissive = false;
+	float m_krScroll[2] = { 0, 0 };
+	float m_krRotate = 0;
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -910,6 +913,15 @@ public:
 		skyLight = m_template.m_skyLight;
 		return true;
 	}
+	bool isEmissive() const override {
+		return m_template.m_krEmissive;
+	}
+	bool getTcMod( float scroll[2], float& rotate ) const override {
+		scroll[0] = m_template.m_krScroll[0];
+		scroll[1] = m_template.m_krScroll[1];
+		rotate = m_template.m_krRotate;
+		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0;
+	}
 // IShaders implementation -----------------
 	void IncRef() override {
 		++m_refcount;
@@ -1232,6 +1244,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	int stageNum = 0;
 	bool stageHasImage = false, imageStageDone = false;
 	CopiedString stageAlphaFunc;
+	// KenRadiant: emissive / animated preview
+	bool stageAdditive = false, stageVertexLit = false, stageLightmap = false, stageGlow = false;
+	float stageScroll[2] = { 0, 0 }, stageRotate = 0;
 
 	tokeniser.nextLine();
 
@@ -1252,10 +1267,22 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				++stageNum;
 				stageHasImage = false;
 				stageAlphaFunc = "";
+				stageAdditive = stageVertexLit = stageLightmap = stageGlow = false;
+				stageScroll[0] = stageScroll[1] = stageRotate = 0;
 			}
 			continue;
 		}
 		else if ( string_equal( token, "}" ) ) {
+			if( depth == 2 ){
+				// an extra additive stage that is not vertex lit (the "2x" overbright copy is) = glow, or SOF2's glow keyword
+				if( ( stageGlow || ( stageAdditive && stageNum > 1 && !stageVertexLit ) ) && !stageLightmap )
+					m_krEmissive = true;
+				if( stageHasImage && !imageStageDone ){
+					m_krScroll[0] = stageScroll[0];
+					m_krScroll[1] = stageScroll[1];
+					m_krRotate = stageRotate;
+				}
+			}
 			if( depth == 2 && stageHasImage && !imageStageDone ){
 				imageStageDone = true;
 				if( !stageAlphaFunc.empty() && !( m_nFlags & QER_ALPHATEST ) ){
@@ -1292,6 +1319,29 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 					if( firstStageImage.empty() )
 						firstStageImage = StringStream<64>( PathExtensionless( image ) );
 				}
+				else if( image != 0 && string_equal_nocase( image, "$lightmap" ) ){
+					stageLightmap = true;
+				}
+				continue;
+			}
+			else if ( string_equal_nocase( token, "rgbgen" ) ) {
+				if( const char* gen = tokeniser.getToken() )
+					stageVertexLit = string_equal_nocase( gen, "vertex" ) || string_equal_nocase( gen, "exactVertex" ) || string_equal_nocase( gen, "lightingDiffuse" );
+				continue;
+			}
+			else if ( string_equal_nocase( token, "glow" ) ) {
+				stageGlow = true;
+				continue;
+			}
+			else if ( string_equal_nocase( token, "tcmod" ) ) {
+				const char* kind = tokeniser.getToken();
+				if( kind != 0 && string_equal_nocase( kind, "scroll" ) ){
+					Tokeniser_getFloat( tokeniser, stageScroll[0] );
+					Tokeniser_getFloat( tokeniser, stageScroll[1] );
+				}
+				else if( kind != 0 && string_equal_nocase( kind, "rotate" ) ){
+					Tokeniser_getFloat( tokeniser, stageRotate );
+				}
 				continue;
 			}
 			else if ( string_equal_nocase( token, "alphafunc" ) ) {
@@ -1313,6 +1363,8 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				}
 				if( stageNum == 1 )
 					m_q3BlendFunc = BlendFuncExpression( first.c_str(), second.c_str() );
+				stageAdditive = string_equal_nocase( first.c_str(), "add" )
+				             || ( string_equal_nocase( second.c_str(), "gl_one" ) && ( string_equal_nocase( first.c_str(), "gl_one" ) || string_equal_nocase( first.c_str(), "gl_src_alpha" ) ) );
 				continue;
 			}
 		}
@@ -1349,6 +1401,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 			else if ( string_equal_nocase( token, "q3map_skyLight" ) ) {
 				Tokeniser_getFloat( tokeniser, m_skyLight );
+			}
+			else if ( string_equal_nocase( token, "q3map_surfacelight" ) ) {
+				m_krEmissive = true; // light emitting surface: fullbright in the light preview
 			}
 			else if ( string_equal_nocase( token, "qer_alphafunc" ) ) {
 				const char* alphafunc = tokeniser.getToken();

@@ -89,8 +89,12 @@ public:
 			constrain_to_axis( current, m_axis );
 		}
 
+		extern float g_krRotateSnap;
 		if( g_modifiers.shift() ){
 			m_rotatable.rotate( quaternion_for_axisangle( m_axis, float_snapped( angle_for_axis( m_start, current, m_axis ), static_cast<float>( c_pi / 12.0 ) ) ) );
+		}
+		else if( g_krRotateSnap > 0 ){ // KenRadiant: toolbar rotation snap
+			m_rotatable.rotate( quaternion_for_axisangle( m_axis, float_snapped( angle_for_axis( m_start, current, m_axis ), degrees_to_radians( g_krRotateSnap ) ) ) );
 		}
 		else{
 			m_rotatable.rotate( quaternion_for_axisangle( m_axis, angle_for_axis( m_start, current, m_axis ) ) );

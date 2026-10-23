@@ -30,6 +30,10 @@ int Grid_getPower();
 float GetMaxGridCoord();
 
 void AddGridChangeCallback( const SignalHandler& handler );
+// KenRadiant toolbar
+void Grid_setPowerIndex( int index );
+int Grid_getPowerIndex();
+const char* const* Grid_names( int& count );
 
 void Grid_registerCommands();
 void Grid_constructMenu( class QMenu* menu );

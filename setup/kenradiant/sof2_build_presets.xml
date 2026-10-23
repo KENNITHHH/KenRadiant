@@ -11,6 +11,12 @@
   <command>[q3map2] -light -super 2 -filter -bounce 4 -dirty "[MapFile]"</command>
   </build>
 
+  <build name="KenRadiant: (final, best quality - slow) BSP -meta, VIS, LIGHT -super 4 -samples 3 -filter -bounce 8 -dirty -patchshadows">
+  <command>[q3map2] -meta "[MapFile]"</command>
+  <command>[q3map2] -vis -saveprt "[MapFile]"</command>
+  <command>[q3map2] -light -super 4 -samples 3 -filter -bounce 8 -dirty -patchshadows "[MapFile]"</command>
+  </build>
+
   <build name="KenRadiant: (quick test) BSP -meta, VIS -fast, LIGHT -faster">
   <command>[q3map2] -meta "[MapFile]"</command>
   <command>[q3map2] -vis -saveprt -fast "[MapFile]"</command>

@@ -70,6 +70,8 @@ extern bool g_krLightPreview;
 ToggleItem g_lightPreview_item{ BoolExportCaller( g_krLightPreview ) };
 
 #include <QOpenGLWidget>
+#include <QElapsedTimer>
+#include <QTimer>
 
 #include <QApplication>
 
@@ -1923,7 +1925,12 @@ public:
 	void setLights( const LightList& lights ) override {
 		m_state_stack.back().m_lights = &lights;
 	}
+	bool m_outline = false; // KenRadiant: selected objects get an outline instead of overlay + wire
 	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
+		if ( m_outline && ( m_state_stack.back().m_highlight & ePrimitive ) ) {
+			m_state_stack.back().m_state->addRenderable( renderable, world, m_state_stack.back().m_lights );
+			return;
+		}
 		if ( m_state_stack.back().m_highlight & ePrimitive ) {
 			m_state_select0->addRenderable( renderable, world, m_state_stack.back().m_lights );
 		}
@@ -2005,7 +2012,7 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		LightWalker( std::vector<Candidate>& c, float& a, const Vector3& v ) : m_candidates( c ), m_ambient( a ), m_viewer( v ){}
 		bool pre( scene::Node& node ) const override {
 			Entity* entity = Node_getEntity( node );
-			if( entity == nullptr || !node.visible() )
+			if( entity == nullptr ) // filtered (e.g. Game View) lights still shine, only their icon is hidden
 				return false;
 			const char* classname = entity->getClassName();
 			if( string_equal( classname, "worldspawn" ) ){
@@ -2057,6 +2064,268 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	// ambient: worldspawn _ambient (0..255 like q3map2) + a share of the sky light, never fully black
 	const float a = std::clamp( ambient / 255.f + skyLight / 1000.f, 0.12f, 0.8f );
 	g_krAmbient = Vector3( a, a, a );
+}
+
+/* ---- KenRadiant: sun shadow map for the live light preview ---- */
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+
+/// only opaque textured surfaces go to the shadow map (no entity boxes, overlays, sky, translucent)
+class ShadowRenderer : public Renderer
+{
+	std::vector<Shader*> m_stack{ nullptr };
+public:
+	void SetState( Shader* state, EStyle style ) override {
+		if ( style == eFullMaterials )
+			m_stack.back() = Shader_castsShadow( state ) ? state : nullptr;
+	}
+	EStyle getStyle() const override { return eFullMaterials; }
+	void PushState() override { m_stack.push_back( m_stack.back() ); }
+	void PopState() override { m_stack.pop_back(); }
+	void Highlight( EHighlightMode mode, bool bEnable = true ) override {}
+	void setLights( const LightList& lights ) override {}
+	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
+		if( m_stack.back() != nullptr )
+			m_stack.back()->addRenderable( renderable, world );
+	}
+};
+
+static GLuint s_shadowFbo = 0;
+static int s_shadowSize = 0;
+static bool s_shadowDirty = true;
+static Vector3 s_shadowCentre( 1e9f, 0, 0 ), s_shadowSun( 0, 0, 0 );
+static void KrShadow_sceneChanged(){ s_shadowDirty = true; }
+
+static Matrix4 kr_ortho( float l, float r, float b, float t, float n, float f ){
+	return Matrix4( 2 / ( r - l ), 0, 0, 0,
+	                0, 2 / ( t - b ), 0, 0,
+	                0, 0, -2 / ( f - n ), 0,
+	                -( r + l ) / ( r - l ), -( t + b ) / ( t - b ), -( f + n ) / ( f - n ), 1 );
+}
+static Matrix4 kr_lookat( const Vector3& eye, const Vector3& forward ){
+	const Vector3 up = std::fabs( forward.z() ) > 0.99f ? Vector3( 1, 0, 0 ) : Vector3( 0, 0, 1 );
+	const Vector3 side = vector3_normalised( vector3_cross( forward, up ) );
+	const Vector3 u = vector3_cross( side, forward );
+	return Matrix4( side.x(), u.x(), -forward.x(), 0,
+	                side.y(), u.y(), -forward.y(), 0,
+	                side.z(), u.z(), -forward.z(), 0,
+	                -vector3_dot( side, eye ), -vector3_dot( u, eye ), vector3_dot( forward, eye ), 1 );
+}
+
+/// renders the scene's depth from the sun into a 4096² map around the camera (only when the scene, sun or area changes)
+static void KrShadow_render( camera_t& camera ){
+	static bool registered = false;
+	if( !registered ){
+		registered = true;
+		AddSceneChangeCallback( FreeCaller<void(), KrShadow_sceneChanged>() );
+	}
+	if( !g_krShadows || vector3_length_squared( g_krSunColour ) == 0 ){
+		g_krShadowTex = 0;
+		return;
+	}
+	QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
+	constexpr int size = 4096;
+	constexpr float halfExtent = 3072, depthRange = 32768;
+	if( s_shadowFbo == 0 || s_shadowSize != size ){
+		GLuint tex = 0;
+		gl().glGenTextures( 1, &tex );
+		gl().glBindTexture( GL_TEXTURE_2D, tex );
+		gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL );
+		gl().glBindTexture( GL_TEXTURE_2D, 0 );
+		f->glGenFramebuffers( 1, &s_shadowFbo );
+		GLint previous = 0;
+		gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+		f->glBindFramebuffer( GL_FRAMEBUFFER, s_shadowFbo );
+		f->glFramebufferTexture2D( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex, 0 );
+		gl().glDrawBuffer( GL_NONE );
+		gl().glReadBuffer( GL_NONE );
+		const bool ok = f->glCheckFramebufferStatus( GL_FRAMEBUFFER ) == GL_FRAMEBUFFER_COMPLETE;
+		f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+		if( !ok ){
+			globalWarningStream() << "light preview: shadow map framebuffer not supported, sun shadows off\n";
+			g_krShadows = false;
+			return;
+		}
+		g_krShadowTex = tex;
+		s_shadowSize = size;
+		s_shadowDirty = true;
+	}
+	// the map follows the camera in 512-unit steps, so shadows only re-render when you move far
+	const Vector3 origin = Camera_getOrigin( camera );
+	const Vector3 centre( float_snapped( origin.x(), 512.f ), float_snapped( origin.y(), 512.f ), float_snapped( origin.z(), 512.f ) );
+	const Vector3 forward = -vector3_normalised( g_krSunDirection );
+	const Matrix4 lightView = kr_lookat( centre - forward * ( depthRange * 0.5f ), forward );
+	const Matrix4 lightProj = kr_ortho( -halfExtent, halfExtent, -halfExtent, halfExtent, 1, depthRange );
+	g_krShadowTexel = 1.f / size;
+	g_krShadowBiasUnit = ( 2 * halfExtent / size ) / depthRange;
+
+	if( s_shadowDirty || !vector3_equal( centre, s_shadowCentre ) || !vector3_equal_epsilon( g_krSunDirection, s_shadowSun, 1e-4f ) ){
+		s_shadowDirty = false;
+		s_shadowCentre = centre;
+		s_shadowSun = g_krSunDirection;
+
+		GLint previous = 0, viewport[4];
+		gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+		gl().glGetIntegerv( GL_VIEWPORT, viewport );
+		f->glBindFramebuffer( GL_FRAMEBUFFER, s_shadowFbo );
+		gl().glViewport( 0, 0, size, size );
+		gl().glDepthMask( GL_TRUE );
+		gl().glClear( GL_DEPTH_BUFFER_BIT );
+
+		View view( true );
+		view.Construct( lightProj, lightView, size, size );
+		ShadowRenderer renderer;
+		Scene_Render( renderer, view );
+		GlobalShaderCache().render( RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_FILL | RENDER_TEXTURE | RENDER_ALPHATEST,
+		                            lightView, lightProj, centre );
+
+		f->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+		gl().glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+		gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+		gl().glDepthMask( GL_TRUE );
+	}
+
+	// camera eye -> world -> sun clip -> [0,1]
+	const Matrix4 bias( 0.5f, 0, 0, 0,  0, 0.5f, 0, 0,  0, 0, 0.5f, 0,  0.5f, 0.5f, 0.5f, 1 );
+	g_krEye2Shadow = matrix4_multiplied_by_matrix4( matrix4_multiplied_by_matrix4( bias, lightProj ),
+	                 matrix4_multiplied_by_matrix4( lightView, matrix4_full_inverse( camera.modelview ) ) );
+}
+
+extern bool g_krShadows;
+ToggleItem g_sunShadows_item{ BoolExportCaller( g_krShadows ) };
+static void SunShadows_toggle(){
+	g_krShadows = !g_krShadows;
+	g_sunShadows_item.update();
+	s_shadowDirty = true;
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
+extern bool g_krAnimateShaders;
+ToggleItem g_animateShaders_item{ BoolExportCaller( g_krAnimateShaders ) };
+static void AnimateShaders_toggle(){
+	g_krAnimateShaders = !g_krAnimateShaders;
+	g_animateShaders_item.update();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
+/* ---- KenRadiant: Unreal-style selection outline ---- */
+#include <QOpenGLFramebufferObject>
+void createShader( GLuint program, const char* filename, GLenum type );
+void GLSLProgram_link( GLuint program );
+bool g_krSelectionOutline = true;
+ToggleItem g_selectionOutline_item{ BoolExportCaller( g_krSelectionOutline ) };
+static void SelectionOutline_toggle(){
+	g_krSelectionOutline = !g_krSelectionOutline;
+	g_selectionOutline_item.update();
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+
+/// collects only whole selected objects (not selected faces)
+class MaskRenderer : public Renderer
+{
+	std::vector<unsigned int> m_highlight{ 0 };
+	Shader* m_mask;
+public:
+	bool m_any = false;
+	MaskRenderer( Shader* mask ) : m_mask( mask ){}
+	void SetState( Shader* state, EStyle style ) override {}
+	EStyle getStyle() const override { return eFullMaterials; }
+	void PushState() override { m_highlight.push_back( m_highlight.back() ); }
+	void PopState() override { m_highlight.pop_back(); }
+	void Highlight( EHighlightMode mode, bool bEnable = true ) override {
+		bEnable ? m_highlight.back() |= mode : m_highlight.back() &= ~mode;
+	}
+	void setLights( const LightList& lights ) override {}
+	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
+		if( m_highlight.back() & ePrimitive ){
+			m_mask->addRenderable( renderable, world );
+			m_any = true;
+		}
+	}
+};
+
+static void KrOutline_draw( camera_t& camera, View& view ){
+	static Shader* mask = GlobalShaderCache().capture( "$KR_MASK" );
+	static GLuint program = 0;
+	static GLint u_mask, u_texel, u_colour;
+	static QOpenGLFramebufferObject* fbo = nullptr;
+	if( program == 0 ){
+		program = gl().glCreateProgram();
+		StringOutputStream filename( 256 );
+		createShader( program, filename( GlobalRadiant().getAppPath(), "gl/kr_outline_vp.glsl" ), GL_VERTEX_SHADER );
+		createShader( program, filename( GlobalRadiant().getAppPath(), "gl/kr_outline_fp.glsl" ), GL_FRAGMENT_SHADER );
+		GLSLProgram_link( program );
+		u_mask = gl().glGetUniformLocation( program, "u_mask" );
+		u_texel = gl().glGetUniformLocation( program, "u_texel" );
+		u_colour = gl().glGetUniformLocation( program, "u_colour" );
+	}
+	const int w = camera.width, h = camera.height;
+	GLint previous = 0; // the camera FBO; read before creating ours, whose constructor changes the binding
+	gl().glGetIntegerv( GL_FRAMEBUFFER_BINDING, &previous );
+	if( fbo == nullptr || fbo->width() != w || fbo->height() != h ){
+		delete fbo;
+		fbo = new QOpenGLFramebufferObject( w, h );
+	}
+
+	// 1: silhouette of the selected objects
+	fbo->bind();
+	gl().glViewport( 0, 0, w, h );
+	gl().glClearColor( 0, 0, 0, 0 );
+	gl().glClear( GL_COLOR_BUFFER_BIT );
+	MaskRenderer renderer( mask );
+	Scene_Render( renderer, view );
+	GlobalShaderCache().render( RENDER_FILL | RENDER_COLOURWRITE, camera.modelview, camera.projection, Camera_getOrigin( camera ) );
+	QOpenGLContext::currentContext()->functions()->glBindFramebuffer( GL_FRAMEBUFFER, previous );
+	gl().glViewport( 0, 0, w, h );
+	if( !renderer.m_any )
+		return;
+
+	// 2: orange ring around it, over the finished 3D view
+	gl().glMatrixMode( GL_PROJECTION );
+	gl().glLoadIdentity();
+	gl().glMatrixMode( GL_MODELVIEW );
+	gl().glLoadIdentity();
+	gl().glDisable( GL_DEPTH_TEST );
+	gl().glDisable( GL_CULL_FACE );
+	gl().glDisable( GL_ALPHA_TEST );
+	gl().glDisable( GL_LIGHTING );
+	gl().glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+	gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	gl().glDisable( GL_POLYGON_STIPPLE );
+	gl().glDisable( GL_SCISSOR_TEST );
+	gl().glDisableClientState( GL_VERTEX_ARRAY );
+	gl().glDisableClientState( GL_COLOR_ARRAY );
+	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	gl().glDisableClientState( GL_NORMAL_ARRAY );
+	gl().glEnable( GL_BLEND );
+	gl().glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	gl().glActiveTexture( GL_TEXTURE0 );
+	gl().glEnable( GL_TEXTURE_2D );
+	gl().glBindTexture( GL_TEXTURE_2D, fbo->texture() );
+	gl().glUseProgram( program );
+	gl().glUniform1i( u_mask, 0 );
+	gl().glUniform2f( u_texel, 1.f / w, 1.f / h );
+	gl().glUniform4f( u_colour, 1.f, 0.55f, 0.05f, 1.f ); // Unreal's selection orange
+	gl().glBegin( GL_QUADS );
+	gl().glTexCoord2f( 0, 0 ); gl().glVertex2f( -1, -1 );
+	gl().glTexCoord2f( 1, 0 ); gl().glVertex2f( 1, -1 );
+	gl().glTexCoord2f( 1, 1 ); gl().glVertex2f( 1, 1 );
+	gl().glTexCoord2f( 0, 1 ); gl().glVertex2f( -1, 1 );
+	gl().glEnd();
+	gl().glUseProgram( 0 );
+	gl().glBindTexture( GL_TEXTURE_2D, 0 );
+	gl().glDisable( GL_TEXTURE_2D );
+	gl().glDisable( GL_BLEND );
+	gl().glEnableClientState( GL_VERTEX_ARRAY );
 }
 
 static void LightPreview_toggle(){
@@ -2173,6 +2442,22 @@ void CamWnd::Cam_Draw(){
 		globalstate |= RENDER_LINESTIPPLE | RENDER_POLYGONSTIPPLE;
 //	}
 
+	// KenRadiant: shader animation clock
+	{
+		static QElapsedTimer clock;
+		if( !clock.isValid() )
+			clock.start();
+		g_krShaderTime = clock.elapsed() / 1000.f;
+		g_krAnimatedDrawn = false;
+	}
+	// KenRadiant live light preview: lights, sun and its shadow map before the scene is queued for this view
+	g_krLightPreviewDrawing = g_krLightPreview && ( m_Camera.draw_mode == cd_texture || m_Camera.draw_mode == cd_texture_plus_wire );
+	if( g_krLightPreviewDrawing ){
+		KrLightPreview_collect( Camera_getOrigin( m_Camera ) );
+		g_krLightPreviewView = m_Camera.modelview;
+		KrShadow_render( m_Camera );
+	}
+
 	{
 		CamRenderer renderer( globalstate,
 		                      g_camwindow_globals_private.m_bFaceWire ? m_state_facewire : 0,
@@ -2181,6 +2466,7 @@ void CamWnd::Cam_Draw(){
 		                      g_camwindow_globals_private.m_bFaceFill ? m_state_select1 : 0,
 		                      m_view.getViewer() );
 
+		renderer.m_outline = g_krSelectionOutline && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive;
 		Scene_Render( renderer, m_view );
 
 		if( g_camwindow_globals_private.m_bShowWorkzone && GlobalSelectionSystem().countSelected() != 0 && GlobalSelectionSystem().ManipulatorMode() != SelectionSystem::eUV ){
@@ -2191,14 +2477,14 @@ void CamWnd::Cam_Draw(){
 			m_draw_size.render( renderer, m_state_text, m_view );
 		}
 
-		// KenRadiant live light preview (textured modes only)
-		g_krLightPreviewDrawing = g_krLightPreview && ( m_Camera.draw_mode == cd_texture || m_Camera.draw_mode == cd_texture_plus_wire );
-		if( g_krLightPreviewDrawing ){
-			KrLightPreview_collect( Camera_getOrigin( m_Camera ) );
-			g_krLightPreviewView = m_Camera.modelview;
-		}
 		renderer.render( m_Camera.modelview, m_Camera.projection );
 		g_krLightPreviewDrawing = false;
+		if( g_krSelectionOutline && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
+			KrOutline_draw( m_Camera, m_view );
+		// keep animated water / scrolling shaders moving (~30 fps) only while one is on screen
+		if( g_krAnimateShaders && g_krAnimatedDrawn ){
+			QTimer::singleShot( 33, m_gl_widget, [this](){ CamWnd_Update( *this ); } );
+		}
 	}
 
 	// prepare for 2d stuff
@@ -2650,6 +2936,12 @@ void CamWnd_Construct(){
 	GlobalCommands_insert( "CenterView", makeCallbackF( GlobalCamera_ResetAngles ), QKeySequence( "Shift+End" ) ); // KenRadiant: End drops the selection to the floor (Unreal)
 	GlobalCommands_insert( "CameraFocusOnSelected", makeCallbackF( GlobalCamera_FocusOnSelected ), QKeySequence( "Tab" ) );
 	GlobalToggles_insert( "ToggleLightPreview", makeCallbackF( LightPreview_toggle ), ToggleItem::AddCallbackCaller( g_lightPreview_item ), QKeySequence( "Ctrl+L" ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleSunShadows", makeCallbackF( SunShadows_toggle ), ToggleItem::AddCallbackCaller( g_sunShadows_item ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleAnimateShaders", makeCallbackF( AnimateShaders_toggle ), ToggleItem::AddCallbackCaller( g_animateShaders_item ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleSelectionOutline", makeCallbackF( SelectionOutline_toggle ), ToggleItem::AddCallbackCaller( g_selectionOutline_item ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrSelectionOutline", BoolImportStringCaller( g_krSelectionOutline ), BoolExportStringCaller( g_krSelectionOutline ) );
+	GlobalPreferenceSystem().registerPreference( "KrAnimateShaders", BoolImportStringCaller( g_krAnimateShaders ), BoolExportStringCaller( g_krAnimateShaders ) );
+	GlobalPreferenceSystem().registerPreference( "KrLightPreviewShadows", BoolImportStringCaller( g_krShadows ), BoolExportStringCaller( g_krShadows ) );
 
 	GlobalToggles_insert( "ToggleCubicClip", makeCallbackF( Camera_ToggleFarClip ), ToggleItem::AddCallbackCaller( g_getfarclip_item ), QKeySequence( "Ctrl+\\" ) );
 	GlobalCommands_insert( "CubicClipZoomIn", makeCallbackF( Camera_CubeIn ), QKeySequence( "Ctrl+[" ) );

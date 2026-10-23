@@ -3,6 +3,18 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (4)
+### Editor
+- **Sun shadows in the live light preview**: the sky shader's sun casts real-time shadows (shadow map, soft edges). Translucent, sky and fog surfaces don't cast; masked (alphaFunc) ones do. Toggle: View → Sun Shadows.
+- **Game View keeps the light preview**: lights still shine, only their icons are hidden.
+- **Glow shaders**: `glow`, additive extra stages and `q3map_surfacelight` shaders show fullbright in the light preview.
+- **Moving shaders**: `tcMod scroll` and `tcMod rotate` animate in the 3D view (water, lava, conveyors). View → Animate Shaders turns it off.
+- **Unreal-style snapping**: toolbar combos for **Grid**, **Rot** (1°, 5°, 10°, 15°, 22.5°, 45°, 90°; hold Shift for free rotation) and **Scale** (grid or fixed steps).
+- **Selection outline**: selected objects keep their textures with an orange outline (Unreal style). View → Selection Outline switches back to the red tint.
+### Build menu
+- New preset **KenRadiant: (final, best quality - slow)**: `-super 4 -samples 3 -filter -bounce 8 -dirty -patchshadows`.
+  It shows automatically unless you once edited the build menu (then `settings/1.6.0/sof2.game/build_menu.xml` exists; delete it to get the new defaults).
+
 ## Build 2026-10-23 (3)
 ### Editor
 - **Live light preview** (Ctrl+L, bulb button, View → Live Light Preview): light entities (`light`, `_color`) and the sky shader's sun

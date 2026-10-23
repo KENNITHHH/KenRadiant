@@ -35,15 +35,18 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Scale gizmo** | Cubes on the axes scale one axis, triangles between two axes scale both, the white centre cube scales uniformly (snapped to the grid). |
 | **Textures / Models tabs** | Under the camera: switch between the texture and model browser; Ctrl + wheel resizes both (textures up to 400 %). |
 | **Drag & drop models** | Drag a model from the Models tab into the 3D view (lands on the surface under the cursor) or a 2D view (top view: onto the floor). |
-| **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time (no shadows). |
-| **KenRadiant toolbar** | Second toolbar row: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, FOV slider. |
+| **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time, with **sun shadows** (View → Sun Shadows). Game View keeps the light, only the light icons hide. |
+| **Selection outline** | Selected objects keep their normal look with an orange outline, like Unreal (View → Selection Outline to go back to the red tint). |
+| **Snapping** | Toolbar combos: **Grid** (0.125–256), **Rot** (off, 1°, 5°, 10°, 15°, 22.5°, 45°, 90° for the rotate gizmo; hold Shift for free), **Scale** (grid sizes or fixed steps x0.0625…x1). |
+| **Shader effects** | Glow / additive / `q3map_surfacelight` shaders show fullbright in the light preview; `tcMod scroll` / `rotate` (water, conveyors) animate in the 3D view (View → Animate Shaders). |
+| **KenRadiant toolbar** | Second toolbar row: Find, Local gizmo, Drop to floor, Bevel, Skybox, Game View, Live light preview, Grid / Rot / Scale snap, FOV slider. |
 | **Face select** | Ctrl+click or **Ctrl+Shift+click** (GtkRadiant style). |
 | **Rotate gizmo** (R) | Unreal-style thick rings per axis, white outer ring rotates around the view direction. |
 | **Sky brushes** | Shown with the sky shader's editor image so you can edit them; the cloud button (or View → Show → *Sky Brushes Show Skybox*) previews the real sky. Game View turns it on automatically. |
 | **Bevel** | **Shift+B** (or the toolbar button / Brush → Bevel) chamfers edges by the grid size: selected edges (E), all edges of selected faces (F), or whole brushes. |
 | **Browse to texture** | **Ctrl+B** — opens the texture browser on the texture of the selected face / brush / patch. |
 | **FOV slider** | Its own small toolbar (drag the dotted handle to place it). |
-| **Thumbnail size** | **Ctrl + mouse wheel** in the texture browser (10–200 %). |
+| **Thumbnail size** | **Ctrl + mouse wheel** in the texture browser (10–400 %). |
 | **AZERTY keyboard** | Edit → **AZERTY Keyboard (ZQSD)**: flying uses ZQSD, number-row shortcuts (1–0, Alt+1…Alt+9) work on the AZERTY keys (&, é, ", ', (, §, è, !, ç, à). Tool keys keep their letters (W move, E edges, R rotate, Z delete, Ctrl+Z undo). |
 
 ### SOF2 support
@@ -52,7 +55,7 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 - Shaders without an editor image still show a picture: first stage image, sky `_ft` side, or an image with the shader's name.
 - **Tool textures** use SOF2's own shaders: the caulk / clip / hint / nodraw / trigger filter buttons (right-click = apply to selection),
   **AutoCaulk (F4)**, Hollow and clipper cuts all use `textures/tools/_caulk` and friends.
-- **Build menu presets** for this q3map2: final, final high quality (bounce + ambient occlusion), quick test, final without surface merge, and **decompile .bsp → .map**.
+- **Build menu presets** for this q3map2: final, final high quality (bounce + ambient occlusion), best quality (slow: supersampling, 8 bounces, dirt, patch shadows), quick test, final without surface merge, and **decompile .bsp → .map**.
 - Defaults: 3D workzone off, texture lock on.
 
 ### Bundled q3map2 (SOF2 edition)

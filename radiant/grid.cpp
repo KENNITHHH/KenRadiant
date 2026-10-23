@@ -153,6 +153,22 @@ void GridNext(){
 	}
 }
 
+/// KenRadiant toolbar grid combo: index into g_gridnames (0 = 0.125 ... 13 = 1024)
+void Grid_setPowerIndex( int index ){
+	if( index < 0 || index >= int( std::size( g_gridnames ) ) )
+		return;
+	g_grid_power = GridPower_forGridDefault( index );
+	setGridPower( static_cast<GridPower>( g_grid_power ) );
+	gridActions_setChecked( static_cast<GridPower>( g_grid_power ) );
+}
+int Grid_getPowerIndex(){
+	return GridDefault_forGridPower( static_cast<GridPower>( g_grid_power ) );
+}
+const char* const* Grid_names( int& count ){
+	count = int( std::size( g_gridnames ) );
+	return g_gridnames;
+}
+
 void ToggleGridSnap(){
 	g_grid_snap = !g_grid_snap;
 	GridChangeNotify();

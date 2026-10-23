@@ -449,12 +449,20 @@ std::vector<KrPreviewLight> g_krLightPreviewLights;
 Vector3 g_krSunDirection( 0, 0, 1 );
 Vector3 g_krSunColour( 0, 0, 0 );
 Vector3 g_krAmbient( 0.15f, 0.15f, 0.15f );
+bool g_krShadows = true;
+bool g_krAnimateShaders = true;
+float g_krShaderTime = 0;
+bool g_krAnimatedDrawn = false; // an animated shader was drawn this frame: the 3D view keeps redrawing
+unsigned int g_krShadowTex = 0;
+Matrix4 g_krEye2Shadow = g_matrix4_identity;
+float g_krShadowTexel = 1.f / 4096;
+float g_krShadowBiasUnit = 0;
 
 class GLSLKrLightProgram : public GLProgram
 {
 public:
 	GLuint m_program = 0;
-	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient;
+	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_shadow, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit;
 	bool m_active = false;
 
 	void create(){
@@ -474,7 +482,13 @@ public:
 		u_sun_dir = gl().glGetUniformLocation( m_program, "u_sun_dir" );
 		u_sun_col = gl().glGetUniformLocation( m_program, "u_sun_col" );
 		u_ambient = gl().glGetUniformLocation( m_program, "u_ambient" );
+		u_shadow = gl().glGetUniformLocation( m_program, "u_shadow" );
+		u_eye2shadow = gl().glGetUniformLocation( m_program, "u_eye2shadow" );
+		u_has_shadow = gl().glGetUniformLocation( m_program, "u_has_shadow" );
+		u_texel = gl().glGetUniformLocation( m_program, "u_texel" );
+		u_bias_unit = gl().glGetUniformLocation( m_program, "u_bias_unit" );
 		gl().glUniform1i( u_tex, 0 );
+		gl().glUniform1i( u_shadow, 7 );
 		gl().glUseProgram( 0 );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
@@ -507,6 +521,14 @@ public:
 		gl().glUniform3f( u_sun_dir, sun.x(), sun.y(), sun.z() );
 		gl().glUniform3f( u_sun_col, g_krSunColour.x(), g_krSunColour.y(), g_krSunColour.z() );
 		gl().glUniform3f( u_ambient, g_krAmbient.x(), g_krAmbient.y(), g_krAmbient.z() );
+		const bool shadow = g_krShadows && g_krShadowTex != 0;
+		gl().glUniform1i( u_has_shadow, shadow ? 1 : 0 );
+		gl().glUniform1f( u_texel, g_krShadowTexel );
+		gl().glUniform1f( u_bias_unit, g_krShadowBiasUnit );
+		gl().glUniformMatrix4fv( u_eye2shadow, 1, GL_FALSE, reinterpret_cast<const float*>( &g_krEye2Shadow ) );
+		gl().glActiveTexture( GL_TEXTURE7 );
+		gl().glBindTexture( GL_TEXTURE_2D, shadow ? g_krShadowTex : 0 );
+		gl().glActiveTexture( GL_TEXTURE0 );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
 	void disable() override {
@@ -806,6 +828,9 @@ public:
 		ASSERT_NOTNULL( m_shader );
 		return *m_shader;
 	}
+	bool hasIShader() const {
+		return m_shader != nullptr;
+	}
 	OpenGLState& appendDefaultPass(){
 		m_passes.push_back( new OpenGLStateBucket );
 		OpenGLState& state = m_passes.back()->state();
@@ -1064,6 +1089,7 @@ public:
 		OpenGLState reset = current; /* reset some states */
 		reset.m_state = current.m_state & ~RENDER_TEXT; /* popmatrix after RENDER_TEXT */
 		reset.m_program = nullptr; /* disable shader */
+		reset.m_krScroll[0] = reset.m_krScroll[1] = reset.m_krRotate = 0; /* KenRadiant: identity texture matrix again */
 		OpenGLState_apply( reset, current, globalstate );
 	}
 	void realise() override {
@@ -1300,6 +1326,34 @@ inline void setState( unsigned int state, unsigned int delta, unsigned int flag,
 }
 
 void OpenGLState_apply( const OpenGLState& self, OpenGLState& current, unsigned int globalstate ){
+	// KenRadiant: tcMod scroll / rotate via the texture matrix of unit 0
+	{
+		const bool animated = g_krAnimateShaders && ( globalstate & RENDER_TEXTURE ) && ( self.m_krScroll[0] != 0 || self.m_krScroll[1] != 0 || self.m_krRotate != 0 );
+		const bool wasAnimated = current.m_krScroll[0] != 0 || current.m_krScroll[1] != 0 || current.m_krRotate != 0;
+		if( animated || wasAnimated ){
+			gl().glActiveTexture( GL_TEXTURE0 );
+			gl().glMatrixMode( GL_TEXTURE );
+			gl().glLoadIdentity();
+			if( animated ){
+				g_krAnimatedDrawn = true;
+				const float t = g_krShaderTime;
+				gl().glTranslatef( std::fmod( self.m_krScroll[0] * t, 1.f ), std::fmod( self.m_krScroll[1] * t, 1.f ), 0 );
+				if( self.m_krRotate != 0 ){ // around the texture centre, like Quake 3
+					gl().glTranslatef( 0.5f, 0.5f, 0 );
+					gl().glRotatef( -std::fmod( self.m_krRotate * t, 360.f ), 0, 0, 1 );
+					gl().glTranslatef( -0.5f, -0.5f, 0 );
+				}
+				current.m_krScroll[0] = self.m_krScroll[0];
+				current.m_krScroll[1] = self.m_krScroll[1];
+				current.m_krRotate = self.m_krRotate;
+			}
+			else{
+				current.m_krScroll[0] = current.m_krScroll[1] = current.m_krRotate = 0;
+			}
+			gl().glMatrixMode( GL_MODELVIEW );
+		}
+	}
+
 	debug_int( "sort", int( self.m_sort ) );
 	debug_int( "texture", self.m_texture );
 	debug_int( "state", self.m_state );
@@ -1908,6 +1962,11 @@ void OpenGLShader::construct( const char* name ){
 			state.m_sort = OpenGLState::eSortHighlight;
 			state.m_depthfunc = GL_LEQUAL;
 		}
+		else if ( string_equal( name + 1, "KR_MASK" ) ) { // KenRadiant: selection silhouette mask for the outline
+			state.m_colour = Vector4( 1, 1, 1, 1 );
+			state.m_state = RENDER_FILL | RENDER_COLOURWRITE;
+			state.m_sort = OpenGLState::eSortFullbright;
+		}
 		else if ( string_equal( name + 1, "CAM_OVERLAY" ) ) {
 #if 0
 			state.m_state = RENDER_CULLFACE | RENDER_COLOURWRITE | RENDER_DEPTHWRITE;
@@ -2085,10 +2144,21 @@ void OpenGLShader::construct( const char* name ){
 			state.m_texture = m_shader->getTexture()->texture_number;
 
 			state.m_state = RENDER_FILL | RENDER_TEXTURE | RENDER_DEPTHTEST | RENDER_COLOURWRITE | RENDER_LIGHTING | RENDER_SMOOTH;
-			// KenRadiant live light preview: the program does nothing unless the preview is on and the 3D view draws
-			if( !( m_shader->getFlags() & QER_SKY ) ){
+			// KenRadiant live light preview: the program does nothing unless the preview is on and the 3D view draws.
+			// glows, q3map_surfacelight and additive surfaces stay fullbright, they make light instead of receiving it
+			const BlendFunc blend = m_shader->getBlendFunc();
+			const bool additive = ( m_shader->getFlags() & QER_TRANS ) && blend.m_dst == BLEND_ONE;
+			if( !( m_shader->getFlags() & QER_SKY ) && !m_shader->isEmissive() && !additive ){
 				state.m_state |= RENDER_PROGRAM;
 				state.m_program = &g_krLightGLSL;
+			}
+			{
+				float scroll[2], rotate;
+				if( m_shader->getTcMod( scroll, rotate ) ){
+					state.m_krScroll[0] = scroll[0];
+					state.m_krScroll[1] = scroll[1];
+					state.m_krRotate = rotate;
+				}
 			}
 			if ( ( m_shader->getFlags() & QER_CULL ) != 0 ) {
 				if ( m_shader->getCull() == IShader::eCullBack ) {
@@ -2205,3 +2275,13 @@ public:
 typedef SingletonModule<ShaderCacheAPI, ShaderCacheDependencies> ShaderCacheModule;
 typedef Static<ShaderCacheModule> StaticShaderCacheModule;
 StaticRegisterModule staticRegisterShaderCache( StaticShaderCacheModule::instance() );
+
+/// KenRadiant: which surfaces go into the sun shadow map
+bool Shader_castsShadow( Shader* shader ){
+	auto* glshader = static_cast<OpenGLShader*>( shader );
+	if( glshader == nullptr || !glshader->hasIShader() )
+		return false; // editor helpers: entity boxes, wires, selection overlays
+	const int flags = glshader->getShader().getFlags();
+	return !( flags & ( QER_SKY | QER_TRANS | QER_FOG ) ) || ( flags & QER_ALPHATEST ); // masked foliage casts cut-out shadows
+}
+
