@@ -75,6 +75,7 @@ class ScaleManipulatorImpl final : public ScaleManipulator, public ManipulatorSe
 	// plane triangles; index = normal axis (0: YZ, 1: XZ, 2: XY)
 	ScaleThickLine m_plane_line[3];
 	RenderableArrowHead m_plane_fill[3]{ RenderableArrowHead( 6 ), RenderableArrowHead( 6 ), RenderableArrowHead( 6 ) };
+	RenderableArrowHead m_plane_hit[3]{ RenderableArrowHead( 6 ), RenderableArrowHead( 6 ), RenderableArrowHead( 6 ) }; // wider hit area (not drawn)
 	SelectableBool m_selectable_plane[3];
 	Pivot2World m_pivot;
 public:
@@ -110,6 +111,12 @@ public:
 			const Vector3 tri2[3] = { point( a, 0 ), point( 0, b ), point( 0, a ) };
 			// 6 vertices: one band of two triangles; drawn with culling off by the overlay state, hit test without culling
 			const Vector3 all[6] = { tri[0], tri[1], tri[2], tri2[0], tri2[1], tri2[2] };
+			{ // the hit area is about three times wider than the drawn band and stays clear of the axis lines
+				const float lo = length * 0.28f, hi = length * 0.8f, off = length * 0.07f;
+				const Vector3 hit[6] = { point( lo, off ), point( hi, off ), point( off, hi ), point( lo, off ), point( off, hi ), point( off, lo ) };
+				for( int i = 0; i < 6; ++i )
+					m_plane_hit[n].m_vertices[i].vertex = vertex3f_for_vector3( hit[i] );
+			}
 			for( int i = 0; i < 6; ++i ){
 				m_plane_fill[n].m_vertices[i].vertex = vertex3f_for_vector3( all[i] );
 				Vector3 normal( 0, 0, 0 );
@@ -205,8 +212,11 @@ public:
 				if( !show_plane( axes[n] ) )
 					continue;
 				SelectionIntersection best;
-				Triangles_BestPoint( local2view, EClipCull::None, m_plane_fill[n].m_vertices.begin(), m_plane_fill[n].m_vertices.end(), best );
-				Line_BestPoint( local2view, m_plane_line[n].m_line, best );
+				Triangles_BestPoint( local2view, EClipCull::None, m_plane_hit[n].m_vertices.begin(), m_plane_hit[n].m_vertices.end(), best );
+				if( best.valid() )
+					best = SelectionIntersection( 1e-4f, 0 ); // inside the triangle area: wins over the axes (the centre cube still wins)
+				else
+					Line_BestPoint( local2view, m_plane_line[n].m_line, best );
 				selector.addSelectable( best, &m_selectable_plane[n] );
 			}
 		}

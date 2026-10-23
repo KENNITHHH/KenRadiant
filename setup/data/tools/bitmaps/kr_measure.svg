@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: measure tool (ruler) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 14,86 86,14 114,42 42,114 Z" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 34,66 46,78 M 50,50 58,58 M 66,34 78,46" style="fill:none;stroke:#c0c0c0;stroke-width:7;stroke-linecap:round" />
+</svg>

@@ -154,6 +154,7 @@ struct KrShaderEffects
 	float deformMove[3] = { 0, 0, 0 };
 	float bulge[3] = { 0, 0, 0 };  // width height speed
 	bool polygonOffset = false;
+	bool depthWrite = false;       // a translucent first stage with depthWrite: hides what is behind it like in game
 	bool textureMatrix() const {
 		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0 || scale[0] != 1 || scale[1] != 1 || stretchFunc != 0;
 	}
@@ -164,7 +165,7 @@ struct KrShaderEffects
 		return scroll[0] != 0 || scroll[1] != 0 || rotate != 0 || stretchFunc != 0 || turb || deform != 0;
 	}
 	bool any() const {
-		return textureMatrix() || vertexProgram() || polygonOffset;
+		return textureMatrix() || vertexProgram() || polygonOffset || depthWrite;
 	}
 };
 

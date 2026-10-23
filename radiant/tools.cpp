@@ -433,7 +433,16 @@ static void ManipulatorSpace_toggle(){
 	globalOutputStream() << "gizmo space: " << ( g_manipulator_local_space ? "local (object)" : "world" ) << '\n';
 }
 
+bool g_krSurfaceSnap = false; // KenRadiant: moving with the white ball / free drag sticks to surfaces in the 3D view
+ToggleItem g_surfaceSnap_button{ BoolExportCaller( g_krSurfaceSnap ) };
+static void SurfaceSnap_toggle(){
+	g_krSurfaceSnap = !g_krSurfaceSnap;
+	g_surfaceSnap_button.update();
+	globalOutputStream() << "surface snapping: " << ( g_krSurfaceSnap ? "on" : "off (hold Ctrl to snap)" ) << '\n';
+}
+
 void Tools_registerCommands(){
+	GlobalToggles_insert( "ToggleSurfaceSnap", makeCallbackF( SurfaceSnap_toggle ), ToggleItem::AddCallbackCaller( g_surfaceSnap_button ) );
 	GlobalToggles_insert( "ToggleManipulatorLocalSpace", makeCallbackF( ManipulatorSpace_toggle ), ToggleItem::AddCallbackCaller( g_manipulator_space_button ) );
 	GlobalToggles_insert( "DragVertices", makeCallbackF( SelectVertexMode ), ToggleItem::AddCallbackCaller( g_vertexMode_button ), QKeySequence( "V" ) );
 	GlobalToggles_insert( "DragEdges", makeCallbackF( SelectEdgeMode ), ToggleItem::AddCallbackCaller( g_edgeMode_button ), QKeySequence( "E" ) );

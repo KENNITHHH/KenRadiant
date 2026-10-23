@@ -345,7 +345,8 @@ public:
 		m_0 = start;
 	}
 	static bool useCondition( const ModifierFlagsExt& modifiers, const View& view ){
-		return modifiers.ctrl() && view.fill();
+		extern bool g_krSurfaceSnap; // KenRadiant: toolbar magnet = always on in the 3D view
+		return ( modifiers.ctrl() || g_krSurfaceSnap ) && view.fill();
 	}
 };
 

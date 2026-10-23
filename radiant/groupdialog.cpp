@@ -148,6 +148,12 @@ void GroupDialog_showPage( QWidget* page ){
 	}
 }
 
+/// KenRadiant: show the page (never hides the window like GroupDialog_showPage does when it is already up)
+void GroupDialog_raisePage( QWidget* page ){
+	g_GroupDlg.m_pNotebook->setCurrentWidget( page );
+	GroupDialog_show();
+}
+
 void GroupDialog_updatePageTitle( QWidget* page ){
 	if ( GroupDialog_getPage() == page ) {
 		GroupDialog_updatePageTitle( g_GroupDlg.m_window, g_GroupDlg.m_pNotebook->currentIndex() );

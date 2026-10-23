@@ -94,9 +94,11 @@ void main()
 			break;
 		vec3 d = u_pos[i] - v_pos;
 		float dist = length( d );
-		float a = clamp( 1.0 - dist / u_rad[i], 0.0, 1.0 );
+		// q3map2 point light, in lightmap units (1 = 255): inverse square ( light * 7500 / dist² ),
+		// or linear ( spawnflags 1: light * 7500 / 8000 - dist ), dist never below 16
 		float lndl = max( dot( n, d / max( dist, 0.001 ) ), 0.0 );
-		float c = ( a * a ) * lndl;
+		float att = u_rad[i] > 0.0 ? u_rad[i] / max( dist * dist, 256.0 ) : max( -u_rad[i] - dist, 0.0 ) / 255.0;
+		float c = att * lndl;
 		if( c > 0.0 && i < 4 ){
 			vec3 L = u_eye2world * ( -d );
 			if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, lndl );
@@ -112,5 +114,11 @@ void main()
 	light = pow( light, vec3( 1.0 / u_gamma ) );
 	float grey = dot( light, vec3( 0.299, 0.587, 0.114 ) );
 	light = max( mix( vec3( grey ), light, u_saturation ), vec3( 0.0 ) );
-	gl_FragColor = vec4( tex.rgb * min( light, vec3( 2.0 ) ), tex.a * gl_Color.a );
+	// the engine doubles the lightmap (overbright shift) and clamps it keeping the colour: a fully lit surface
+	// shows its texture as it is, never washed out to white
+	vec3 shown = light * 2.0;
+	float peak = max( shown.r, max( shown.g, shown.b ) );
+	if( peak > 1.0 )
+		shown /= peak;
+	gl_FragColor = vec4( tex.rgb * shown, tex.a * gl_Color.a );
 }

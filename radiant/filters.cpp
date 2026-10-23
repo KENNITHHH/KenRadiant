@@ -151,20 +151,30 @@ static bool g_gameView_savedSkybox = false;
 void SkyboxPreview_set( bool on );
 bool SkyboxPreview_get();
 ToggleItem g_gameView_item{ BoolExportCaller( g_gameView ) };
+#include "ientity.h"
 void GameView_toggle(){
 	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
 	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS
 	                                  | EXCLUDE_NODRAW | EXCLUDE_POINT_ENT; // point entities = sounds, info_*, targets (models and lights have their own filters)
 	g_gameView = !g_gameView;
+	// entity names, angles, target lines and light radii are editor-only too
+	static bool names, targetNames, angles, connections, radii;
+	EntityCreator& entities = GlobalEntityCreator();
 	if( g_gameView ){
 		g_gameView_savedExclude = g_filters_globals.exclude;
 		g_filters_globals.exclude |= editorOnly;
 		g_gameView_savedSkybox = SkyboxPreview_get();
 		SkyboxPreview_set( true ); // the real sky, like in game
+		names = entities.getShowNames(); targetNames = entities.getShowTargetNames(); angles = entities.getShowAngles();
+		connections = entities.getShowConnections(); radii = entities.getLightRadii();
+		entities.setShowNames( false ); entities.setShowTargetNames( false ); entities.setShowAngles( false );
+		entities.setShowConnections( false ); entities.setLightRadii( false );
 	}
 	else{
 		g_filters_globals.exclude = g_gameView_savedExclude;
 		SkyboxPreview_set( g_gameView_savedSkybox );
+		entities.setShowNames( names ); entities.setShowTargetNames( targetNames ); entities.setShowAngles( angles );
+		entities.setShowConnections( connections ); entities.setLightRadii( radii );
 	}
 	for ( auto& toggle : g_filter_items )
 		toggle.m_item.update();
@@ -187,6 +197,7 @@ void ResetFilters(){
 }
 
 void Filters_constructMenu( QMenu* menu ){
+	menu->addSection( "Checked = hidden" ); // KenRadiant
 	create_check_menu_item_with_mnemonic( menu, "World", "FilterWorldBrushes" );
 	create_check_menu_item_with_mnemonic( menu, "Entities", "FilterEntities" );
 	if ( g_pGameDescription->mGameType == "doom3" ) {

@@ -37,6 +37,9 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Drag & drop models** | Drag a model from the Models tab into the 3D view (lands on the surface under the cursor) or a 2D view (top view: onto the floor). |
 | **Live light preview** | **Ctrl+L** or the bulb button: lights and the sky shader's sun light the 3D view in real time, with **sun shadows** and **shadows from the 4 nearest lights** (View → Light Preview). Game View keeps the light, only the light icons hide. |
 | **Sun Calibrator** | Sun button: sliders for the sky shader's `q3map_sun` / `q3map_sunExt` / `q3map_skyLight` (colour, intensity, degrees, elevation, deviance …) with live shadows; **Write to shader file** puts them in the .shader (keeps a .bak). Compile preview: `-gamma`, `-compensate`, `-saturation`, `-bounce` (approximation) on the preview, **Make build preset** adds them to the Build menu. |
+| **Surface snapping** | Magnet button (or hold **Ctrl**): dragging the white ball sticks the selection to the surface under the cursor; Alt turns it to the surface, Shift slides along it. |
+| **Measure tool** | Ruler button: click two points in the 3D view to see the distance (Shift snaps to the grid). |
+| **Double-click** | Double-click an entity in the 3D view to open the Entity window. |
 | **Selection styles** | **J** cycles: models / entities get an orange outline and brushes keep edges + tint (default), everything outlined, or classic edges + tint everywhere. |
 | **Snapping** | Toolbar combos: **Grid** (0.125–256), **Rot** (off, 1°, 5°, 10°, 15°, 22.5°, 45°, 90° for the rotate gizmo; hold Shift for free), **Scale** (grid sizes or fixed steps x0.0625…x1). |
 | **Shader effects** | View → Shader Effects: `tcMod scroll / rotate / scale / stretch / turb` and `deformVertexes wave / move / bulge` animate, `polygonOffset` decals sit in front, glow / additive / `q3map_surfacelight` shaders are fullbright in the light preview. |

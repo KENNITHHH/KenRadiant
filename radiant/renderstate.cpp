@@ -547,7 +547,7 @@ public:
 			const Vector3 eye = matrix4_transformed_point( g_krLightPreviewView, l.origin );
 			pos[i * 3] = eye.x(); pos[i * 3 + 1] = eye.y(); pos[i * 3 + 2] = eye.z();
 			col[i * 3] = l.colour.x(); col[i * 3 + 1] = l.colour.y(); col[i * 3 + 2] = l.colour.z();
-			rad[i] = l.radius;
+			rad[i] = l.falloff;
 		}
 		gl().glUniform1i( u_count, GLint( count ) );
 		if( count != 0 ){
@@ -2305,6 +2305,8 @@ void OpenGLShader::construct( const char* name ){
 				state.m_blend_src = convertBlendFactor( blendFunc.m_src );
 				state.m_blend_dst = convertBlendFactor( blendFunc.m_dst );
 				state.m_depthfunc = GL_LEQUAL;
+				if( state.m_krFx != nullptr && state.m_krFx->depthWrite )
+					state.m_state |= RENDER_DEPTHWRITE; // KenRadiant: like the game, no see-through of its own back side
 //				if ( state.m_blend_src == GL_SRC_ALPHA || state.m_blend_dst == GL_SRC_ALPHA ) {
 //					state.m_state |= RENDER_DEPTHWRITE;
 //				}

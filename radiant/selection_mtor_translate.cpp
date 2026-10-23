@@ -44,9 +44,30 @@ struct RenderableThickLine : public RenderableLine
 /// - plane handles: an L of two short lines (in the colours of the two axes it moves along) closing a square between the arrows,
 ///   with a faint fill that turns yellow on hover; dragging it moves only in that plane
 /// - a white ball in the middle: drag to move in the screen plane
-class TranslateManipulatorImpl final : public TranslateManipulator, public ManipulatorSelectionChangeable
+/// KenRadiant: the white ball - screen-plane move, or with surface snapping (magnet button / Ctrl in the 3D view)
+/// the selection sticks to the surface under the cursor (Alt: also turns to it, Shift: slides along it)
+class KrTranslateFreeSnap : public Manipulatable
 {
 	TranslateFree m_free;
+	SnapBounds m_snap;
+public:
+	KrTranslateFreeSnap( Translatable& translatable, AllTransformable& transformable ) : m_free( translatable ), m_snap( translatable, transformable ){}
+	void Construct( const Matrix4& device2manip, const DeviceVector device_point, const AABB& bounds, const Vector3& transform_origin ) override {
+		m_free.Construct( device2manip, device_point, bounds, transform_origin );
+		m_snap.set0( transform_origin );
+		m_snap.Construct( device2manip, device_point, bounds, transform_origin );
+	}
+	void Transform( const Matrix4& manip2object, const Matrix4& device2manip, const DeviceVector device_point ) override {
+		if( SnapBounds::useCondition( g_modifiers, *m_view ) )
+			m_snap.Transform( manip2object, device2manip, device_point );
+		else
+			m_free.Transform( manip2object, device2manip, device_point );
+	}
+};
+
+class TranslateManipulatorImpl final : public TranslateManipulator, public ManipulatorSelectionChangeable
+{
+	KrTranslateFreeSnap m_free;
 	TranslateAxis m_axis;
 	TranslatePlane m_plane;
 	RenderableThickLine m_arrow_x;
@@ -68,8 +89,8 @@ class TranslateManipulatorImpl final : public TranslateManipulator, public Manip
 	SelectableBool m_selectable_plane[3];
 	Pivot2World m_pivot;
 public:
-	TranslateManipulatorImpl( Translatable& translatable, std::size_t segments, float length ) :
-		m_free( translatable ),
+	TranslateManipulatorImpl( Translatable& translatable, AllTransformable& transformable, std::size_t segments, float length ) :
+		m_free( translatable, transformable ),
 		m_axis( translatable ),
 		m_plane( translatable ),
 		m_arrow_head_x( 3 * 2 * ( segments << 3 ) ),
@@ -237,8 +258,12 @@ public:
 				if( manipulator_show_plane( m_pivot, normals[n] ) ){
 					SelectionIntersection best;
 					Quad_BestPoint( local2view, EClipCull::None, m_quad_plane[n].m_quad, best );
-					Line_BestPoint( local2view, m_plane_line[n][0].m_line, best );
-					Line_BestPoint( local2view, m_plane_line[n][1].m_line, best );
+					if( best.valid() )
+						best = SelectionIntersection( 1e-4f, 0 ); // inside the square: wins over the arrows behind it (the ball still wins)
+					else{
+						Line_BestPoint( local2view, m_plane_line[n][0].m_line, best );
+						Line_BestPoint( local2view, m_plane_line[n][1].m_line, best );
+					}
 					selector.addSelectable( best, &m_selectable_plane[n] );
 				}
 			}
@@ -289,6 +314,6 @@ public:
 };
 
 
-TranslateManipulator* New_TranslateManipulator( Translatable& translatable, std::size_t segments, float length ){
-	return new TranslateManipulatorImpl( translatable, segments, length );
+TranslateManipulator* New_TranslateManipulator( Translatable& translatable, AllTransformable& transformable, std::size_t segments, float length ){
+	return new TranslateManipulatorImpl( translatable, transformable, segments, length );
 }

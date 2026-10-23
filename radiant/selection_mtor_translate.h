@@ -30,4 +30,4 @@ public:
 	inline static Shader* m_state_fill;
 };
 
-TranslateManipulator* New_TranslateManipulator( Translatable& translatable, std::size_t segments, float length );
+TranslateManipulator* New_TranslateManipulator( Translatable& translatable, AllTransformable& transformable, std::size_t segments, float length );

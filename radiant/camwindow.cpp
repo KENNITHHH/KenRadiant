@@ -1598,6 +1598,31 @@ void CamWnd_Remove_Handlers_FreeMove( CamWnd& camwnd ){
 	KeyEvent_disconnect( "CameraFreeFocus" );
 }
 
+/* ---- KenRadiant: measure tool - click two points on surfaces in the 3D view ---- */
+bool g_krMeasure = false;
+static int s_measureCount = 0;               // points placed: 0, 1 (second follows the mouse), 2
+static Vector3 s_measureA, s_measureB;
+static bool s_measureHover = false;
+ToggleItem g_measure_item{ BoolExportCaller( g_krMeasure ) };
+static void Measure_toggle(){
+	g_krMeasure = !g_krMeasure;
+	s_measureCount = 0;
+	s_measureHover = false;
+	g_measure_item.update();
+	globalOutputStream() << ( g_krMeasure ? "measure: click two points in the 3D view (Shift: snap to the grid)\n" : "measure: off\n" );
+	if( g_camwnd )
+		CamWnd_Update( *g_camwnd );
+}
+static std::optional<Vector3> Measure_point( const View& view, const DeviceVector device, const DeviceVector epsilon, bool snap ){
+	if( const auto hit = testSelect_unselected_scene_point( view, device, epsilon ) ){
+		Vector3 p( hit->point );
+		if( snap )
+			p = vector3_snapped( p, GetSnapGridSize() );
+		return p;
+	}
+	return {};
+}
+
 class CamGLWidget : public QOpenGLWidget
 {
 	CamWnd& m_camwnd;
@@ -1686,7 +1711,31 @@ protected:
 		}
 	}
 
+	DeviceVector deviceFor( const QMouseEvent *event ) const {
+		const float w = width() * m_scale, h = height() * m_scale;
+		return DeviceVector( 2.f * event->localPos().x() * m_scale / w - 1.f, 1.f - 2.f * event->localPos().y() * m_scale / h );
+	}
+	DeviceVector measureEpsilon() const {
+		return DeviceVector( 4.f / ( width() * m_scale ), 4.f / ( height() * m_scale ) );
+	}
 	void mousePressEvent( QMouseEvent *event ) override {
+		if( g_krMeasure && !m_camwnd.m_bFreeMove && event->button() == Qt::LeftButton ){ // KenRadiant measure tool
+			setFocus();
+			if( const auto p = Measure_point( m_camwnd.getView(), deviceFor( event ), measureEpsilon(), event->modifiers() & Qt::ShiftModifier ) ){
+				if( s_measureCount != 1 ){
+					s_measureA = *p;
+					s_measureCount = 1;
+				}
+				else{
+					s_measureB = *p;
+					s_measureCount = 2;
+					const Vector3 d = s_measureB - s_measureA;
+					globalOutputStream() << "measure: " << vector3_length( d ) << " units (x " << std::fabs( d.x() ) << ", y " << std::fabs( d.y() ) << ", z " << std::fabs( d.z() ) << ")\n";
+				}
+				CamWnd_Update( m_camwnd );
+			}
+			return;
+		}
 		if( !m_camwnd.m_bFreeMove ){
 			setFocus();
 			selection_button_press( scaledEvent( event ), m_camwnd.m_window_observer );
@@ -1697,7 +1746,30 @@ protected:
 			disable_freelook_button_press( scaledEvent( event ), m_camwnd );
 		}
 	}
+	/// KenRadiant: double click an entity (model, light, door brush ...) = select it and open the entity window
+	void mouseDoubleClickEvent( QMouseEvent *event ) override {
+		if( event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier && !m_camwnd.m_bFreeMove ){
+			extern bool KrSelection_selectEntityAt( const View& view, const DeviceVector device_point, const DeviceVector device_epsilon );
+			const float w = width() * m_scale, h = height() * m_scale;
+			const DeviceVector device( 2.f * event->localPos().x() * m_scale / w - 1.f, 1.f - 2.f * event->localPos().y() * m_scale / h );
+			if( KrSelection_selectEntityAt( m_camwnd.getView(), device, DeviceVector( 6.f / w, 6.f / h ) ) ){
+				extern void GroupDialog_raisePage( QWidget* page );
+				extern QWidget* g_page_entity;
+				GroupDialog_raisePage( g_page_entity );
+			}
+			return; // no press: a double click must not start dragging the gizmo
+		}
+		mousePressEvent( event );
+	}
 	void mouseMoveEvent( QMouseEvent *event ) override {
+		if( g_krMeasure && !m_camwnd.m_bFreeMove && s_measureCount == 1 ){
+			if( const auto p = Measure_point( m_camwnd.getView(), deviceFor( event ), measureEpsilon(), event->modifiers() & Qt::ShiftModifier ) ){
+				s_measureB = *p;
+				s_measureHover = true;
+				CamWnd_Update( m_camwnd );
+			}
+			return;
+		}
 		if( !m_camwnd.m_bFreeMove ){
 			m_camwnd.m_deferred_motion.motion( scaledEvent( event ) );
 			m_camwnd.getCamera().m_idleDraw.queueDraw( DeferredMotion2::InvokeCaller( m_camwnd.m_deferred_motion ), false );
@@ -1707,6 +1779,8 @@ protected:
 		}
 	}
 	void mouseReleaseEvent( QMouseEvent *event ) override {
+		if( g_krMeasure && !m_camwnd.m_bFreeMove && event->button() == Qt::LeftButton )
+			return;
 		if( !m_camwnd.m_bFreeMove ){
 			selection_button_release( scaledEvent( event ), m_camwnd.m_window_observer );
 		}
@@ -2089,14 +2163,31 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 			if( !string_parse_vector3( entity->getKeyValue( "origin" ), origin ) )
 				return false;
 			float intensity = 300;
-			string_parse_float( entity->getKeyValue( "light" ), intensity );
+			if( !string_parse_float( entity->getKeyValue( "light" ), intensity ) )
+				string_parse_float( entity->getKeyValue( "_light" ), intensity );
+			float scale = 1;
+			if( string_parse_float( entity->getKeyValue( "scale" ), scale ) && scale > 0 )
+				intensity *= scale;
 			if( intensity <= 0 )
 				return false;
 			if( string_parse_vector3( entity->getKeyValue( "_color" ), colour ) ){
 				const float m = std::max( { colour.x(), colour.y(), colour.z() } );
-				if( m > 1 ) colour /= m; // 0-255 style values
+				colour = m > 0 ? colour / m : Vector3( 1, 1, 1 ); // q3map2 normalises the colour
 			}
-			KrPreviewLight light{ origin, colour * std::min( intensity / 200.f, 2.f ), intensity * 1.5f };
+			// q3map2: photons = light * 7500 (-pointscale); spawnflags 1 = linear falloff
+			int spawnflags = 0;
+			string_parse_int( entity->getKeyValue( "spawnflags" ), spawnflags );
+			KrPreviewLight light;
+			light.origin = origin;
+			light.colour = colour;
+			if( spawnflags & 1 ){
+				light.falloff = -intensity * 7500.f / 8000.f;
+				light.radius = std::min( -light.falloff, 8192.f );
+			}
+			else{
+				light.falloff = intensity * 7500.f / 255.f;
+				light.radius = std::min( std::sqrt( intensity * 7500.f ), 4096.f ); // value < 1/255 further away
+			}
 			// prefer lights that reach the camera's surroundings
 			m_candidates.push_back( { light, vector3_length( origin - m_viewer ) - light.radius } );
 			return false;
@@ -2115,7 +2206,7 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	if( g_krSun.valid ){
 		const float az = degrees_to_radians( g_krSun.degrees ), el = degrees_to_radians( g_krSun.elevation );
 		g_krSunDirection = Vector3( cos( el ) * cos( az ), cos( el ) * sin( az ), sin( el ) );
-		g_krSunColour = g_krSun.colour * std::min( g_krSun.intensity / 400.f, 1.5f );
+		g_krSunColour = g_krSun.colour * ( g_krSun.intensity / 255.f ); // lightmap units like q3map2
 		skyLight = g_krSun.skyLight;
 	}
 	// sun softness from q3map_sunExt deviance (degrees): wider shadow filtering
@@ -2131,12 +2222,12 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		g_krBounceFill = ( g_krSunColour * 0.35f + lights * 0.1f ) * ( 1 - std::pow( 0.6f, float( g_krCompile.bounce ) ) ) * 0.6f;
 	}
 	// ambient: worldspawn _ambient (0..255 like q3map2); q3map_skyLight as light from the sky dome (tinted a little by the sun)
-	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 0.8f );
+	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 1.f );
 	const Vector3 tint = vector3_length_squared( g_krSunColour ) > 0 ? vector3_normalised( g_krSun.colour ) * 1.732f : Vector3( 1, 1, 1 );
-	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 350.f, 0.f, 1.f );
+	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 510.f, 0.f, 1.f );
 	g_krMinLight = std::clamp( minlight / 255.f, 0.f, 1.f );
 	if( ambient <= 0 && skyLight <= 0 && minlight <= 0 )
-		g_krAmbient = Vector3( 0.12f, 0.12f, 0.12f ); // never fully black
+		g_krAmbient = Vector3( 0.06f, 0.06f, 0.06f ); // never fully black
 }
 
 /* ---- KenRadiant: sun shadow map for the live light preview ---- */
@@ -2820,6 +2911,48 @@ void CamWnd::Cam_Draw(){
 		}
 	}
 
+	// KenRadiant measure tool: line between the two points, length on it
+	if( g_krMeasure && s_measureCount != 0 ){
+		const Matrix4 world2screen = matrix4_multiplied_by_matrix4( m_Camera.projection, m_Camera.modelview );
+		const auto toScreen = [&]( const Vector3& p, Vector2& out ){
+			const Vector4 c = matrix4_transformed_vector4( world2screen, Vector4( p, 1 ) );
+			if( c.w() <= 0.01f )
+				return false;
+			out = Vector2( ( c.x() / c.w() + 1 ) * 0.5f * m_Camera.width, ( 1 - c.y() / c.w() ) * 0.5f * m_Camera.height );
+			return true;
+		};
+		const bool second = s_measureCount == 2 || s_measureHover;
+		Vector2 a, b;
+		const bool va = toScreen( s_measureA, a ), vb = second && toScreen( s_measureB, b );
+		gl().glLineWidth( 2 );
+		gl().glColor3f( 1, 0.85f, 0.1f );
+		if( va && vb ){
+			const Vector2 line[]{ a, b };
+			gl().glVertexPointer( 2, GL_FLOAT, sizeof( Vector2 ), line[0].data() );
+			gl().glDrawArrays( GL_LINES, 0, 2 );
+		}
+		gl().glPointSize( 7 );
+		for( const auto& [ ok, p ] : { std::pair{ va, a }, std::pair{ vb, b } } )
+			if( ok ){
+				gl().glVertexPointer( 2, GL_FLOAT, sizeof( Vector2 ), p.data() );
+				gl().glDrawArrays( GL_POINTS, 0, 1 );
+			}
+		gl().glPointSize( 1 );
+		gl().glLineWidth( 1 );
+		if( va && vb ){
+			const Vector3 d = s_measureB - s_measureA;
+			char text[128];
+			std::snprintf( text, sizeof( text ), "  %.1f units   (x %.1f  y %.1f  z %.1f)", vector3_length( d ), std::fabs( d.x() ), std::fabs( d.y() ), std::fabs( d.z() ) );
+			const Vector2 mid = ( a + b ) * 0.5f;
+			gl().glColor3f( 0, 0, 0 );
+			gl().glRasterPos3f( mid.x() + 1, mid.y() + 1, 0 );
+			GlobalOpenGL().drawString( text );
+			gl().glColor3f( 1, 0.85f, 0.1f );
+			gl().glRasterPos3f( mid.x(), mid.y(), 0 );
+			GlobalOpenGL().drawString( text );
+		}
+	}
+
 	if ( g_camwindow_globals.m_showStats ) {
 		gl().glRasterPos3f( 1, m_Camera.height, 0 );
 		extern const char* Renderer_GetStats( int frame2frame );
@@ -3233,6 +3366,7 @@ void CamWnd_Construct(){
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );
 	GlobalPreferenceSystem().registerPreference( "KrGlowShaders", BoolImportStringCaller( g_krGlow ), BoolExportStringCaller( g_krGlow ) );
+	GlobalToggles_insert( "ToggleMeasure", makeCallbackF( Measure_toggle ), ToggleItem::AddCallbackCaller( g_measure_item ) ); // KenRadiant
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

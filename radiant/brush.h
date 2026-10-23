@@ -1541,6 +1541,10 @@ public:
 	virtual void vertex_select() = 0;
 	virtual void vertex_snap( const float snap ) = 0;
 
+	// KenRadiant: vertex / edge selection survives undo / redo
+	virtual void kr_gatherSelected( std::vector<DoubleVector3>& vertices, std::vector<Vector3>& edges ) const = 0;
+	virtual void kr_reselect( const std::vector<DoubleVector3>& vertices, const std::vector<Vector3>& edges ) = 0;
+
 	virtual void DEBUG_verify() const = 0;
 };
 
@@ -1939,6 +1943,8 @@ public:
 		}
 
 		Faces m_faces;
+		std::vector<DoubleVector3> m_selectedVertices; // KenRadiant: selected vertices / edge centres at that time
+		std::vector<Vector3> m_selectedEdges;
 	};
 
 	void undoSave(){
@@ -1951,13 +1957,22 @@ public:
 	}
 
 	UndoMemento* exportState() const override {
-		return new BrushUndoMemento( m_faces );
+		auto *memento = new BrushUndoMemento( m_faces );
+		for ( const auto *observer : m_observers )
+			observer->kr_gatherSelected( memento->m_selectedVertices, memento->m_selectedEdges );
+		return memento;
 	}
 
 	void importState( const UndoMemento* state ) override {
 		undoSave();
-		appendFaces( static_cast<const BrushUndoMemento*>( state )->m_faces );
+		const auto *memento = static_cast<const BrushUndoMemento*>( state );
+		appendFaces( memento->m_faces );
 		planeChanged();
+		if ( !memento->m_selectedVertices.empty() || !memento->m_selectedEdges.empty() ) {
+			evaluateBRep(); // rebuild the vertices / edges, then pick the ones that were selected
+			for ( auto *observer : m_observers )
+				observer->kr_reselect( memento->m_selectedVertices, memento->m_selectedEdges );
+		}
 
 		for ( auto *observer : m_observers )
 		{
@@ -3118,6 +3133,11 @@ class EdgeInstance final : public Selectable
 {
 	FaceInstances& m_faceInstances;
 	SelectableEdge* m_edge;
+public:
+	Vector3 kr_position() const {
+		return m_edge->getEdge();
+	}
+private:
 
 	void select_edge( bool select ){
 		FaceVertexId faceVertex = m_edge->m_faceVertex;
@@ -3283,6 +3303,9 @@ public:
 			faceVertex = next_vertex( m_vertex->m_faces, faceVertex );
 		}
 		while ( faceVertex.getFace() != m_vertex->m_faceVertex.getFace() );
+	}
+	DoubleVector3 kr_position() const {
+		return m_vertex->getVertex();
 	}
 	bool vertex_select( const DoubleVector3& vertex ){
 		if( vector3_length_squared( vertex - m_vertex->getVertex() ) < ( 0.1 * 0.1 ) ){
@@ -3487,6 +3510,30 @@ public:
 		m_vertexInstances.push_back( VertexInstance( m_faceInstances, vertex ) );
 	}
 
+	void kr_gatherSelected( std::vector<DoubleVector3>& vertices, std::vector<Vector3>& edges ) const override {
+		if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent )
+			return;
+		for ( const auto& v : m_vertexInstances )
+			if ( v.isSelected() )
+				vertices.push_back( v.kr_position() );
+		for ( const auto& e : m_edgeInstances )
+			if ( e.isSelected() )
+				edges.push_back( e.kr_position() );
+	}
+	void kr_reselect( const std::vector<DoubleVector3>& vertices, const std::vector<Vector3>& edges ) override {
+		if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent || !isSelected() )
+			return;
+		for ( auto& v : m_vertexInstances ){
+			const bool select = std::ranges::any_of( vertices, [&v]( const DoubleVector3& p ){ return vector3_length_squared( p - v.kr_position() ) < 0.1 * 0.1; } );
+			if ( select != v.isSelected() )
+				v.setSelected( select );
+		}
+		for ( auto& e : m_edgeInstances ){
+			const bool select = std::ranges::any_of( edges, [&e]( const Vector3& p ){ return vector3_length_squared( p - e.kr_position() ) < 0.1f * 0.1f; } );
+			if ( select != e.isSelected() )
+				e.setSelected( select );
+		}
+	}
 	void vertex_select() override {
 		bool src_selected = false;
 		bool dst_selected = false;

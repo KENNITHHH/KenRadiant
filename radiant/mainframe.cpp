@@ -1503,7 +1503,9 @@ static void GridCombo_sync(){
 void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_button( toolbar, "Find: fly the camera to the selection (Tab)", "kr_find.png", "CameraFocusOnSelected" );
 	toolbar_append_toggle_button( toolbar, "Gizmo in local (object) space; off = world space", "kr_localspace.png", "ToggleManipulatorLocalSpace" );
+	toolbar_append_toggle_button( toolbar, "Surface snapping: dragging the white ball (or free drag) sticks the selection to the surface under the cursor in the 3D view. Alt: also turn it to the surface, Shift: slide along it. Without the button: hold Ctrl", "kr_surfacesnap.png", "ToggleSurfaceSnap" );
 	toolbar_append_button( toolbar, "Drop to floor (End)", "kr_droptofloor.png", "DropSelectionToFloor" );
+	toolbar_append_toggle_button( toolbar, "Measure: click two points on surfaces in the 3D view to see the distance (Shift: snap to grid)", "kr_measure.png", "ToggleMeasure" );
 	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by the grid size", "kr_bevel.png", "BrushBevel" );
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );

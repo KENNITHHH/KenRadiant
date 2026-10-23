@@ -1355,6 +1355,11 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				stageGlow = true;
 				continue;
 			}
+			else if ( string_equal_nocase( token, "depthWrite" ) ) {
+				if( stageNum == 1 )
+					m_krFx.depthWrite = true;
+				continue;
+			}
 			else if ( string_equal_nocase( token, "tcmod" ) ) {
 				const char* kind = tokeniser.getToken();
 				if( kind != 0 && string_equal_nocase( kind, "scroll" ) ){

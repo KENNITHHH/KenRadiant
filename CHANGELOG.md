@@ -3,6 +3,19 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (7)
+### Editor
+- **Light preview brightness like q3map2 + the game**: point lights use q3map2's falloff (`light × 7500 / distance²`, `spawnflags 1` = linear), `_color` is normalised, `scale` is used; the sun and `_ambient` are in lightmap units. The result is doubled and clamped keeping its colour like the engine does, so indoor maps with many lights no longer wash out to white.
+- **Surface snapping** (magnet button): drag the white ball and the selection sticks to the surface under the cursor; **Alt** also turns it to the surface, **Shift** slides along it. Without the button, hold **Ctrl** while dragging.
+- **The white ball always moves the selection** (it used to move the pivot when you grabbed its exact centre). Move the pivot in rotate mode (R).
+- **Measure tool** (ruler button): click two points on surfaces in the 3D view; the line shows the distance and the X / Y / Z parts (also printed in the console). **Shift** snaps the points to the grid.
+- **Double-click an entity** in the 3D view (model, light, door brush ...) to select it and open the Entity window.
+- **Vertex / edge selection survives Ctrl+Z / Ctrl+Y**: only the movement is undone.
+- **Game View** also hides entity names, target names, angle arrows, target lines and light radii.
+- **Menus show real check boxes** (Filter menu: "Checked = hidden" at the top).
+- Gizmo handles are easier to grab: the scale gizmo's triangles have a much wider hit area, and plane handles win over the arrows behind them.
+- Translucent shaders whose first stage has `depthWrite` no longer show their own back side through themselves.
+
 ## Build 2026-10-23 (6)
 ### Editor
 - **Light preview follows q3map2's shadow rules**: entities with `_castShadows 0` / `_cs 0` (e.g. a lantern model around its light) don't block light; doors and other brush entities only cast with `_castShadows 1`; worldspawn, func_group and misc_model cast by default.

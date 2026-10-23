@@ -8,8 +8,9 @@
 struct KrPreviewLight
 {
 	Vector3 origin;
-	Vector3 colour;
-	float radius;
+	Vector3 colour;    // normalised _color
+	float radius;      // reach (where it drops below 1/255), for shadows and picking the nearest lights
+	float falloff;     // shader: > 0 inverse square ( light * 7500 / 255 ), < 0 linear ( -light * 7500 / 8000 )
 };
 
 extern bool g_krLightPreview;          // user toggle (Ctrl+L / toolbar)

@@ -1089,7 +1089,7 @@ public:
 		m_componentmode( eDefault ),
 		m_count_primitive( SelectionChangedCaller( *this ) ),
 		m_count_component( SelectionChangedCaller( *this ) ),
-		m_translate_manipulator( New_TranslateManipulator( *this, 2, 80 ) ),
+		m_translate_manipulator( New_TranslateManipulator( *this, *this, 2, 80 ) ),
 		m_rotate_manipulator( New_RotateManipulator( *this, 8, 80 ) ),
 		m_scale_manipulator( New_ScaleManipulator( *this, 0, 80 ) ),
 		m_skew_manipulator( New_SkewManipulator( *this, *this, *this, *this, *this, m_bounds, m_pivot2world, m_pivotIsCustom ) ),
@@ -1280,18 +1280,20 @@ public:
 				View scissored( view );
 				ConstructSelectionTest( scissored, SelectionBoxForPoint( device_point, device_epsilon ) );
 
-				// KenRadiant: in scale mode the Unreal-style centre cube (uniform scale) sits on the pivot point; it wins there
-				if( ManipulatorMode() == eScale ){
+				// KenRadiant: in move and scale mode the Unreal-style white ball / centre cube sits on the pivot point; it wins there
+				// (the pivot is still dragged in rotate mode)
+				const bool gizmoFirst = ManipulatorMode() == eScale || ManipulatorMode() == eTranslate;
+				if( gizmoFirst ){
 					m_manipulator->testSelect( scissored, GetPivot2World() );
 				}
-				if( transformOrigin_isTranslatable() && !( ManipulatorMode() == eScale && m_manipulator->isSelected() ) ){
+				if( transformOrigin_isTranslatable() && !( gizmoFirst && m_manipulator->isSelected() ) ){
 					m_transformOrigin_manipulator.testSelect( scissored, GetPivot2World() );
 					movingOrigin = m_transformOrigin_manipulator.isSelected();
 					if( movingOrigin )
 						m_manipulator->setSelected( false );
 				}
 
-				if( !movingOrigin && ManipulatorMode() != eScale )
+				if( !movingOrigin && !gizmoFirst )
 					m_manipulator->testSelect( scissored, GetPivot2World() );
 			}
 
@@ -1343,7 +1345,7 @@ public:
 			View scissored( view );
 			ConstructSelectionTest( scissored, SelectionBoxForPoint( device_point, device_epsilon ) );
 
-			if( ManipulatorMode() == eScale ){
+			if( ManipulatorMode() == eScale || ManipulatorMode() == eTranslate ){
 				m_manipulator->highlight( scissored, GetPivot2World() );
 				if( !m_manipulator->isSelected() && transformOrigin_isTranslatable() )
 					m_transformOrigin_manipulator.highlight( scissored, GetPivot2World() );
@@ -2858,3 +2860,19 @@ public:
 typedef SingletonModule<SelectionAPI, SelectionDependencies> SelectionModule;
 typedef Static<SelectionModule> StaticSelectionModule;
 StaticRegisterModule staticRegisterSelection( StaticSelectionModule::instance() );
+
+/// KenRadiant: double click in the 3D view - select what is under the cursor (replacing the selection);
+/// true when it is an entity or part of one (not worldspawn), so the caller opens the entity window
+bool KrSelection_selectEntityAt( const View& view, const DeviceVector device_point, const DeviceVector device_epsilon ){
+	if( GlobalSelectionSystem().Mode() != SelectionSystem::ePrimitive )
+		return false;
+	getSelectionSystem().SelectPoint( view, device_point, device_epsilon, RadiantSelectionSystem::eReplace, false );
+	if( GlobalSelectionSystem().countSelected() == 0 )
+		return false;
+	const scene::Path& path = GlobalSelectionSystem().ultimateSelected().path();
+	for( std::size_t i = path.size(); i-- > 0; ){
+		if( Entity* entity = Node_getEntity( path[i] ) )
+			return !string_equal( entity->getClassName(), "worldspawn" );
+	}
+	return false;
+}

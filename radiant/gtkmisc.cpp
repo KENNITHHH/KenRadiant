@@ -127,6 +127,7 @@ void toggle_remove_accelerator( const char* name ){
 QAction* create_check_menu_item_with_mnemonic( QMenu* menu, const char* mnemonic, const char* commandName ){
 	auto *action = toggle_add_accelerator_( commandName );
 	action->setText( mnemonic );
+	action->setIconVisibleInMenu( false ); // KenRadiant: menus show a real check box instead of a framed icon (toolbars keep the icon)
 	menu->addAction( action );
 	return action;
 }
