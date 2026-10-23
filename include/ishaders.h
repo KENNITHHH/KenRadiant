@@ -38,6 +38,7 @@ enum
 	QER_CLIP = 1 << 9,
 	QER_BOTCLIP = 1 << 10,
 	QER_SKY = 1 << 11,
+	QER_KR_LIGHTPASS = 1 << 12, // KenRadiant: q3map2 lets light through (surfaceparm trans / nonsolid / clip / water ...)
 };
 
 struct qtexture_t;

@@ -2064,12 +2064,12 @@ void KrSun_rescan(){
 static void KrLightPreview_collect( const Vector3& viewer ){
 	struct Candidate{ KrPreviewLight light; float score; };
 	std::vector<Candidate> candidates;
-	float ambient = 0;
+	float ambient = 0, minlight = 0;
 	class LightWalker : public scene::Traversable::Walker
 	{
-		std::vector<Candidate>& m_candidates; float& m_ambient; const Vector3& m_viewer;
+		std::vector<Candidate>& m_candidates; float& m_ambient; float& m_minlight; const Vector3& m_viewer;
 	public:
-		LightWalker( std::vector<Candidate>& c, float& a, const Vector3& v ) : m_candidates( c ), m_ambient( a ), m_viewer( v ){}
+		LightWalker( std::vector<Candidate>& c, float& a, float& m, const Vector3& v ) : m_candidates( c ), m_ambient( a ), m_minlight( m ), m_viewer( v ){}
 		bool pre( scene::Node& node ) const override {
 			Entity* entity = Node_getEntity( node );
 			if( entity == nullptr ) // filtered (e.g. Game View) lights still shine, only their icon is hidden
@@ -2079,6 +2079,8 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 				float a = 0;
 				if( string_parse_float( entity->getKeyValue( "_ambient" ), a ) || string_parse_float( entity->getKeyValue( "ambient" ), a ) )
 					m_ambient = a;
+				if( string_parse_float( entity->getKeyValue( "_minlight" ), a ) )
+					m_minlight = a;
 				return false;
 			}
 			if( !string_equal_prefix( classname, "light" ) )
@@ -2100,7 +2102,7 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 			return false;
 		}
 	};
-	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, viewer ) );
+	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, minlight, viewer ) );
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
 	g_krLightPreviewLights.clear();
 	for( std::size_t i = 0; i < candidates.size() && i < c_krMaxPreviewLights; ++i )
@@ -2128,9 +2130,13 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 			lights /= float( g_krLightPreviewLights.size() );
 		g_krBounceFill = ( g_krSunColour * 0.35f + lights * 0.1f ) * ( 1 - std::pow( 0.6f, float( g_krCompile.bounce ) ) ) * 0.6f;
 	}
-	// ambient: worldspawn _ambient (0..255 like q3map2) + a share of the sky light, never fully black
-	const float a = std::clamp( ambient / 255.f + skyLight / 1000.f, 0.12f, 0.8f );
-	g_krAmbient = Vector3( a, a, a );
+	// ambient: worldspawn _ambient (0..255 like q3map2); q3map_skyLight as light from the sky dome (tinted a little by the sun)
+	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 0.8f );
+	const Vector3 tint = vector3_length_squared( g_krSunColour ) > 0 ? vector3_normalised( g_krSun.colour ) * 1.732f : Vector3( 1, 1, 1 );
+	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 350.f, 0.f, 1.f );
+	g_krMinLight = std::clamp( minlight / 255.f, 0.f, 1.f );
+	if( ambient <= 0 && skyLight <= 0 && minlight <= 0 )
+		g_krAmbient = Vector3( 0.12f, 0.12f, 0.12f ); // never fully black
 }
 
 /* ---- KenRadiant: sun shadow map for the live light preview ---- */
@@ -2140,20 +2146,24 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 /// only opaque textured surfaces go to the shadow map (no entity boxes, overlays, sky, translucent)
 class ShadowRenderer : public Renderer
 {
-	std::vector<Shader*> m_stack{ nullptr };
+	struct State{ Shader* shader = nullptr; bool noShadow = false; };
+	std::vector<State> m_stack{ State() };
 public:
 	void SetState( Shader* state, EStyle style ) override {
 		if ( style == eFullMaterials )
-			m_stack.back() = Shader_castsShadow( state ) ? state : nullptr;
+			m_stack.back().shader = Shader_castsShadow( state ) ? state : nullptr;
 	}
 	EStyle getStyle() const override { return eFullMaterials; }
 	void PushState() override { m_stack.push_back( m_stack.back() ); }
 	void PopState() override { m_stack.pop_back(); }
-	void Highlight( EHighlightMode mode, bool bEnable = true ) override {}
+	void Highlight( EHighlightMode mode, bool bEnable = true ) override {
+		if( mode & eKrNoShadow ) // entities with _castShadows 0 (and doors etc. without _castShadows 1), like q3map2
+			m_stack.back().noShadow = bEnable;
+	}
 	void setLights( const LightList& lights ) override {}
 	void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) override {
-		if( m_stack.back() != nullptr )
-			m_stack.back()->addRenderable( renderable, world );
+		if( m_stack.back().shader != nullptr && !m_stack.back().noShadow )
+			m_stack.back().shader->addRenderable( renderable, world );
 	}
 };
 

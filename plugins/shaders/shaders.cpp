@@ -314,6 +314,7 @@ public:
 	float m_sunDeviance = 0, m_sunSamples = 16; // q3map_sunExt extras
 	bool m_krEmissive = false;
 	KrShaderEffects m_krFx;
+	bool m_krLightPass = false, m_krAlphaShadow = false;
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -1553,6 +1554,15 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 					return false;
 				}
 
+				{ // KenRadiant: not solid or translucent for q3map2: no shadow in the light preview
+					static const char* const passes[] = { "trans", "nonsolid", "playerclip", "monsterclip", "botclip", "water", "slime", "lava", "fog",
+					                                       "areaportal", "clusterportal", "donotenter", "origin", "trigger", "ladder", "shotclip", "hint", "skip" };
+					for( const char* pass : passes )
+						if( string_equal_nocase( surfaceparm, pass ) )
+							m_krLightPass = true;
+					if( string_equal_nocase( surfaceparm, "alphashadow" ) || string_equal_nocase( surfaceparm, "lightfilter" ) )
+						m_krAlphaShadow = true; // foliage: cut-out shadow even though it is trans
+				}
 				if ( string_equal_nocase( surfaceparm, "fog" ) ) {
 					m_nFlags |= QER_FOG;
 					m_nFlags |= QER_TRANS;
@@ -1592,6 +1602,8 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	}
 	if ( m_nFlags & QER_SKY )
 		m_q3BlendFunc = BlendFuncExpression( "", "" );
+	if ( m_krLightPass && !m_krAlphaShadow )
+		m_nFlags |= QER_KR_LIGHTPASS;
 
 	/* no qer_editorimage: fall back to the first stage image (what q3map2 and the game show),
 	   unless an image with the shader's own name exists - that is what stock radiant used */

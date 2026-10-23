@@ -18,7 +18,9 @@ extern Matrix4 g_krLightPreviewView;   // camera world->eye matrix of that rende
 extern std::vector<KrPreviewLight> g_krLightPreviewLights;
 extern Vector3 g_krSunDirection;       // towards the sun, world space
 extern Vector3 g_krSunColour;          // 0 = no sun
-extern Vector3 g_krAmbient;
+extern Vector3 g_krAmbient;            // worldspawn _ambient
+extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
+extern float g_krMinLight;             // worldspawn _minlight
 constexpr std::size_t c_krMaxPreviewLights = 24;
 
 // sun shadow map (rendered by the 3D view, read by the light preview program)

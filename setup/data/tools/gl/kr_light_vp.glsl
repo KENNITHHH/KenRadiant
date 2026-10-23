@@ -59,5 +59,9 @@ void main()
 	}
 	else
 		gl_FrontColor = gl_Color;
-	gl_Position = gl_ModelViewProjectionMatrix * vertex;
+	// ftransform() gives exactly the fixed-function depth, so selection tint / wires drawn over it don't z-fight
+	if( u_deform == 0 )
+		gl_Position = ftransform();
+	else
+		gl_Position = gl_ModelViewProjectionMatrix * vertex;
 }

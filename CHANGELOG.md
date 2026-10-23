@@ -3,6 +3,13 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (6)
+### Editor
+- **Light preview follows q3map2's shadow rules**: entities with `_castShadows 0` / `_cs 0` (e.g. a lantern model around its light) don't block light; doors and other brush entities only cast with `_castShadows 1`; worldspawn, func_group and misc_model cast by default.
+- **Tool surfaces let light through** like in q3map2, read from the shader's surfaceparms: `trans`, `nonsolid`, `playerclip`, `monsterclip`, `botclip`, `water` / `slime` / `lava` / `fog`, `areaportal`, `clusterportal`, `donotenter`, `origin`, `trigger`, `ladder`, `shotclip`, `hint`, `skip`. Foliage with `alphashadow` / `lightfilter` still casts its cut-out shadow.
+- **Sky light** (`q3map_skyLight`) now lights the preview like a sky dome: faces turned away from the sun are no longer near-black (terrain such as mp_col1 looks far more like in game). Worldspawn `_minlight` is used too.
+- **Selection tint no longer z-fights** with the face under it.
+
 ## Build 2026-10-23 (5)
 ### Editor
 - **Fixed: sun shadows stopped after opening another map** (also when you came back to the first map). The sun is now read from the sky shader on the map's own sky brushes.

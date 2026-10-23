@@ -6,7 +6,9 @@ uniform vec3 u_col[24];
 uniform float u_rad[24];
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
-uniform vec3 u_ambient;
+uniform vec3 u_ambient;    // worldspawn _ambient
+uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
+uniform float u_minlight;  // worldspawn _minlight
 uniform sampler2DShadow u_shadow;
 uniform mat4 u_eye2shadow;
 uniform int u_has_shadow;
@@ -85,7 +87,8 @@ void main()
 			sun *= lit / 25.0;
 		}
 	}
-	vec3 light = u_ambient + u_sun_col * sun + u_bounce;
+	float up = ( u_eye2world * n ).z;
+	vec3 light = u_ambient + u_sky * ( 0.55 + 0.45 * up ) + u_sun_col * sun + u_bounce;
 	for( int i = 0; i < 24; ++i ){
 		if( i >= u_count )
 			break;
@@ -103,6 +106,7 @@ void main()
 		}
 		light += u_col[i] * c;
 	}
+	light = max( light, vec3( u_minlight ) );
 	// what q3map2 does to the lightmap: compensate, gamma, saturation
 	light = max( light / u_compensate, vec3( 0.0 ) );
 	light = pow( light, vec3( 1.0 / u_gamma ) );

@@ -27,6 +27,8 @@
 #include "cullable.h"
 #include "scenelib.h"
 #include "math/frustum.h"
+#include "ientity.h"
+#include "string/string.h"
 #include <vector>
 
 inline Cullable* Instance_getCullable( scene::Instance& instance ){
@@ -110,6 +112,21 @@ inline void Scene_forEachVisible( scene::Graph& graph, const VolumeTest& volume,
 	graph.traverse( ForEachVisible< CullingWalker<Functor> >( volume, CullingWalker<Functor>( volume, functor ) ) );
 }
 
+/// KenRadiant: does q3map2 -light let this entity cast shadows? worldspawn, func_group and misc_model do unless
+/// _castShadows / _cs is 0; other entities (doors, func_static ...) only with _castShadows 1
+inline bool KrEntity_castsShadows( const Entity& entity ){
+	const char* classname = entity.getClassName();
+	if( string_equal( classname, "worldspawn" ) )
+		return true;
+	int cast = ( string_equal( classname, "func_group" ) || string_equal( classname, "misc_model" ) ) ? 1 : 0;
+	const char* value = entity.getKeyValue( "_castShadows" );
+	if( string_empty( value ) )
+		value = entity.getKeyValue( "_cs" );
+	if( !string_empty( value ) )
+		cast = atoi( value );
+	return cast > 0;
+}
+
 class RenderHighlighted
 {
 	Renderer& m_renderer;
@@ -142,6 +159,8 @@ public:
 
 			if ( Node_isBrush( path.top() ) || Node_isPatch( path.top() ) )
 				m_renderer.Highlight( Renderer::eKrBrushLike );
+			else if ( const Entity* entity = Node_getEntity( path.top() ); entity != nullptr && !KrEntity_castsShadows( *entity ) )
+				m_renderer.Highlight( Renderer::eKrNoShadow );
 			if ( Instance_isSelected( instance ) ) {
 				if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent ) {
 					m_renderer.Highlight( Renderer::eFace );

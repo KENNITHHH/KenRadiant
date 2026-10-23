@@ -97,6 +97,7 @@ public:
 	// KenRadiant: shader effects previewed in the 3D view (tcMod, deformVertexes, polygonOffset), glow surfaces
 	const struct KrShaderEffects* m_krFx = nullptr;
 	bool m_krEmissive = false;
+	bool m_krOffsetFill = false;   // polygon offset fill (selection tint)
 	bool m_krMatrix = false;       // (current state only) texture matrix of unit 0 is not identity
 	bool m_krPolygonOffset = false; // (current state only) GL_POLYGON_OFFSET_FILL on
 

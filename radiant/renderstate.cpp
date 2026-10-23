@@ -449,6 +449,8 @@ std::vector<KrPreviewLight> g_krLightPreviewLights;
 Vector3 g_krSunDirection( 0, 0, 1 );
 Vector3 g_krSunColour( 0, 0, 0 );
 Vector3 g_krAmbient( 0.15f, 0.15f, 0.15f );
+Vector3 g_krSkyAmbient( 0, 0, 0 );
+float g_krMinLight = 0;
 bool g_krShadows = true;
 bool g_krAnimateShaders = true;
 bool g_krDeformVertexes = true;
@@ -488,6 +490,7 @@ class GLSLKrLightProgram : public GLProgram
 	GLint u( const char* name ) const { return gl().glGetUniformLocation( m_program, name ); }
 public:
 	GLuint m_program = 0;
+	GLint u_sky, u_minlight;
 	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
@@ -504,6 +507,7 @@ public:
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
 		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_pos = u( "u_pos" ); u_col = u( "u_col" ); u_rad = u( "u_rad" );
+		u_sky = u( "u_sky" ); u_minlight = u( "u_minlight" );
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
@@ -555,6 +559,8 @@ public:
 		gl().glUniform3f( u_sun_dir, sun.x(), sun.y(), sun.z() );
 		gl().glUniform3f( u_sun_col, g_krSunColour.x(), g_krSunColour.y(), g_krSunColour.z() );
 		gl().glUniform3f( u_ambient, g_krAmbient.x(), g_krAmbient.y(), g_krAmbient.z() );
+		gl().glUniform3f( u_sky, g_krSkyAmbient.x(), g_krSkyAmbient.y(), g_krSkyAmbient.z() );
+		gl().glUniform1f( u_minlight, g_krMinLight );
 		const bool shadow = g_krShadows && g_krShadowTex != 0;
 		gl().glUniform1i( u_has_shadow, shadow ? 1 : 0 );
 		gl().glUniform1f( u_texel, g_krShadowTexel );
@@ -1436,7 +1442,7 @@ void OpenGLState_apply( const OpenGLState& self, OpenGLState& current, unsigned 
 			current.m_krMatrix = matrix;
 			gl().glMatrixMode( GL_MODELVIEW );
 		}
-		const bool offset = fx != nullptr && g_krPolygonOffset && fx->polygonOffset && ( globalstate & RENDER_FILL );
+		const bool offset = ( ( fx != nullptr && g_krPolygonOffset && fx->polygonOffset ) || self.m_krOffsetFill ) && ( globalstate & RENDER_FILL );
 		if( offset != current.m_krPolygonOffset ){
 			if( offset ){
 				gl().glEnable( GL_POLYGON_OFFSET_FILL );
@@ -2056,6 +2062,7 @@ void OpenGLShader::construct( const char* name ){
 		}
 		else if ( string_equal( name + 1, "CAM_HIGHLIGHT" ) ) {
 			state.m_colour = Vector4( g_camwindow_globals.color_selbrushes3d, 0.3f );
+			state.m_krOffsetFill = true; // KenRadiant: pulled towards the camera, never z-fights with the face under it
 			state.m_state = RENDER_FILL | RENDER_DEPTHTEST | RENDER_CULLFACE | RENDER_BLEND | RENDER_COLOURWRITE/* | RENDER_DEPTHWRITE*/;
 			state.m_sort = OpenGLState::eSortHighlight;
 			state.m_depthfunc = GL_LEQUAL;
@@ -2377,6 +2384,8 @@ bool Shader_castsShadow( Shader* shader ){
 	const int flags = glshader->getShader().getFlags();
 	if( const KrShaderEffects* fx = glshader->getShader().getEffects(); fx != nullptr && fx->deform != 0 )
 		return false; // moving surfaces (water waves) would shadow themselves
+	if( flags & QER_KR_LIGHTPASS )
+		return false; // tools q3map2 lets light through: clip, hint, skip, ladder, water ...
 	return !( flags & ( QER_SKY | QER_TRANS | QER_FOG ) ) || ( flags & QER_ALPHATEST ); // masked foliage casts cut-out shadows
 }
 

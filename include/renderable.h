@@ -39,6 +39,7 @@ public:
 		ePrimitiveWire = 1 << 2, //always draw wire for primitives
 		eFaceWire = 1 << 3,	//wire for selected faces
 		eKrBrushLike = 1 << 4, // KenRadiant: the node is a brush or patch (selection style: brushes keep edges + tint)
+		eKrNoShadow = 1 << 5,  // KenRadiant: inside an entity that q3map2 would not let cast shadows (_castShadows)
 	};
 
 	enum EStyle
