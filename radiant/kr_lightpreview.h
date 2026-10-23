@@ -26,12 +26,13 @@ extern Vector3 g_krSunColour;          // 0 = no sun
 extern Vector3 g_krAmbient;            // worldspawn _ambient
 extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
 extern float g_krMinLight;             // worldspawn _minlight
-constexpr std::size_t c_krMaxPreviewLights = 1024;
+constexpr std::size_t c_krMaxPreviewLights = 2048;
 extern int g_krMaxPreviewLightsGPU; // = c_krMaxPreviewLights (lights live in a float texture)
 // lights in a float texture, found per fragment through a world grid around the camera (clustered lighting)
 constexpr int c_krLightTexW = 1024;          // texels per row
 constexpr int c_krLightTexels = 4;           // per light
-constexpr int c_krGridX = 20, c_krGridY = 20, c_krGridZ = 10, c_krCellSize = 256, c_krCellSlots = 32;
+constexpr int c_krGridX = 20, c_krGridY = 20, c_krGridZ = 10, c_krCellSize = 256, c_krCellSlots = 48;
+static_assert( ( 2048 * 4 + 20 * 20 * 10 * 48 / 4 + 1023 ) / 1024 == 55, "kr_light_fp.glsl KR_TH" );
 constexpr int c_krLightTexRows = ( int( c_krMaxPreviewLights ) * c_krLightTexels + c_krGridX * c_krGridY * c_krGridZ * c_krCellSlots / 4 + c_krLightTexW - 1 ) / c_krLightTexW;
 extern unsigned int g_krLightTex;            // 0 = none
 extern Vector3 g_krGridMin;
@@ -76,7 +77,10 @@ struct KrCompilePreview
 	int bounce = 0;
 };
 extern KrCompilePreview g_krCompile;
-extern Vector3 g_krBounceFill;   // approximate indirect light added by the bounce slider
+extern Vector3 g_krBounceFill;
+// how the game shows the lightmap: overbright shift (r_mapOverBrightBits - r_overBrightBits, SOF2 fullscreen = 1, windowed / no hardware gamma = 0) and r_gamma
+extern int g_krEngineShift;
+extern float g_krEngineGamma;   // approximate indirect light added by the bounce slider
 
 // point light shadows (cube maps of the nearest lights)
 constexpr std::size_t c_krMaxCubeShadows = 8;

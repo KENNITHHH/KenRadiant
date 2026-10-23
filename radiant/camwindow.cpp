@@ -3695,8 +3695,10 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "ToggleDeformVertexes", makeCallbackF( DeformVertexes_toggle ), ToggleItem::AddCallbackCaller( g_deformVertexes_item ) ); // KenRadiant
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrEngineShift", IntImportStringCaller( g_krEngineShift ), IntExportStringCaller( g_krEngineShift ) );
+	GlobalPreferenceSystem().registerPreference( "KrEngineGamma", FloatImportStringCaller( g_krEngineGamma ), FloatExportStringCaller( g_krEngineGamma ) );
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
-	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount1024", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount2048", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );

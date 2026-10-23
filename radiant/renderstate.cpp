@@ -496,7 +496,9 @@ KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
-int g_krPreviewLightCount = 1024;
+int g_krPreviewLightCount = 2048;
+int g_krEngineShift = 1;
+float g_krEngineGamma = 1;
 int g_krMaxPreviewLightsGPU = int( c_krMaxPreviewLights );
 unsigned int g_krLightTex = 0;
 Vector3 g_krGridMin( 0, 0, 0 );
@@ -535,6 +537,7 @@ public:
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
+	GLint u_overbright, u_rgamma;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -557,7 +560,7 @@ public:
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
-		u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
@@ -647,6 +650,8 @@ public:
 		gl().glUniformMatrix3fv( u_eye2world, 1, GL_FALSE, m3 );
 		gl().glUniform3f( u_cam_world, g_krEye2World[12], g_krEye2World[13], g_krEye2World[14] );
 		// compile settings preview
+		gl().glUniform1f( u_overbright, float( 1 << std::clamp( g_krEngineShift, 0, 2 ) ) );
+		gl().glUniform1f( u_rgamma, std::clamp( g_krEngineGamma, 0.5f, 3.f ) );
 		const bool c = g_krCompile.enabled;
 		gl().glUniform1f( u_gamma, c ? std::max( 0.1f, g_krCompile.gamma ) : 1.f );
 		gl().glUniform1f( u_compensate, c ? std::max( 0.1f, g_krCompile.compensate ) : 1.f );

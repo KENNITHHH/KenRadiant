@@ -118,7 +118,9 @@ class SunCalibrator : public QDialog
 	KrValue m_compensate{ 0.5f, 4, 0.05f, 2 };
 	KrValue m_saturation{ 0, 2, 0.05f, 2 };
 	KrValue m_bounce{ 0, 8, 1, 0 };
-	KrValue m_lightCount{ 1, 1024, 1, 0 };
+	KrValue m_lightCount{ 1, 2048, 1, 0 };
+	KrValue m_engineShift{ 0, 2, 1, 0 };
+	KrValue m_engineGamma{ 0.5f, 3, 0.05f, 2 };
 	KrValue m_shadowedLights{ 0, 8, 1, 0 };
 
 	static QWidget* row( std::initializer_list<QWidget*> widgets ){
@@ -390,7 +392,7 @@ public:
 			auto *group = new QGroupBox( "Lights" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
-			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 1024. Each spot only adds up the 32 strongest lights that reach it", [this](){
+			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 2048. Each spot only adds up the 48 strongest lights that reach it", [this](){
 				g_krPreviewLightCount = int( m_lightCount.value() );
 				KrLightPreview_redraw();
 			} );
@@ -432,6 +434,23 @@ public:
 			grid->addLayout( buttons, r++, 0, 1, 3 );
 			vbox->addWidget( group );
 		}
+		{
+			auto *group = new QGroupBox( "Game look (how SOF2 shows the lightmaps)" );
+			auto *grid = new QGridLayout( group );
+			int r = 0;
+			addValue( grid, r, "Overbright", m_engineShift, "r_mapOverBrightBits minus r_overBrightBits: 1 = SOF2 in fullscreen (lightmaps x2, the default look), "
+			          "0 = windowed / no hardware gamma (x1, darker), 2 = x4 (washed out)", [this](){
+				g_krEngineShift = int( m_engineShift.value() );
+				KrLightPreview_redraw();
+			} );
+			addValue( grid, r, "r_gamma", m_engineGamma, "The game's r_gamma (1 = default); above 1 brightens the whole picture like in game", [this](){
+				g_krEngineGamma = m_engineGamma.value();
+				KrLightPreview_redraw();
+			} );
+			vbox->addWidget( group );
+		}
+		m_engineShift.set( float( g_krEngineShift ) );
+		m_engineGamma.set( g_krEngineGamma );
 		refresh();
 	}
 

@@ -29,6 +29,8 @@
 #include <QFileInfo>
 #include <vector>
 #include <functional>
+#include <memory>
+#include <map>
 
 #include "commands.h"
 #include "preferencesystem.h"
@@ -38,6 +40,9 @@
 #include "mainframe.h"
 #include "map.h"
 #include "math/vector.h"
+#include "kr_compile_flags.h"
+#include <QToolButton>
+#include <QScrollArea>
 
 void Build_setPreset( const char* name, const std::vector<CopiedString>& commands );
 bool Build_runPreset( const char* name );
@@ -61,6 +66,7 @@ struct CompileOptions
 	int bounce = 2;
 	float gamma = 1, compensate = 1;
 	CopiedString extraBsp, extraVis, extraLight;
+	CopiedString advBsp, advVis, advLight; // ticked "all options": "flag=value;flag=;..."
 	bool runGame = false;
 	CopiedString gameExe = "SoF2MP.exe";
 	CopiedString gameArgs = "+set sv_pure 0 +set developer 1 +devmap %mapname%";
@@ -68,6 +74,18 @@ struct CompileOptions
 CompileOptions g_options;
 
 const char* const c_presetName = "KenRadiant: (Compile window)";
+
+/// the ticked entries of a stage's "all options" list
+QString Compile_advanced( const CopiedString& adv ){
+	QString out;
+	for( const QString& line : QString( adv.c_str() ).split( ';', Qt::SkipEmptyParts ) ){
+		const QStringList p = line.split( '=' );
+		out += ' ' + p[0];
+		if( p.size() > 1 && !p[1].trimmed().isEmpty() )
+			out += ' ' + p[1].trimmed();
+	}
+	return out;
+}
 
 QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>* commands ){
 	QStringList lines;
@@ -91,6 +109,7 @@ QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>
 			if( o.nodetail ) c += " -nodetail";
 			if( o.notjunc ) c += " -notjunc";
 		}
+		if( !onlyents ) c += Compile_advanced( o.advBsp );
 		add( c, o.extraBsp );
 	}
 	if( o.vis && !onlyents ){
@@ -98,6 +117,7 @@ QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>
 		if( o.saveprt ) c += " -saveprt";
 		if( o.visFast ) c += " -fast";
 		if( o.nopassage ) c += " -nopassage";
+		c += Compile_advanced( o.advVis );
 		add( c, o.extraVis );
 	}
 	if( o.light ){
@@ -115,6 +135,7 @@ QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>
 		if( o.nomerge ) c += " -nomerge";
 		if( o.gamma != 1 ) c += QString( " -gamma %1" ).arg( o.gamma, 0, 'g', 3 );
 		if( o.compensate != 1 ) c += QString( " -compensate %1" ).arg( o.compensate, 0, 'g', 3 );
+		c += Compile_advanced( o.advLight );
 		add( c, o.extraLight );
 	}
 	return lines.join( '\n' );
@@ -313,6 +334,88 @@ class CompileDialog : public QDialog
 		m_tabs->addTab( w, title );
 		return grid;
 	}
+	/// every other q3map2 option of the stage (from q3map2's own help), folded away under a button
+	template<std::size_t N>
+	void advanced( QGridLayout* g, int row, const KrCompileFlag ( &flags )[N], CopiedString& adv ){
+		auto *toggle = new QToolButton;
+		toggle->setText( QString( "All %1 q3map2 options" ).arg( N ) );
+		toggle->setCheckable( true );
+		toggle->setArrowType( Qt::RightArrow );
+		toggle->setToolButtonStyle( Qt::ToolButtonTextBesideIcon );
+		toggle->setAutoRaise( true );
+		hint( toggle, "Every other option of this stage, with q3map2's own description (point at one). Ticked ones are added to the command." );
+		auto *area = new QScrollArea;
+		area->setWidgetResizable( true );
+		area->setVisible( false );
+		auto *inner = new QWidget;
+		auto *grid = new QGridLayout( inner );
+		grid->setVerticalSpacing( 2 );
+		area->setWidget( inner );
+		QObject::connect( toggle, &QToolButton::toggled, [toggle, area]( bool on ){
+			toggle->setArrowType( on ? Qt::DownArrow : Qt::RightArrow );
+			area->setVisible( on );
+		} );
+		g->addWidget( toggle, row, 0, 1, 3 );
+		g->addWidget( area, row + 1, 0, 1, 3 );
+		g->setRowStretch( row + 1, 1 );
+		struct Item{ QCheckBox* box; QLineEdit* value; const char* flag; };
+		auto items = std::make_shared<std::vector<Item>>();
+		const auto store = [this, items, &adv](){
+			QString text;
+			for( const Item& it : *items )
+				if( it.box->isChecked() )
+					text += QString( it.flag ) + '=' + ( it.value != nullptr ? it.value->text().trimmed().replace( ';', ' ' ) : QString() ) + ';';
+			adv = text.toLatin1().constData();
+			changed();
+		};
+		constexpr int columns = 4;
+		for( std::size_t i = 0; i < N; ++i ){
+			const KrCompileFlag& f = flags[i];
+			auto *cell = new QWidget;
+			auto *h = new QHBoxLayout( cell );
+			h->setContentsMargins( 0, 0, 0, 0 );
+			auto *box = new QCheckBox( QString( f.flag ).mid( 1 ) );
+			h->addWidget( box );
+			QLineEdit* value = nullptr;
+			if( !string_empty( f.arg ) ){
+				value = new QLineEdit;
+				value->setPlaceholderText( f.arg );
+				value->setMaximumWidth( 70 );
+				value->installEventFilter( &m_keepKeys );
+				h->addWidget( value );
+				QObject::connect( value, &QLineEdit::textEdited, [box, store]( const QString& t ){
+					if( !t.isEmpty() && !box->isChecked() )
+						box->setChecked( true ); // typing a value ticks it
+					else
+						store();
+				} );
+			}
+			h->addStretch();
+			const QString help = QString( "%1 %2 - %3" ).arg( f.flag, f.arg, f.help );
+			hint( box, help );
+			if( value != nullptr )
+				hint( value, help );
+			QObject::connect( box, &QCheckBox::toggled, [store]( bool ){ store(); } );
+			items->push_back( { box, value, f.flag } );
+			grid->addWidget( cell, int( i ) / columns, int( i ) % columns );
+		}
+		m_loaders.push_back( [items, &adv](){
+			std::map<QString, QString> on;
+			for( const QString& line : QString( adv.c_str() ).split( ';', Qt::SkipEmptyParts ) ){
+				const QStringList p = line.split( '=' );
+				on[p[0]] = p.size() > 1 ? p[1] : QString();
+			}
+			for( const Item& it : *items ){
+				const QSignalBlocker b( it.box );
+				const auto found = on.find( it.flag );
+				it.box->setChecked( found != on.end() );
+				if( it.value != nullptr ){
+					const QSignalBlocker b2( it.value );
+					it.value->setText( found != on.end() ? found->second : QString() );
+				}
+			}
+		} );
+	}
 	void load(){
 		for( auto& f : m_loaders )
 			f();
@@ -321,6 +424,7 @@ class CompileDialog : public QDialog
 	void preset( int which ){
 		CompileOptions p;
 		p.extraBsp = o.extraBsp; p.extraVis = o.extraVis; p.extraLight = o.extraLight;
+		p.advBsp = o.advBsp; p.advVis = o.advVis; p.advLight = o.advLight;
 		p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
 		switch( which ){
 		case 0: p.visFast = true; p.quality = 0; p.super = 1; p.filter = false; p.bounce = 0; break;  // quick test
@@ -390,7 +494,7 @@ public:
 			check( g, 2, 0, "No T-junction fix (-notjunc)", o.notjunc, "Skips fixing T-junctions. Faster, but sparkles / cracks can appear between faces. Testing only." );
 			spin( g, 2, 1, "Lightmap texel (-samplesize)", o.samplesize, 0, 128, "default 16", "World units per lightmap pixel for the whole map. Lower = sharper shadows, bigger lightmaps, slower light (8 sharp, 32 soft)." );
 			text( g, 3, "Extra options", o.extraBsp, "Anything else for the BSP stage, as on the command line." );
-			g->setRowStretch( 4, 1 );
+			advanced( g, 4, c_krFlags_bsp, o.advBsp );
 		}
 		{
 			QGridLayout* g = page( "VIS" );
@@ -398,7 +502,7 @@ public:
 			check( g, 0, 1, "Keep portals (-saveprt)", o.saveprt, "Keeps the .prt file to look at the portals (Plugins > Prtview) when placing hint brushes." );
 			check( g, 0, 2, "No passage vis (-nopassage)", o.nopassage, "Uses the older, slower vis method. Only if passage vis gives you wrong visibility." );
 			text( g, 1, "Extra options", o.extraVis, "Anything else for the VIS stage." );
-			g->setRowStretch( 2, 1 );
+			advanced( g, 2, c_krFlags_vis, o.advVis );
 		}
 		{
 			QGridLayout* g = page( "LIGHT" );
@@ -416,7 +520,7 @@ public:
 			dspin( g, 3, 1, "Gamma (-gamma)", o.gamma, "Above 1 brightens dark and mid tones (1 = unchanged). The Sun Calibrator previews it." );
 			dspin( g, 3, 2, "Compensate (-compensate)", o.compensate, "Divides the lightmap brightness (1 = unchanged). With gamma, keeps bright spots from clipping." );
 			text( g, 4, "Extra options", o.extraLight, "Anything else for the LIGHT stage, e.g. -lightmapsize 256." );
-			g->setRowStretch( 5, 1 );
+			advanced( g, 5, c_krFlags_light, o.advLight );
 		}
 		{
 			QGridLayout* g = page( "Game" );
@@ -647,6 +751,7 @@ void KrCompile_registerCommands(){
 	prefB( "KrCompileShade", o.shade ); prefB( "KrCompileNocollapse", o.nocollapse );
 	prefB( "KrCompileNomerge", o.nomerge ); prefI( "KrCompileBounce", o.bounce );
 	prefF( "KrCompileGamma", o.gamma ); prefF( "KrCompileCompensate", o.compensate );
+	prefS( "KrCompileAdvBsp", o.advBsp ); prefS( "KrCompileAdvVis", o.advVis ); prefS( "KrCompileAdvLight", o.advLight );
 	prefS( "KrCompileExtraBsp", o.extraBsp ); prefS( "KrCompileExtraVis", o.extraVis ); prefS( "KrCompileExtraLight", o.extraLight );
 	prefB( "KrCompileRunGame", o.runGame ); prefS( "KrCompileGameExe", o.gameExe ); prefS( "KrCompileGameArgs", o.gameArgs );
 }

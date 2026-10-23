@@ -1,15 +1,15 @@
 // KenRadiant live light preview: texture * ( ambient + shadowed sun + point lights ), lights in eye space
 uniform sampler2D u_tex;
-// lights (up to 1024) in a float texture: 4 texels per light ( world position, falloff ), ( colour, reach² ),
+// lights (up to 2048) in a float texture: 4 texels per light ( world position, falloff ), ( colour, reach² ),
 // ( spot direction, spot radius by distance ), ( no angle attenuation, _anglescale ); then a 20 x 20 x 10 grid of
-// 256-unit cells around the camera, each with the 32 strongest lights that reach it (-1 = end of the list)
+// 256-unit cells around the camera, each with the 48 strongest lights that reach it (-1 = end of the list)
 uniform sampler2D u_lights;
 uniform int u_has_lights;
 uniform vec3 u_grid_min;
 uniform vec3 u_cam_world; // camera position: world = u_eye2world * eye + u_cam_world (models are drawn in their own space)
 vec3 g_wp;
 #define KR_TW 1024.0
-#define KR_LIGHTS_TEXELS 4096.0
+#define KR_LIGHTS_TEXELS 8192.0
 #define KR_GRID vec3( 20.0, 20.0, 10.0 )
 #define KR_CELL 256.0
 uniform vec3 u_sun_dir;
@@ -51,6 +51,8 @@ uniform float u_gamma;
 uniform float u_compensate;
 uniform float u_saturation;
 uniform vec3 u_bounce;
+uniform float u_overbright; // 2 ^ ( r_mapOverBrightBits - r_overBrightBits ): 2 in SOF2 fullscreen
+uniform float u_rgamma;     // r_gamma
 uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = fullbright glow
 
 varying vec3 v_pos;
@@ -79,7 +81,7 @@ vec4 terrainColour(){
 	return vec4( c.rgb / max( w.r + w.g + w.b + w.a, 0.001 ), 1.0 );
 }
 
-#define KR_TH 36.0
+#define KR_TH 55.0
 vec4 lightTexel( float t ){
 	float y = floor( t / KR_TW );
 	return texture2D( u_lights, vec2( ( t - y * KR_TW + 0.5 ) / KR_TW, ( y + 0.5 ) / KR_TH ) );
@@ -213,9 +215,9 @@ void main()
 	if( u_has_lights != 0 ){
 		g_wp = u_eye2world * v_pos + u_cam_world;
 		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );
-		float base = KR_LIGHTS_TEXELS + ( cellf.x + KR_GRID.x * ( cellf.y + KR_GRID.y * cellf.z ) ) * 8.0;
+		float base = KR_LIGHTS_TEXELS + ( cellf.x + KR_GRID.x * ( cellf.y + KR_GRID.y * cellf.z ) ) * 12.0;
 		bool done = false;
-		for( int k = 0; k < 8 && !done; ++k ){
+		for( int k = 0; k < 12 && !done; ++k ){
 			vec4 ids = lightTexel( base + float( k ) );
 			for( int j = 0; j < 4; ++j ){
 				float id = j == 0 ? ids.x : j == 1 ? ids.y : j == 2 ? ids.z : ids.w;
@@ -235,9 +237,9 @@ void main()
 	light = max( mix( vec3( grey ), light, u_saturation ), vec3( 0.0 ) );
 	// the engine doubles the lightmap (overbright shift) and clamps it keeping the colour: a fully lit surface
 	// shows its texture as it is, never washed out to white
-	vec3 shown = light * 2.0;
+	vec3 shown = light * u_overbright;
 	float peak = max( shown.r, max( shown.g, shown.b ) );
 	if( peak > 1.0 )
 		shown /= peak;
-	gl_FragColor = vec4( tex.rgb * shown, tex.a * gl_Color.a );
+	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ), tex.a * gl_Color.a );
 }

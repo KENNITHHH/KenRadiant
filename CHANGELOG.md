@@ -3,6 +3,13 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (13)
+### Editor
+- **Compile window: every q3map2 option**: each tab (BSP, VIS, LIGHT) has *All N q3map2 options* - every other option of that stage as a compact grid of ticks with value boxes (typing a value ticks it), described by q3map2's own help text when you point at it (95 for LIGHT, 43 for BSP).
+- **Game look** (Sun Calibrator / Light Preview Settings): *Overbright* (r_mapOverBrightBits - r_overBrightBits: 1 = SOF2 fullscreen, the default; 0 = windowed / no hardware gamma, darker) and *r_gamma*, so the preview can match how you play.
+- **Up to 2048 preview lights**, each spot adds up the 48 strongest.
+- New claw-hammer icon for the Compile window.
+
 ## Build 2026-10-24 (12)
 ### Editor
 - **Up to 1024 preview lights** (default 1024, Sun Calibrator → Lights): the lights now live in a texture and each spot of the screen only adds up the 32 strongest lights that reach it (a 256-unit grid around the camera), so many lights stay fast. The 8 nearest still cast shadows.
