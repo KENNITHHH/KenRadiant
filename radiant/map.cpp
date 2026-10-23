@@ -1251,6 +1251,8 @@ void Map_Rename( const char* filename ){
 
 bool Map_Save(){
 	Pointfile_Clear();
+	extern void KrTerrain_saveAll();
+	KrTerrain_saveAll(); // KenRadiant: painted terrain index maps (.pcx)
 
 	ScopeTimer timer( "map save" );
 	SaveReferences();

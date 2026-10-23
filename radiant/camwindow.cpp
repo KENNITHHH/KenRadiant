@@ -26,6 +26,7 @@
 //
 
 #include "camwindow.h"
+#include "kr_terrain.h"
 #include "modelwindow.h"
 #include <optional>
 #include "selection_.h"
@@ -1718,7 +1719,17 @@ protected:
 	DeviceVector measureEpsilon() const {
 		return DeviceVector( 4.f / ( width() * m_scale ), 4.f / ( height() * m_scale ) );
 	}
+	void terrainPaint( int phase, const QMouseEvent *event ){
+		const DeviceVector d = deviceFor( event ), e = measureEpsilon();
+		KrTerrainPaint_mouse( phase, m_camwnd.getView(), d.x(), d.y(), e.x(), e.y() );
+	}
 	void mousePressEvent( QMouseEvent *event ) override {
+		if( KrTerrainPaint_active() && !m_camwnd.m_bFreeMove && event->button() == Qt::LeftButton ){ // KenRadiant terrain paint
+			setFocus();
+			m_krPainting = true;
+			terrainPaint( 0, event );
+			return;
+		}
 		if( g_krMeasure && !m_camwnd.m_bFreeMove && event->button() == Qt::LeftButton ){ // KenRadiant measure tool
 			setFocus();
 			if( const auto p = Measure_point( m_camwnd.getView(), deviceFor( event ), measureEpsilon(), event->modifiers() & Qt::ShiftModifier ) ){
@@ -1762,7 +1773,13 @@ protected:
 		}
 		mousePressEvent( event );
 	}
+	bool m_krPainting = false;
 	void mouseMoveEvent( QMouseEvent *event ) override {
+		if( KrTerrainPaint_active() && !m_camwnd.m_bFreeMove ){
+			terrainPaint( m_krPainting ? 1 : 3, event );
+			if( m_krPainting )
+				return;
+		}
 		if( g_krMeasure && !m_camwnd.m_bFreeMove && s_measureCount == 1 ){
 			if( const auto p = Measure_point( m_camwnd.getView(), deviceFor( event ), measureEpsilon(), event->modifiers() & Qt::ShiftModifier ) ){
 				s_measureB = *p;
@@ -1781,6 +1798,11 @@ protected:
 	}
 	bool m_krSwallowRelease = false;
 	void mouseReleaseEvent( QMouseEvent *event ) override {
+		if( m_krPainting && event->button() == Qt::LeftButton ){
+			m_krPainting = false;
+			terrainPaint( 2, event );
+			return;
+		}
 		if( m_krSwallowRelease && event->button() == Qt::LeftButton ){
 			m_krSwallowRelease = false;
 			return;
@@ -1949,6 +1971,7 @@ void CamWnd::DisableFreeMove(){
 
 #include "renderer.h"
 
+#include "ishaders.h"
 class CamRenderer : public Renderer
 {
 	struct state_type
@@ -1958,6 +1981,7 @@ class CamRenderer : public Renderer
 		unsigned int m_highlight;
 		Shader* m_state;
 		const LightList* m_lights;
+		Shader* m_terrain = nullptr; // KenRadiant: index-map terrain state for q3map_terrain faces
 	};
 
 	std::vector<state_type> m_state_stack;
@@ -1984,8 +2008,13 @@ public:
 	void SetState( Shader* state, EStyle style ) override {
 		ASSERT_NOTNULL( state );
 		if ( style == eFullMaterials ) {
+			if ( m_state_stack.back().m_terrain != nullptr && ( state->getFlags() & QER_KR_TERRAIN ) )
+				state = m_state_stack.back().m_terrain; // KenRadiant: the layers blended by the index map
 			m_state_stack.back().m_state = state;
 		}
+	}
+	void KrSetTerrain( Shader* terrain ) override {
+		m_state_stack.back().m_terrain = terrain;
 	}
 	EStyle getStyle() const override {
 		return eFullMaterials;
@@ -2078,6 +2107,7 @@ void ShowSize3dToggle(){
 }
 
 #include "kr_lightpreview.h"
+#include "kr_terrain.h"
 #include "stringio.h"
 #include "ientity.h"
 #include "ishaders.h"
@@ -2243,12 +2273,18 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 /// only opaque textured surfaces go to the shadow map (no entity boxes, overlays, sky, translucent)
 class ShadowRenderer : public Renderer
 {
-	struct State{ Shader* shader = nullptr; bool noShadow = false; };
+	struct State{ Shader* shader = nullptr; bool noShadow = false; Shader* terrain = nullptr; };
 	std::vector<State> m_stack{ State() };
 public:
 	void SetState( Shader* state, EStyle style ) override {
-		if ( style == eFullMaterials )
+		if ( style == eFullMaterials ){
 			m_stack.back().shader = Shader_castsShadow( state ) ? state : nullptr;
+			if ( m_stack.back().shader != nullptr && m_stack.back().terrain != nullptr && ( state->getFlags() & QER_KR_TERRAIN ) )
+				m_stack.back().shader = m_stack.back().terrain; // opaque terrain state (the tool shader writes no depth)
+		}
+	}
+	void KrSetTerrain( Shader* terrain ) override {
+		m_stack.back().terrain = terrain;
 	}
 	EStyle getStyle() const override { return eFullMaterials; }
 	void PushState() override { m_stack.push_back( m_stack.back() ); }
@@ -2927,6 +2963,7 @@ void CamWnd::Cam_Draw(){
 		}
 	}
 
+	KrTerrainPaint_drawOverlay( matrix4_multiplied_by_matrix4( m_Camera.projection, m_Camera.modelview ), m_Camera.width, m_Camera.height );
 	// KenRadiant measure tool: line between the two points, length on it
 	if( g_krMeasure && s_measureCount != 0 ){
 		const Matrix4 world2screen = matrix4_multiplied_by_matrix4( m_Camera.projection, m_Camera.modelview );
@@ -3389,6 +3426,8 @@ void CamWnd_Construct(){
 	extern void KrCheckProblems_show();
 	GlobalCommands_insert( "BrushShapes", makeCallbackF( KrBrushShapes_show ) ); // KenRadiant
 	GlobalCommands_insert( "CheckForProblems", makeCallbackF( KrCheckProblems_show ), QKeySequence( "Ctrl+Alt+P" ) ); // KenRadiant (Hammer: Alt+P, which opens the Plugins menu here)
+	extern void KrTerrain_registerCommands();
+	KrTerrain_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

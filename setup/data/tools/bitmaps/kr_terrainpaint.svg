@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: terrain paint (brush over hills) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 8,112 C 28,80 44,84 60,96 C 76,108 92,76 120,88" style="fill:none;stroke:#60b040;stroke-width:8;stroke-linecap:round" />
+  <path d="M 96,12 116,32 72,76 52,56 Z" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 52,56 C 36,60 34,72 30,84 C 44,82 56,82 72,76" style="fill:#c08040;stroke:#c08040;stroke-width:4;stroke-linejoin:round" />
+</svg>

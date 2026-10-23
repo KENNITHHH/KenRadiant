@@ -98,6 +98,7 @@ public:
 	const struct KrShaderEffects* m_krFx = nullptr;
 	bool m_krEmissive = false;
 	bool m_krOffsetFill = false;   // polygon offset fill (selection tint)
+	int m_krTerrain = -1;          // index-map terrain (KrTerrain_gl id)
 	bool m_krMatrix = false;       // (current state only) texture matrix of unit 0 is not identity
 	bool m_krPolygonOffset = false; // (current state only) GL_POLYGON_OFFSET_FILL on
 

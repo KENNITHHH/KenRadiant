@@ -3,6 +3,12 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-23 (9)
+### Editor
+- **Terrain blending in the 3D view**: q3map2 index-map terrain (a func_group with `alphamap` / `_indexmap` .pcx, `layers` and `shader`, faces with a `q3map_terrain` shader such as `textures/tools/_terrain`) shows its layers `textures/<shader>_0 ... _3` blended by the index map, with each layer's `tcMod scale`, lit by the live light preview too. The terrain stays visible in Game View.
+- **Terrain Paint** (toolbar button): left-drag on the terrain in the 3D view paints the chosen layer into the index map (radius slider, green circle = on a terrain). Ctrl+Z / Ctrl+Y per stroke. The .pcx is saved when you save the map (or with *Save index maps now*), q3map2 reads it as before.
+- **Make terrain**: in the Terrain Paint window, select brushes in a func_group, pick a layer shader set (found automatically: shaders with `_0`, `_1` ...) and an index map size; KenRadiant sets the keys, gives the faces `textures/tools/_terrain` and starts a new index map (`maps/<map>_terrainN.pcx`).
+
 ## Build 2026-10-23 (8)
 ### Editor
 - **Brush Shapes** (toolbar button / Misc → Brush Shapes): Unreal-style geometry presets - Box (hollow), Cone (hollow with cap Z), Cylinder (hollow), Curved Stair, Linear Stair, Spiral Stair (sloped floor / ceiling), Sphere (tessellation 0-3). Created on the surface in the middle of the 3D view with the selected texture (caulk if none); sliders update the last created shape live until you edit something else. One Ctrl+Z removes it.

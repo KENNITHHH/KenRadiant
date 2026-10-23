@@ -887,6 +887,7 @@ $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/camwindow.o \
 	radiant/kr_suncalibrator.o \
 	radiant/kr_tools.o \
+	radiant/kr_terrain.o \
 	radiant/clippertool.o \
 	radiant/colors.o \
 	radiant/commands.o \

@@ -56,6 +56,9 @@ public:
 	virtual void setLights( const LightList& lights ){
 	}
 	virtual void addRenderable( const OpenGLRenderable& renderable, const Matrix4& world ) = 0;
+	/// KenRadiant: inside a q3map2 index-map terrain entity: its q3map_terrain faces use this state (nullptr = none)
+	virtual void KrSetTerrain( Shader* terrain ){
+	}
 };
 
 class VolumeTest;

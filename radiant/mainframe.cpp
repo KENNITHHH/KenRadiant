@@ -1509,6 +1509,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_button( toolbar, "Drop to floor (End)", "kr_droptofloor.png", "DropSelectionToFloor" );
 	toolbar_append_toggle_button( toolbar, "Measure: click two points on surfaces in the 3D view to see the distance (Shift: snap to grid)", "kr_measure.png", "ToggleMeasure" );
 	toolbar_append_button( toolbar, "Brush Shapes: box, cone, cylinder, stairs, sphere (like Unreal's geometry brushes)", "kr_shapes.png", "BrushShapes" );
+	toolbar_append_toggle_button( toolbar, "Terrain Paint: paint the layers of q3map2 index-map terrain (alphamap .pcx) in the 3D view", "kr_terrainpaint.png", "ToggleTerrainPaint" );
 	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by the grid size", "kr_bevel.png", "BrushBevel" );
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );

@@ -442,6 +442,7 @@ GLSLSkyboxProgram g_skyboxGLSL;
 
 /* KenRadiant live light preview */
 #include "kr_lightpreview.h"
+#include "kr_terrain.h"
 bool g_krLightPreview = false;
 bool g_krLightPreviewDrawing = false;
 Matrix4 g_krLightPreviewView = g_matrix4_identity;
@@ -495,6 +496,7 @@ public:
 	GLint u_sky, u_minlight;
 	GLint u_tex, u_count, u_pos, u_col, u_rad, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
+	GLint u_terrain, u_tmins, u_tsize, u_tscale;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -511,6 +513,7 @@ public:
 		gl().glUseProgram( m_program );
 		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_pos = u( "u_pos" ); u_col = u( "u_col" ); u_rad = u( "u_rad" );
 		u_sky = u( "u_sky" ); u_minlight = u( "u_minlight" );
+		u_terrain = u( "u_terrain" ); u_tmins = u( "u_tmins" ); u_tsize = u( "u_tsize" ); u_tscale = u( "u_tscale" );
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
@@ -523,6 +526,11 @@ public:
 		gl().glUniform1i( u( "u_cube1" ), 9 );
 		gl().glUniform1i( u( "u_cube2" ), 10 );
 		gl().glUniform1i( u( "u_cube3" ), 11 );
+		gl().glUniform1i( u( "u_tidx" ), 1 ); // terrain: index map, layers on 2-5
+		gl().glUniform1i( u( "u_tl0" ), 2 );
+		gl().glUniform1i( u( "u_tl1" ), 3 );
+		gl().glUniform1i( u( "u_tl2" ), 4 );
+		gl().glUniform1i( u( "u_tl3" ), 5 );
 		gl().glUniform1i( u( "u_cube4" ), 12 );
 		gl().glUniform1i( u( "u_cube5" ), 13 );
 		gl().glUniform1i( u( "u_cube6" ), 14 );
@@ -605,9 +613,24 @@ public:
 		const KrShaderEffects* fx = state.m_krFx;
 		const bool turb = fx != nullptr && fx->turb && g_krAnimateShaders;
 		const int deform = fx != nullptr && g_krDeformVertexes ? fx->deform : 0;
-		bind( m_preview || turb || deform != 0 );
+		const KrTerrainGL* terrain = state.m_krTerrain >= 0 && ( globalstate & RENDER_TEXTURE ) ? KrTerrain_gl( state.m_krTerrain ) : nullptr;
+		bind( m_preview || turb || deform != 0 || terrain != nullptr );
 		if( !m_bound )
 			return;
+		gl().glUniform1i( u_terrain, terrain != nullptr ? terrain->layers : 0 );
+		if( terrain != nullptr ){
+			gl().glActiveTexture( GL_TEXTURE1 );
+			gl().glBindTexture( GL_TEXTURE_2D, terrain->indexTex );
+			for( int k = 0; k < 4; ++k ){
+				gl().glActiveTexture( GL_TEXTURE2 + k );
+				gl().glBindTexture( GL_TEXTURE_2D, k < terrain->layers ? terrain->layerTex[k] : 0 );
+			}
+			gl().glActiveTexture( GL_TEXTURE0 );
+			const Vector3 size = terrain->maxs - terrain->mins;
+			gl().glUniform2f( u_tmins, terrain->mins.x(), terrain->mins.y() );
+			gl().glUniform2f( u_tsize, std::max( size.x(), 1.f ), std::max( size.y(), 1.f ) );
+			gl().glUniform2fv( u_tscale, 4, &terrain->layerScale[0][0] );
+		}
 		if( turb || deform != 0 )
 			g_krAnimatedDrawn = true;
 		gl().glUniform1i( u_mode, m_preview ? ( state.m_krEmissive && g_krGlow ? 2 : 1 ) : 0 );
@@ -2075,6 +2098,15 @@ void OpenGLShader::construct( const char* name ){
 			state.m_sort = OpenGLState::eSortHighlight;
 			state.m_depthfunc = GL_LEQUAL;
 		}
+		else if ( string_equal_n( name + 1, "KR_TERRAIN ", 11 ) ) { // KenRadiant: index-map terrain, layers blended by the program
+			state.m_krTerrain = atoi( name + 12 );
+			state.m_state = RENDER_FILL | RENDER_TEXTURE | RENDER_DEPTHTEST | RENDER_DEPTHWRITE | RENDER_COLOURWRITE | RENDER_LIGHTING | RENDER_SMOOTH | RENDER_CULLFACE | RENDER_PROGRAM;
+			state.m_program = &g_krLightGLSL;
+			state.m_colour = Vector4( 1, 1, 1, 1 );
+			state.m_sort = OpenGLState::eSortFullbright;
+			if( const KrTerrainGL* t = KrTerrain_gl( state.m_krTerrain ) )
+				state.m_texture = t->layerTex[0];
+		}
 		else if ( string_equal( name + 1, "KR_MASK" ) ) { // KenRadiant: selection silhouette mask for the outline
 			state.m_colour = Vector4( 1, 1, 1, 1 );
 			state.m_state = RENDER_FILL | RENDER_COLOURWRITE;
@@ -2394,6 +2426,8 @@ bool Shader_castsShadow( Shader* shader ){
 	const int flags = glshader->getShader().getFlags();
 	if( const KrShaderEffects* fx = glshader->getShader().getEffects(); fx != nullptr && fx->deform != 0 )
 		return false; // moving surfaces (water waves) would shadow themselves
+	if( flags & QER_KR_TERRAIN )
+		return true; // q3map_terrain faces: the terrain (its tool shader is translucent in the editor only)
 	if( flags & QER_KR_LIGHTPASS )
 		return false; // tools q3map2 lets light through: clip, hint, skip, ladder, water ...
 	return !( flags & ( QER_SKY | QER_TRANS | QER_FOG ) ) || ( flags & QER_ALPHATEST ); // masked foliage casts cut-out shadows

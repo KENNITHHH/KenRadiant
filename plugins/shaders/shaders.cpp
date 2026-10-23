@@ -1452,6 +1452,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				Tokeniser_getFloat( tokeniser, m_skyLight );
 				Tokeniser_getFloat( tokeniser, m_skyIterations );
 			}
+			else if ( string_equal_nocase( token, "q3map_terrain" ) || string_equal_nocase( token, "q3map_indexed" ) ) {
+				m_nFlags |= QER_KR_TERRAIN;
+			}
 			else if ( string_equal_nocase( token, "polygonOffset" ) ) {
 				m_krFx.polygonOffset = true;
 			}

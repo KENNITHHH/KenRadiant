@@ -28,6 +28,7 @@
 #include "scenelib.h"
 #include "math/frustum.h"
 #include "ientity.h"
+#include "kr_terrain.h"
 #include "string/string.h"
 #include <vector>
 
@@ -159,8 +160,12 @@ public:
 
 			if ( Node_isBrush( path.top() ) || Node_isPatch( path.top() ) )
 				m_renderer.Highlight( Renderer::eKrBrushLike );
-			else if ( const Entity* entity = Node_getEntity( path.top() ); entity != nullptr && !KrEntity_castsShadows( *entity ) )
-				m_renderer.Highlight( Renderer::eKrNoShadow );
+			else if ( const Entity* entity = Node_getEntity( path.top() ); entity != nullptr ){
+				if ( !KrEntity_castsShadows( *entity ) )
+					m_renderer.Highlight( Renderer::eKrNoShadow );
+				if ( entity->isContainer() && ( !string_empty( entity->getKeyValue( "alphamap" ) ) || !string_empty( entity->getKeyValue( "_indexmap" ) ) ) )
+					m_renderer.KrSetTerrain( KrTerrain_state( path.top(), *entity ) );
+			}
 			if ( Instance_isSelected( instance ) ) {
 				if ( GlobalSelectionSystem().Mode() != SelectionSystem::eComponent ) {
 					m_renderer.Highlight( Renderer::eFace );

@@ -1105,12 +1105,13 @@ class filter_face_flags : public FaceFilter
 {
 	int m_flags;
 	int m_required; // KenRadiant: these must be set too
+	int m_forbidden; // KenRadiant: and these not
 public:
-	filter_face_flags( int flags, int required = 0 ) : m_flags( flags ), m_required( required ){
+	filter_face_flags( int flags, int required = 0, int forbidden = 0 ) : m_flags( flags ), m_required( required ), m_forbidden( forbidden ){
 	}
 	bool filter( const Face& face ) const override {
 		const int flags = face.getShader().shaderFlags();
-		return ( flags & m_flags ) != 0 && ( flags & m_required ) == m_required;
+		return ( flags & m_flags ) != 0 && ( flags & m_required ) == m_required && ( flags & m_forbidden ) == 0;
 	}
 };
 
@@ -1259,7 +1260,7 @@ filter_face_shader g_filter_face_areaportal_sof2( "textures/tools/_areaportal" )
 filter_brush_any_face g_filter_brush_areaportal_sof2( &g_filter_face_areaportal_sof2 );
 filter_face_shader g_filter_face_clusterportal_sof2( "textures/tools/_clusterportal" );
 filter_brush_all_faces g_filter_brush_clusterportal_sof2( &g_filter_face_clusterportal_sof2 );
-filter_face_flags g_filter_face_nodraw( QER_NODRAW );
+filter_face_flags g_filter_face_nodraw( QER_NODRAW, 0, QER_KR_TERRAIN ); // KenRadiant: q3map_terrain faces are the visible terrain
 filter_brush_all_faces g_filter_brush_nodraw( &g_filter_face_nodraw );
 
 filter_face_flags g_filter_face_sky( QER_SKY );

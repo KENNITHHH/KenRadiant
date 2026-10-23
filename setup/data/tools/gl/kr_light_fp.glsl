@@ -39,6 +39,29 @@ uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = ful
 
 varying vec3 v_pos;
 varying vec3 v_normal;
+varying vec3 v_world;
+
+// q3map2 index-map terrain: layer weights from the index map, layer textures with their tcMod scale
+uniform int u_terrain;      // number of layers, 0 = not terrain
+uniform sampler2D u_tidx;   // RGBA = layers 0-3
+uniform sampler2D u_tl0;
+uniform sampler2D u_tl1;
+uniform sampler2D u_tl2;
+uniform sampler2D u_tl3;
+uniform vec2 u_tmins;
+uniform vec2 u_tsize;
+uniform vec2 u_tscale[4];
+
+vec4 terrainColour(){
+	vec2 uv = vec2( ( v_world.x - u_tmins.x ) / u_tsize.x, 1.0 - ( v_world.y - u_tmins.y ) / u_tsize.y );
+	vec4 w = texture2D( u_tidx, uv );
+	vec2 st = gl_TexCoord[0].st;
+	vec4 c = texture2D( u_tl0, st * u_tscale[0] ) * w.r;
+	if( u_terrain > 1 ) c += texture2D( u_tl1, st * u_tscale[1] ) * w.g;
+	if( u_terrain > 2 ) c += texture2D( u_tl2, st * u_tscale[2] ) * w.b;
+	if( u_terrain > 3 ) c += texture2D( u_tl3, st * u_tscale[3] ) * w.a;
+	return vec4( c.rgb / max( w.r + w.g + w.b + w.a, 0.001 ), 1.0 );
+}
 
 float cubeDepthToDistance( float d, float n, float f ){
 	return 2.0 * f * n / ( ( f + n ) - ( 2.0 * d - 1.0 ) * ( f - n ) );
@@ -65,7 +88,7 @@ float cubeShadow( samplerCube cube, vec3 L, float f, float ndl ){
 
 void main()
 {
-	vec4 tex = texture2D( u_tex, gl_TexCoord[0].st );
+	vec4 tex = u_terrain > 0 ? terrainColour() : texture2D( u_tex, gl_TexCoord[0].st );
 	if( u_mode == 0 ){
 		gl_FragColor = tex * gl_Color;
 		return;

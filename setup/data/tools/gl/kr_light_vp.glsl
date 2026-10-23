@@ -14,6 +14,7 @@ uniform vec3 u_bulge;    // width height speed
 
 varying vec3 v_pos;
 varying vec3 v_normal;
+varying vec3 v_world; // terrain index map lookup (brushes and patches are in world space)
 
 float wave( int func, vec4 w, float offset ){
 	float x = w.z + offset + u_time * w.w;
@@ -47,6 +48,7 @@ void main()
 		st.t += sin( ( gl_Vertex.y * 1.0 / 128.0 * 0.125 + now ) * 6.2831853 ) * u_turb.y;
 	}
 
+	v_world = vertex.xyz;
 	v_pos = vec3( gl_ModelViewMatrix * vertex );
 	v_normal = gl_NormalMatrix * gl_Normal;
 	gl_TexCoord[0] = gl_TextureMatrix[0] * vec4( st, gl_MultiTexCoord0.zw ); // tcMod scroll / rotate / scale / stretch

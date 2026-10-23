@@ -39,6 +39,7 @@ enum
 	QER_BOTCLIP = 1 << 10,
 	QER_SKY = 1 << 11,
 	QER_KR_LIGHTPASS = 1 << 12, // KenRadiant: q3map2 lets light through (surfaceparm trans / nonsolid / clip / water ...)
+	QER_KR_TERRAIN = 1 << 13,   // KenRadiant: q3map_terrain / q3map_indexed (blended by the terrain entity's index map)
 };
 
 struct qtexture_t;
