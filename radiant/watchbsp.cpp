@@ -458,6 +458,8 @@ public:
 			if ( m_data->ignore_depth == 0 ) {
 				// output the message using the level
 				Sys_Print( m_data->msg_level, buffer, length );
+				extern void KrCompile_text( int level, const char* text, std::size_t length );
+				KrCompile_text( m_data->msg_level, buffer, length ); // KenRadiant: Compile window > Problems
 				// if this message has error level flag, we mark the depth to stop the compilation when we get out
 				// we don't set the msg level if we don't stop on leak
 				if ( m_data->msg_level == 3 ) {
@@ -589,13 +591,24 @@ bool CWatchBSP::SetupListening(){
 void CWatchBSP::DoEBeginStep(){
 	Reset();
 
+	extern const char* KrCompile_takeGameCommand( const char* bspName );
+	extern void KrCompile_buildFinished();
 	if( m_iCurrentStep == m_commands.size() ){ // finita
-		if( g_WatchBSP_RunQuake )
+		KrCompile_buildFinished();
+		if( const char* game = KrCompile_takeGameCommand( m_sBSPName.c_str() ) ) // KenRadiant Compile window: Start SOF2 after
+			runEngine( const_cast<char*>( game ) );
+		else if( g_WatchBSP_RunQuake )
 			runEngine( runEngineCmd( m_sBSPName.c_str() ).c_str() );
 		return;
 	} // monitoring off or unmonitored command
 	else if( !g_WatchBSP_Enabled || strstr( m_commands[ m_iCurrentStep ].c_str(), RADIANT_MONITOR_ADDRESS ) == nullptr ){
-		if( g_WatchBSP_RunQuake ){
+		if( const char* game = KrCompile_takeGameCommand( m_sBSPName.c_str() ) ){
+#ifdef WIN32
+			m_commands.emplace_back( StringStream( "cd /D ", Quoted( EnginePath_get() ) ) );
+#endif
+			m_commands.emplace_back( game );
+		}
+		else if( g_WatchBSP_RunQuake ){
 #ifdef WIN32 // vanilla quake3.exe, ioquake3.x86_64.exe are sensitive to CWD, set it
 			m_commands.emplace_back( StringStream( "cd /D ", Quoted( EnginePath_get() ) ) );
 #endif
@@ -751,6 +764,8 @@ void CWatchBSP::DoMonitoringLoop( std::vector<CopiedString>& commands, const cha
 	}
 	m_commands.swap( commands );
 	m_iCurrentStep = 0;
+	extern void KrCompile_buildStarted();
+	KrCompile_buildStarted();
 	DoEBeginStep();
 }
 

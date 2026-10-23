@@ -40,7 +40,7 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Surface snapping** | Magnet button (or hold **Ctrl**): dragging the white ball sticks the selection to the surface under the cursor; Alt turns it to the surface, Shift slides along it. |
 | **Map Text window** | Toolbar / View → Map Text Window: the .map as text, synced with the selection both ways; Find selects what it finds. |
 | **Go To** | Toolbar / Ctrl+Shift+G: fly the camera to typed / pasted coordinates. |
-| **Compile window** | Hammer button / F9: BSP, VIS, LIGHT options with explanations, presets, runs q3map2 or adds a Build menu entry. |
+| **Compile window** | Hammer button / F9: presets, BSP / VIS / LIGHT tabs (hover for explanations), Problems list of compiler warnings (click to select / fly there), start SOF2 after the compile. |
 | **Terrain** | q3map2 index-map terrain (alphamap .pcx) shows its layers blended in the 3D view; **Terrain Paint** paints layers into the .pcx (saved with the map). |
 | **Brush Shapes** | Box, cone, cylinder, curved / linear / spiral stairs, sphere with sliders that update the shape live (like Unreal's geometry brushes). |
 | **Check for Problems** | Misc menu / Ctrl+Alt+P: broken targets, missing models / textures, bad brushes ... click to select, double-click to fly there. |

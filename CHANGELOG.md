@@ -3,6 +3,18 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (12)
+### Editor
+- **Up to 1024 preview lights** (default 1024, Sun Calibrator → Lights): the lights now live in a texture and each spot of the screen only adds up the 32 strongest lights that reach it (a 256-unit grid around the camera), so many lights stay fast. The 8 nearest still cast shadows.
+- **Lights match q3map2 more closely**: spotlights (a light with a `target`) now light only their cone (`radius` key, default 64, soft 32-unit edge) instead of every direction; linear lights (spawnflags 1) have no angle falloff and use the `fade` key; spawnflags 2 (no angle falloff) and `_anglescale` work; `_light` is read before `light`, `light 0` means 300 like q3map2. Lights on misc_models are placed correctly.
+- **Softer sky light**: 16 sky directions instead of 9, each with a wide soft filter: doorways no longer get 2-3 separate light patches from the sky.
+- **Compile window, simpler**: one row with a preset menu, BSP / VIS / LIGHT switches, *Start SOF2 after* and a green *Compile* button; the options are compact tabs (BSP, VIS, LIGHT, Game) and explain themselves when you point at them. More options (-nocurves, -nodetail, -notjunc, -nopassage, -samples, -shade, -nocollapse).
+- **Problems tab**: the compiler's warnings and errors while it runs, grouped when the same message repeats. Click one to select the entity / brush it names (or fly to the coordinates in it); Previous / Next step through them.
+- **Start SOF2 after compiling**: Game tab - program (SoF2MP.exe in your engine folder) and arguments (`+set sv_pure 0 +set developer 1 +devmap %mapname%`); *Start SOF2 now* runs it without compiling.
+- **Map Text find works**: Enter used to be taken by the clipper's shortcut. Typing lists every brush / entity that contains the text (a texture, a model, a key) - click one to go there; **Select all** selects all of them (e.g. every brush with a texture); `<` / `>` step through the hits.
+- **Go To**: *Current* fills in the camera position, *Copy* copies it. The camera position is always shown at the bottom right (click it to copy).
+- New hammer icon; the version text at the top right is bigger.
+
 ## Build 2026-10-23 (11)
 ### Editor
 - **Compile window** (hammer button on the toolbar, Build → Compile..., F9): tick BSP / VIS / LIGHT and their options, each with a plain explanation of what it does and what it costs; presets (Quick test, Final, High quality, Re-light only, Entities only); shows the exact q3map2 commands. *Compile* saves the map and runs them (output in the console / build monitor as usual), *Add to Build menu* keeps them as "KenRadiant: (Compile window)". Settings are remembered.

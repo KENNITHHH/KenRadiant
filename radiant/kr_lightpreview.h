@@ -10,7 +10,11 @@ struct KrPreviewLight
 	Vector3 origin;
 	Vector3 colour;    // normalised _color
 	float radius;      // reach (where it drops below 1/255), for shadows and picking the nearest lights
-	float falloff;     // shader: > 0 inverse square ( light * 7500 / 255 ), < 0 linear ( -light * 7500 / 8000 )
+	float falloff;     // shader: > 0 inverse square ( light * 7500 / 255 ), < 0 linear ( -light * 7500 / 8000 / fade, colour * fade )
+	Vector3 spotDir{ 0, 0, 0 };   // spotlight (light with a target): towards the target
+	float spotRadiusByDist = 0;   // q3map2 ( radius + 16 ) / distance to the target; 0 = point light
+	bool noAngle = false;         // spawnflags 1 (linear) / 2: no angle attenuation
+	float angleScale = 0;         // _anglescale
 };
 
 extern bool g_krLightPreview;          // user toggle (Ctrl+L / toolbar)
@@ -22,8 +26,17 @@ extern Vector3 g_krSunColour;          // 0 = no sun
 extern Vector3 g_krAmbient;            // worldspawn _ambient
 extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
 extern float g_krMinLight;             // worldspawn _minlight
-constexpr std::size_t c_krMaxPreviewLights = 256;
-extern int g_krMaxPreviewLightsGPU; // what the graphics card's shader uniform space allows (<= c_krMaxPreviewLights)
+constexpr std::size_t c_krMaxPreviewLights = 1024;
+extern int g_krMaxPreviewLightsGPU; // = c_krMaxPreviewLights (lights live in a float texture)
+// lights in a float texture, found per fragment through a world grid around the camera (clustered lighting)
+constexpr int c_krLightTexW = 1024;          // texels per row
+constexpr int c_krLightTexels = 4;           // per light
+constexpr int c_krGridX = 20, c_krGridY = 20, c_krGridZ = 10, c_krCellSize = 256, c_krCellSlots = 32;
+constexpr int c_krLightTexRows = ( int( c_krMaxPreviewLights ) * c_krLightTexels + c_krGridX * c_krGridY * c_krGridZ * c_krCellSlots / 4 + c_krLightTexW - 1 ) / c_krLightTexW;
+extern unsigned int g_krLightTex;            // 0 = none
+extern Vector3 g_krGridMin;
+extern int g_krLightUnit;                    // texture unit of g_krLightTex (16, or 15 on cards with 16 units)
+extern std::size_t g_krMaxCubes;             // 8, or 7 when unit 15 holds the lights
 
 // sun shadow map (rendered by the 3D view, read by the light preview program)
 extern bool g_krShadows;               // user toggle (on by default with the preview)
@@ -68,7 +81,7 @@ extern Vector3 g_krBounceFill;   // approximate indirect light added by the boun
 // point light shadows (cube maps of the nearest lights)
 constexpr std::size_t c_krMaxCubeShadows = 8;
 extern int g_krShadowedLights;   // how many of the nearest lights get a shadow cube (0-8, setting)
-extern int g_krPreviewLightCount; // how many lights light the preview (1-256, setting)
+extern int g_krPreviewLightCount; // how many lights light the preview (1-1024, setting)
 extern bool g_krLightShadows;
 extern unsigned int g_krCubeTex[c_krMaxCubeShadows]; // 0 = that light casts no shadow
 extern float g_krCubeNear, g_krCubeFar[c_krMaxCubeShadows];
@@ -82,6 +95,7 @@ extern bool g_krGlow;
 
 // sky light occlusion: 9 directional depth maps in one atlas (rendered by the 3D view)
 extern unsigned int g_krSkyShadowTex;  // 0 = none (sky light unoccluded)
-extern Matrix4 g_krEye2Sky[9];
-extern Vector3 g_krSkyDirs[9];         // world, towards the sky
+constexpr int c_krSkyDirs = 16, c_krSkyGrid = 4; // sky light directions, tiles per atlas row
+extern Matrix4 g_krEye2Sky[c_krSkyDirs];
+extern Vector3 g_krSkyDirs[c_krSkyDirs];         // world, towards the sky
 extern float g_krSkyBias;

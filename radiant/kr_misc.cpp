@@ -28,6 +28,8 @@
 #include <QGuiApplication>
 #include <QRegularExpression>
 #include <functional>
+#include <QKeyEvent>
+#include <QStatusBar>
 
 #include "version.h"
 #include "math/vector.h"
@@ -62,7 +64,8 @@ void Version_show( const QString& text, const QString& tip, bool update ){
 		return;
 	g_versionButton->setText( text );
 	g_versionButton->setToolTip( tip );
-	g_versionButton->setStyleSheet( update ? "QToolButton { color: #ffa020; font-weight: bold; }" : "" );
+	g_versionButton->setStyleSheet( update ? "QToolButton { color: #ffa020; font-weight: bold; font-size: 11pt; padding: 1px 8px; }"
+	                                       : "QToolButton { font-size: 10pt; padding: 1px 8px; }" );
 }
 
 /// GET with the system's curl (Windows 10+ and every Linux have it): no TLS libraries to ship
@@ -127,10 +130,25 @@ void CheckUpdates_now(){
 
 /* ---- Go To coordinates ---- */
 
+/// the editor's shortcuts are application wide (Enter = clip ...): text boxes keep their keys
+class KeepKeysFilter : public QObject
+{
+protected:
+	bool eventFilter( QObject* obj, QEvent* event ) override {
+		if( event->type() == QEvent::ShortcutOverride ){
+			auto *key = static_cast<QKeyEvent*>( event );
+			if( key->modifiers() == Qt::NoModifier || key->modifiers() == Qt::ShiftModifier || key->modifiers() == Qt::KeypadModifier )
+				event->accept();
+		}
+		return QObject::eventFilter( obj, event );
+	}
+};
+
 class GoToDialog : public QDialog
 {
 	QDoubleSpinBox* m_xyz[3];
 	QLineEdit* m_text;
+	KeepKeysFilter m_keepKeys;
 public:
 	GoToDialog( QWidget* parent ) : QDialog( parent, Qt::Tool ){
 		setWindowTitle( "Go To" );
@@ -139,6 +157,7 @@ public:
 		m_text->setPlaceholderText( "x y z  (paste a position, an origin key, a console line ...)" );
 		QObject::connect( m_text, &QLineEdit::textEdited, [this]( const QString& t ){ parse( t ); } );
 		QObject::connect( m_text, &QLineEdit::returnPressed, [this](){ go(); } );
+		m_text->installEventFilter( &m_keepKeys );
 		vbox->addWidget( m_text );
 		auto *grid = new QGridLayout;
 		const char* names[3] = { "X", "Y", "Z" };
@@ -148,6 +167,7 @@ public:
 			m_xyz[i]->setRange( -131072, 131072 );
 			m_xyz[i]->setDecimals( 1 );
 			m_xyz[i]->setSingleStep( 16 );
+			m_xyz[i]->installEventFilter( &m_keepKeys );
 			grid->addWidget( m_xyz[i], 0, i * 2 + 1 );
 		}
 		vbox->addLayout( grid );
@@ -160,7 +180,17 @@ public:
 		QObject::connect( go, &QPushButton::clicked, [this](){ this->go(); } );
 		auto *close = new QPushButton( "Close" );
 		QObject::connect( close, &QPushButton::clicked, [this](){ hide(); } );
+		auto *current = new QPushButton( "Current" );
+		current->setToolTip( "Fill in where the 3D camera is now" );
+		QObject::connect( current, &QPushButton::clicked, [this](){ fill(); } );
+		auto *copy = new QPushButton( "Copy" );
+		copy->setToolTip( "Copy these coordinates to the clipboard" );
+		QObject::connect( copy, &QPushButton::clicked, [this](){
+			QGuiApplication::clipboard()->setText( QString( "%1 %2 %3" ).arg( m_xyz[0]->value() ).arg( m_xyz[1]->value() ).arg( m_xyz[2]->value() ) );
+		} );
 		buttons->addWidget( paste );
+		buttons->addWidget( current );
+		buttons->addWidget( copy );
 		buttons->addStretch();
 		buttons->addWidget( go );
 		buttons->addWidget( close );
@@ -212,4 +242,25 @@ void KrMisc_installMenuCorner( QMenuBar* menubar ){
 	menubar->setCornerWidget( g_versionButton, Qt::TopRightCorner );
 	if( g_checkUpdates )
 		QTimer::singleShot( 3000, [](){ Update_check( false ); } );
+}
+
+/// the 3D camera position, always at the bottom of the window (click: copy it)
+void KrMisc_installStatusCamera( QStatusBar* statusbar ){
+	auto *button = new QToolButton;
+	button->setAutoRaise( true );
+	button->setToolTip( "3D camera position - click to copy it. Go To (Ctrl+Shift+G) flies to coordinates." );
+	statusbar->addPermanentWidget( button, 0 );
+	QObject::connect( button, &QToolButton::clicked, [](){
+		const Vector3 o = KrCamera_origin();
+		QGuiApplication::clipboard()->setText( QString( "%1 %2 %3" ).arg( std::round( o.x() ) ).arg( std::round( o.y() ) ).arg( std::round( o.z() ) ) );
+		globalOutputStream() << "copied camera position " << o << '\n';
+	} );
+	auto *timer = new QTimer( button );
+	QObject::connect( timer, &QTimer::timeout, [button](){
+		const Vector3 o = KrCamera_origin();
+		const QString text = QString( "cam %1 %2 %3" ).arg( int( std::round( o.x() ) ) ).arg( int( std::round( o.y() ) ) ).arg( int( std::round( o.z() ) ) );
+		if( button->text() != text )
+			button->setText( text );
+	} );
+	timer->start( 150 );
 }

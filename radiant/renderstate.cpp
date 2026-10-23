@@ -496,14 +496,18 @@ KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
-int g_krPreviewLightCount = 128;
-int g_krMaxPreviewLightsGPU = 48;
+int g_krPreviewLightCount = 1024;
+int g_krMaxPreviewLightsGPU = int( c_krMaxPreviewLights );
+unsigned int g_krLightTex = 0;
+Vector3 g_krGridMin( 0, 0, 0 );
+int g_krLightUnit = 16;
+std::size_t g_krMaxCubes = c_krMaxCubeShadows;
 unsigned int g_krCubeTex[c_krMaxCubeShadows] = {};
 float g_krCubeNear = 4, g_krCubeFar[c_krMaxCubeShadows] = {};
 Matrix4 g_krEye2World = g_matrix4_identity;
 unsigned int g_krSkyShadowTex = 0;
-Matrix4 g_krEye2Sky[9];
-Vector3 g_krSkyDirs[9];
+Matrix4 g_krEye2Sky[c_krSkyDirs];
+Vector3 g_krSkyDirs[c_krSkyDirs];
 float g_krSkyBias = 0;
 
 /// Quake 3 waveform: base + amp * func( phase + time * freq )
@@ -527,7 +531,7 @@ class GLSLKrLightProgram : public GLProgram
 public:
 	GLuint m_program = 0;
 	GLint u_sky, u_minlight;
-	GLint u_light, u_has_sky, u_eye2sky, u_sky_dir, u_sky_bias;
+	GLint u_has_lights, u_grid_min, u_cam_world, u_has_sky, u_eye2sky, u_sky_dir, u_sky_bias;
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
@@ -541,26 +545,11 @@ public:
 		{
 			StringOutputStream filename( 256 );
 			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_vp.glsl" ), GL_VERTEX_SHADER );
-			// as many lights as the card's fragment uniform space holds (2 vec4 each, ~600 components for the rest)
-			GLint components = 0;
-			gl().glGetIntegerv( GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &components );
-			int lights = std::clamp( ( int( components ) - 640 ) / 8, 16, int( c_krMaxPreviewLights ) );
-			for( ;; ){
-				const auto prefix = StringStream<32>( "#define KR_MAX_LIGHTS ", lights, '\n' );
-				if( createShaderTry( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER, prefix ) )
-					break;
-				if( lights <= 16 ){
-					globalErrorStream() << "light preview: fragment shader failed to compile\n";
-					break;
-				}
-				lights = std::max( 16, lights / 2 );
-			}
-			g_krMaxPreviewLightsGPU = lights;
-			globalOutputStream() << "light preview: up to " << lights << " lights (" << components << " fragment uniform components)\n";
+			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER );
 		}
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
-		u_tex = u( "u_tex" ); u_count = u( "u_count" ); u_light = u( "u_light" );
+		u_tex = u( "u_tex" ); u_has_lights = u( "u_has_lights" ); u_grid_min = u( "u_grid_min" ); u_cam_world = u( "u_cam_world" );
 		u_has_sky = u( "u_has_sky" ); u_eye2sky = u( "u_eye2sky" ); u_sky_dir = u( "u_sky_dir" ); u_sky_bias = u( "u_sky_bias" );
 		gl().glUniform1i( u( "u_skyshadow" ), 6 );
 		u_sky = u( "u_sky" ); u_minlight = u( "u_minlight" );
@@ -585,7 +574,13 @@ public:
 		gl().glUniform1i( u( "u_cube4" ), 12 );
 		gl().glUniform1i( u( "u_cube5" ), 13 );
 		gl().glUniform1i( u( "u_cube6" ), 14 );
-		gl().glUniform1i( u( "u_cube7" ), 15 );
+		// the lights texture: unit 16 when the card has more than 16, else 15 (the 8th shadow cube gives way)
+		GLint units = 16;
+		gl().glGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS, &units );
+		g_krLightUnit = units > 16 ? 16 : 15;
+		g_krMaxCubes = units > 16 ? c_krMaxCubeShadows : c_krMaxCubeShadows - 1;
+		gl().glUniform1i( u( "u_cube7" ), units > 16 ? 15 : 14 );
+		gl().glUniform1i( u( "u_lights" ), g_krLightUnit );
 		gl().glUseProgram( 0 );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
@@ -606,22 +601,16 @@ public:
 		if( !m_preview )
 			return;
 		bind( true );
-		const std::size_t count = std::min( g_krLightPreviewLights.size(), std::size_t( g_krMaxPreviewLightsGPU ) );
-		static float packed[c_krMaxPreviewLights * 8];
-		for( std::size_t i = 0; i < count; ++i ){
-			const KrPreviewLight& l = g_krLightPreviewLights[i];
-			const Vector3 eye = matrix4_transformed_point( g_krLightPreviewView, l.origin );
-			float* p = packed + i * 8;
-			p[0] = eye.x(); p[1] = eye.y(); p[2] = eye.z(); p[3] = l.falloff;
-			p[4] = l.colour.x(); p[5] = l.colour.y(); p[6] = l.colour.z(); p[7] = l.radius * l.radius; // reach: skipped further away
-		}
-		gl().glUniform1i( u_count, GLint( count ) );
-		if( count != 0 )
-			gl().glUniform4fv( u_light, GLsizei( count * 2 ), packed );
+		const std::size_t count = g_krLightPreviewLights.size();
+		gl().glUniform1i( u_has_lights, count != 0 && g_krLightTex != 0 ? 1 : 0 );
+		gl().glUniform3f( u_grid_min, g_krGridMin.x(), g_krGridMin.y(), g_krGridMin.z() );
+		gl().glActiveTexture( GL_TEXTURE0 + GLenum( g_krLightUnit ) );
+		gl().glBindTexture( GL_TEXTURE_2D, g_krLightTex );
+		gl().glActiveTexture( GL_TEXTURE0 );
 		// sky light occlusion
 		gl().glUniform1i( u_has_sky, g_krShadows && g_krSkyShadowTex != 0 ? 1 : 0 );
-		gl().glUniformMatrix4fv( u_eye2sky, 9, GL_FALSE, reinterpret_cast<const float*>( g_krEye2Sky ) );
-		gl().glUniform3fv( u_sky_dir, 9, reinterpret_cast<const float*>( g_krSkyDirs ) );
+		gl().glUniformMatrix4fv( u_eye2sky, c_krSkyDirs, GL_FALSE, reinterpret_cast<const float*>( g_krEye2Sky ) );
+		gl().glUniform3fv( u_sky_dir, c_krSkyDirs, reinterpret_cast<const float*>( g_krSkyDirs ) );
 		gl().glUniform1f( u_sky_bias, g_krSkyBias );
 		gl().glActiveTexture( GL_TEXTURE6 );
 		gl().glBindTexture( GL_TEXTURE_2D, g_krShadows ? g_krSkyShadowTex : 0 );
@@ -643,7 +632,7 @@ public:
 		// point light cube shadows
 		float cubeFar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 		for( std::size_t i = 0; i < c_krMaxCubeShadows; ++i ){
-			const bool on = g_krLightShadows && g_krCubeTex[i] != 0 && i < count;
+			const bool on = g_krLightShadows && g_krCubeTex[i] != 0 && i < count && i < g_krMaxCubes;
 			cubeFar[i] = on ? g_krCubeFar[i] : 0;
 			gl().glActiveTexture( GL_TEXTURE8 + GLenum( i ) );
 			gl().glBindTexture( GL_TEXTURE_CUBE_MAP, on ? g_krCubeTex[i] : 0 );
@@ -656,6 +645,7 @@ public:
 		                      g_krEye2World[4], g_krEye2World[5], g_krEye2World[6],
 		                      g_krEye2World[8], g_krEye2World[9], g_krEye2World[10] };
 		gl().glUniformMatrix3fv( u_eye2world, 1, GL_FALSE, m3 );
+		gl().glUniform3f( u_cam_world, g_krEye2World[12], g_krEye2World[13], g_krEye2World[14] );
 		// compile settings preview
 		const bool c = g_krCompile.enabled;
 		gl().glUniform1f( u_gamma, c ? std::max( 0.1f, g_krCompile.gamma ) : 1.f );

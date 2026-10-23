@@ -1850,6 +1850,8 @@ void MainFrame::Create(){
 	}
 
 	create_main_statusbar( window->statusBar(), m_statusLabel );
+	extern void KrMisc_installStatusCamera( QStatusBar* statusbar );
+	KrMisc_installStatusCamera( window->statusBar() );
 
 	GroupDialog_constructWindow( window );
 

@@ -1,20 +1,29 @@
 // KenRadiant live light preview: texture * ( ambient + shadowed sun + point lights ), lights in eye space
 uniform sampler2D u_tex;
-uniform int u_count;
-#ifndef KR_MAX_LIGHTS
-#define KR_MAX_LIGHTS 48
-#endif
-uniform vec4 u_light[KR_MAX_LIGHTS * 2];  // per light: ( eye position, falloff ), ( colour, reach² ) - see the light loop
+// lights (up to 1024) in a float texture: 4 texels per light ( world position, falloff ), ( colour, reach² ),
+// ( spot direction, spot radius by distance ), ( no angle attenuation, _anglescale ); then a 20 x 20 x 10 grid of
+// 256-unit cells around the camera, each with the 32 strongest lights that reach it (-1 = end of the list)
+uniform sampler2D u_lights;
+uniform int u_has_lights;
+uniform vec3 u_grid_min;
+uniform vec3 u_cam_world; // camera position: world = u_eye2world * eye + u_cam_world (models are drawn in their own space)
+vec3 g_wp;
+#define KR_TW 1024.0
+#define KR_LIGHTS_TEXELS 4096.0
+#define KR_GRID vec3( 20.0, 20.0, 10.0 )
+#define KR_CELL 256.0
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
 uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
 uniform float u_minlight;  // worldspawn _minlight
-// sky light occlusion: 9 directional depth maps (zenith + 8 around) in a 3 x 3 atlas
+// sky light occlusion: 16 directional depth maps (zenith + 2 rings) in a 4 x 4 atlas
 uniform sampler2DShadow u_skyshadow;
 uniform int u_has_sky;
-uniform mat4 u_eye2sky[9];
-uniform vec3 u_sky_dir[9];   // world space, towards the sky
+#define KR_SKY 16
+#define KR_SKY_GRID 4
+uniform mat4 u_eye2sky[KR_SKY];
+uniform vec3 u_sky_dir[KR_SKY];   // world space, towards the sky
 uniform float u_sky_bias;
 uniform sampler2DShadow u_shadow;
 uniform mat4 u_eye2shadow;
@@ -70,6 +79,12 @@ vec4 terrainColour(){
 	return vec4( c.rgb / max( w.r + w.g + w.b + w.a, 0.001 ), 1.0 );
 }
 
+#define KR_TH 36.0
+vec4 lightTexel( float t ){
+	float y = floor( t / KR_TW );
+	return texture2D( u_lights, vec2( ( t - y * KR_TW + 0.5 ) / KR_TW, ( y + 0.5 ) / KR_TH ) );
+}
+
 float cubeDepthToDistance( float d, float n, float f ){
 	return 2.0 * f * n / ( ( f + n ) - ( 2.0 * d - 1.0 ) * ( f - n ) );
 }
@@ -91,6 +106,50 @@ float cubeShadow( samplerCube cube, vec3 L, float f, float ndl ){
 	lit += step( ma - bias, cubeDepthToDistance( textureCube( cube, L + t2 * r ).r, u_cube_near, f ) );
 	lit += step( ma - bias, cubeDepthToDistance( textureCube( cube, L - t2 * r ).r, u_cube_near, f ) );
 	return lit * 0.25;
+}
+
+// q3map2 point / spot light at this fragment, in lightmap units (1 = 255)
+vec3 pointLight( float id, vec3 nw ){
+	vec3 wp = g_wp;
+	vec4 a = lightTexel( id * 4.0 );
+	vec4 b = lightTexel( id * 4.0 + 1.0 );
+	vec3 d = a.xyz - wp;
+	float dd = dot( d, d );
+	if( dd > b.w )
+		return vec3( 0.0 );
+	vec4 sp = lightTexel( id * 4.0 + 2.0 );
+	vec4 fl = lightTexel( id * 4.0 + 3.0 );
+	float dist = sqrt( dd );
+	float ndl = max( dot( nw, d / max( dist, 0.001 ) ), 0.0 );
+	float angle = fl.x > 0.5 ? 1.0 : ndl;
+	if( fl.y != 0.0 )
+		angle = min( angle / fl.y, 1.0 );
+	// inverse square ( light * 7500 / dist² ) or linear ( light * 7500 / 8000 - dist * fade ), dist never below 16
+	float c = angle * ( a.w > 0.0 ? a.w / max( dd, 256.0 ) : max( -a.w - max( dist, 16.0 ), 0.0 ) / 255.0 );
+	if( sp.w > 0.0 ){ // spotlight: cone towards the target, 32 units soft edge
+		float distByNormal = dot( -d, sp.xyz );
+		if( distByNormal < 0.0 )
+			return vec3( 0.0 );
+		float radiusAtDist = sp.w * distByNormal;
+		float sampleRadius = length( wp - ( a.xyz + sp.xyz * distByNormal ) );
+		if( sampleRadius >= radiusAtDist )
+			return vec3( 0.0 );
+		if( sampleRadius > radiusAtDist - 32.0 )
+			c *= ( radiusAtDist - sampleRadius ) / 32.0;
+	}
+	if( c > 0.0 && id < 7.5 ){
+		vec3 L = -d;
+		int i = int( id + 0.5 );
+		if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, ndl );
+		else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, ndl );
+		else if( i == 2 && u_cube_far.z > 0.0 ) c *= cubeShadow( u_cube2, L, u_cube_far.z, ndl );
+		else if( i == 3 && u_cube_far.w > 0.0 ) c *= cubeShadow( u_cube3, L, u_cube_far.w, ndl );
+		else if( i == 4 && u_cube_far2.x > 0.0 ) c *= cubeShadow( u_cube4, L, u_cube_far2.x, ndl );
+		else if( i == 5 && u_cube_far2.y > 0.0 ) c *= cubeShadow( u_cube5, L, u_cube_far2.y, ndl );
+		else if( i == 6 && u_cube_far2.z > 0.0 ) c *= cubeShadow( u_cube6, L, u_cube_far2.z, ndl );
+		else if( i == 7 && u_cube_far2.w > 0.0 ) c *= cubeShadow( u_cube7, L, u_cube_far2.w, ndl );
+	}
+	return b.rgb * c;
 }
 
 void main()
@@ -125,50 +184,48 @@ void main()
 	vec3 nw = u_eye2world * n;
 	// q3map2 sky light: light from every direction of the sky the surface can see (cosine weighted)
 	float skyVis = 0.0, skyAll = 0.0;
-	for( int i = 0; i < 9; ++i )
+	for( int i = 0; i < KR_SKY; ++i )
 		skyAll += max( u_sky_dir[i].z, 0.0 ); // what an open floor gets
-	for( int i = 0; i < 9; ++i ){
+	float tileSize = 1.0 / float( KR_SKY_GRID );
+	for( int i = 0; i < KR_SKY; ++i ){
 		float c = max( dot( nw, u_sky_dir[i] ), 0.0 );
 		if( c <= 0.0 )
 			continue;
 		float vis = 1.0;
 		if( u_has_sky != 0 ){
 			vec4 sc = u_eye2sky[i] * vec4( v_pos, 1.0 );
-			vec2 t0 = vec2( float( i - 3 * ( i / 3 ) ), float( i / 3 ) ) / 3.0; // this direction's tile of the atlas
-			if( sc.x > t0.x && sc.x < t0.x + 0.3333 && sc.y > t0.y && sc.y < t0.y + 0.3333 && sc.z < 1.0 ){
-				float bias = u_sky_bias * ( 1.0 + 3.0 * min( sqrt( 1.0 - c * c ) / max( c, 0.05 ), 8.0 ) );
-				vis = shadow2D( u_skyshadow, vec3( sc.xy, sc.z - bias ) ).r;
+			vec2 t0 = vec2( float( i - KR_SKY_GRID * ( i / KR_SKY_GRID ) ), float( i / KR_SKY_GRID ) ) * tileSize; // this direction's tile of the atlas
+			// a wide soft filter: q3map2's sky light comes from the whole dome, not from a few sharp directions
+			float r = 3.0 * tileSize / 1024.0;
+			if( sc.x > t0.x + r && sc.x < t0.x + tileSize - r && sc.y > t0.y + r && sc.y < t0.y + tileSize - r && sc.z < 1.0 ){
+				float bias = u_sky_bias * ( 2.0 + 3.0 * min( sqrt( 1.0 - c * c ) / max( c, 0.05 ), 8.0 ) );
+				float z = sc.z - bias;
+				vis = 0.2 * ( shadow2D( u_skyshadow, vec3( sc.xy, z ) ).r
+				            + shadow2D( u_skyshadow, vec3( sc.xy + vec2( r, 0.3 * r ), z ) ).r
+				            + shadow2D( u_skyshadow, vec3( sc.xy + vec2( -0.3 * r, r ), z ) ).r
+				            + shadow2D( u_skyshadow, vec3( sc.xy + vec2( -r, -0.3 * r ), z ) ).r
+				            + shadow2D( u_skyshadow, vec3( sc.xy + vec2( 0.3 * r, -r ), z ) ).r );
 			}
 		}
 		skyVis += c * vis;
 	}
 	vec3 light = u_ambient + u_sky * ( skyVis / max( skyAll, 0.001 ) ) + u_sun_col * sun + u_bounce;
-	for( int i = 0; i < KR_MAX_LIGHTS; ++i ){
-		if( i >= u_count )
-			break;
-		vec3 d = u_light[i * 2].xyz - v_pos;
-		float dd = dot( d, d );
-		if( dd > u_light[i * 2 + 1].w )
-			continue; // out of this light's reach
-		float falloff = u_light[i * 2].w;
-		float dist = sqrt( dd );
-		// q3map2 point light, in lightmap units (1 = 255): inverse square ( light * 7500 / dist² ),
-		// or linear ( spawnflags 1: light * 7500 / 8000 - dist ), dist never below 16
-		float lndl = max( dot( n, d / max( dist, 0.001 ) ), 0.0 );
-		float att = falloff > 0.0 ? falloff / max( dist * dist, 256.0 ) : max( -falloff - dist, 0.0 ) / 255.0;
-		float c = att * lndl;
-		if( c > 0.0 && i < 8 ){
-			vec3 L = u_eye2world * ( -d );
-			if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, lndl );
-			else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, lndl );
-			else if( i == 2 && u_cube_far.z > 0.0 ) c *= cubeShadow( u_cube2, L, u_cube_far.z, lndl );
-			else if( i == 3 && u_cube_far.w > 0.0 ) c *= cubeShadow( u_cube3, L, u_cube_far.w, lndl );
-			else if( i == 4 && u_cube_far2.x > 0.0 ) c *= cubeShadow( u_cube4, L, u_cube_far2.x, lndl );
-			else if( i == 5 && u_cube_far2.y > 0.0 ) c *= cubeShadow( u_cube5, L, u_cube_far2.y, lndl );
-			else if( i == 6 && u_cube_far2.z > 0.0 ) c *= cubeShadow( u_cube6, L, u_cube_far2.z, lndl );
-			else if( i == 7 && u_cube_far2.w > 0.0 ) c *= cubeShadow( u_cube7, L, u_cube_far2.w, lndl );
+	if( u_has_lights != 0 ){
+		g_wp = u_eye2world * v_pos + u_cam_world;
+		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );
+		float base = KR_LIGHTS_TEXELS + ( cellf.x + KR_GRID.x * ( cellf.y + KR_GRID.y * cellf.z ) ) * 8.0;
+		bool done = false;
+		for( int k = 0; k < 8 && !done; ++k ){
+			vec4 ids = lightTexel( base + float( k ) );
+			for( int j = 0; j < 4; ++j ){
+				float id = j == 0 ? ids.x : j == 1 ? ids.y : j == 2 ? ids.z : ids.w;
+				if( id < 0.0 ){
+					done = true;
+					break;
+				}
+				light += pointLight( id, nw );
+			}
 		}
-		light += u_light[i * 2 + 1].rgb * c;
 	}
 	light = max( light, vec3( u_minlight ) );
 	// what q3map2 does to the lightmap: compensate, gamma, saturation

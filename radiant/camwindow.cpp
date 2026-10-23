@@ -2176,15 +2176,21 @@ void KrSun_rescan(){
 
 /// gathers the lights for the live preview: light entities (origin, "light" intensity, "_color"), worldspawn ambient,
 /// and the sun of the first loaded sky shader with q3map_sun / q3map_skyLight
+#include <map>
+#ifndef GL_RGBA32F
+#define GL_RGBA32F 0x8814
+#endif
 static void KrLightPreview_collect( const Vector3& viewer ){
-	struct Candidate{ KrPreviewLight light; float score; };
+	struct Candidate{ KrPreviewLight light; float score; CopiedString target; };
 	std::vector<Candidate> candidates;
+	std::map<CopiedString, Vector3> targets; // targetname -> origin (spotlight targets)
 	float ambient = 0, minlight = 0;
 	class LightWalker : public scene::Traversable::Walker
 	{
-		std::vector<Candidate>& m_candidates; float& m_ambient; float& m_minlight; const Vector3& m_viewer;
+		std::vector<Candidate>& m_candidates; std::map<CopiedString, Vector3>& m_targets; float& m_ambient; float& m_minlight; const Vector3& m_viewer;
 	public:
-		LightWalker( std::vector<Candidate>& c, float& a, float& m, const Vector3& v ) : m_candidates( c ), m_ambient( a ), m_minlight( m ), m_viewer( v ){}
+		LightWalker( std::vector<Candidate>& c, std::map<CopiedString, Vector3>& t, float& a, float& m, const Vector3& v )
+			: m_candidates( c ), m_targets( t ), m_ambient( a ), m_minlight( m ), m_viewer( v ){}
 		bool pre( scene::Node& node ) const override {
 			Entity* entity = Node_getEntity( node );
 			if( entity == nullptr ) // filtered (e.g. Game View) lights still shine, only their icon is hidden
@@ -2198,47 +2204,154 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 					m_minlight = a;
 				return false;
 			}
-			if( !string_equal_prefix( classname, "light" ) )
+			Vector3 origin;
+			const bool hasOrigin = string_parse_vector3( entity->getKeyValue( "origin" ), origin );
+			if( hasOrigin && !string_empty( entity->getKeyValue( "targetname" ) ) )
+				m_targets.emplace( entity->getKeyValue( "targetname" ), origin );
+			if( !string_equal_prefix( classname, "light" ) || !hasOrigin )
 				return false;
-			Vector3 origin, colour( 1, 1, 1 );
-			if( !string_parse_vector3( entity->getKeyValue( "origin" ), origin ) )
-				return false;
-			float intensity = 300;
-			if( !string_parse_float( entity->getKeyValue( "light" ), intensity ) )
-				string_parse_float( entity->getKeyValue( "_light" ), intensity );
+			// as q3map2 SetupLights(): _light / light (0 = 300), scale, _color normalised, spawnflags 1 linear (no angle
+			// attenuation, fade), 2 no angle attenuation, _anglescale, a target makes it a spotlight
+			float intensity = 0;
+			if( !string_parse_float( entity->getKeyValue( "_light" ), intensity ) )
+				string_parse_float( entity->getKeyValue( "light" ), intensity );
+			if( intensity == 0 )
+				intensity = 300;
 			float scale = 1;
-			if( string_parse_float( entity->getKeyValue( "scale" ), scale ) && scale > 0 )
+			if( string_parse_float( entity->getKeyValue( "scale" ), scale ) && scale != 0 )
 				intensity *= scale;
 			if( intensity <= 0 )
-				return false;
+				return false; // dark lights: not previewed
+			Vector3 colour( 1, 1, 1 );
 			if( string_parse_vector3( entity->getKeyValue( "_color" ), colour ) ){
 				const float m = std::max( { colour.x(), colour.y(), colour.z() } );
-				colour = m > 0 ? colour / m : Vector3( 1, 1, 1 ); // q3map2 normalises the colour
+				colour = m > 0 ? colour / m : Vector3( 1, 1, 1 );
 			}
-			// q3map2: photons = light * 7500 (-pointscale); spawnflags 1 = linear falloff
 			int spawnflags = 0;
 			string_parse_int( entity->getKeyValue( "spawnflags" ), spawnflags );
 			KrPreviewLight light;
 			light.origin = origin;
 			light.colour = colour;
-			if( spawnflags & 1 ){
-				light.falloff = -intensity * 7500.f / 8000.f;
+			string_parse_float( entity->getKeyValue( "_anglescale" ), light.angleScale );
+			const char* target = entity->getKeyValue( "target" );
+			const bool linear = ( spawnflags & 1 ) && string_empty( target ); // spotlights are always inverse square
+			light.noAngle = ( linear || ( spawnflags & 2 ) ) && light.angleScale == 0 && string_empty( target );
+			if( linear ){
+				float fade = 0;
+				string_parse_float( entity->getKeyValue( "fade" ), fade );
+				if( fade == 0 )
+					fade = 1;
+				light.falloff = -intensity * 7500.f / 8000.f / fade; // ( light * 7500 / 8000 - dist * fade ) = fade * ( that / fade - dist )
+				light.colour *= fade;
 				light.radius = std::min( -light.falloff, 8192.f );
 			}
 			else{
 				light.falloff = intensity * 7500.f / 255.f;
-				light.radius = std::min( std::sqrt( intensity * 7500.f ), 4096.f ); // value < 1/255 further away
+				light.radius = std::min( std::sqrt( intensity * 7500.f ), 4096.f ); // below 1/255 further away
 			}
 			// prefer lights that reach the camera's surroundings
-			m_candidates.push_back( { light, vector3_length( origin - m_viewer ) - light.radius } );
+			m_candidates.push_back( { light, vector3_length( origin - m_viewer ) - light.radius, target } );
+			if( !string_empty( entity->getKeyValue( "radius" ) ) ) // spot radius, read when the target is known
+				m_candidates.back().light.spotRadiusByDist = -std::max( 1.f, float( atof( entity->getKeyValue( "radius" ) ) ) );
 			return false;
 		}
 	};
-	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, ambient, minlight, viewer ) );
+	Node_getTraversable( GlobalSceneGraph().root() )->traverse( LightWalker( candidates, targets, ambient, minlight, viewer ) );
+	// spotlights: cone towards the target
+	for( Candidate& c : candidates ){
+		KrPreviewLight& l = c.light;
+		const float radiusKey = l.spotRadiusByDist < 0 ? -l.spotRadiusByDist : 64.f;
+		l.spotRadiusByDist = 0;
+		if( c.target.empty() )
+			continue;
+		const auto it = targets.find( c.target );
+		if( it == targets.end() )
+			continue; // missing target: q3map2 keeps it a point light
+		Vector3 dir = it->second - l.origin;
+		float dist = vector3_length( dir );
+		if( dist == 0 )
+			dist = 64;
+		else
+			dir /= dist;
+		l.spotDir = dir;
+		l.spotRadiusByDist = ( radiusKey + 16 ) / dist;
+	}
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
 	g_krLightPreviewLights.clear();
 	for( std::size_t i = 0; i < candidates.size() && i < std::min( std::size_t( std::max( g_krPreviewLightCount, 1 ) ), std::size_t( g_krMaxPreviewLightsGPU ) ); ++i )
 		g_krLightPreviewLights.push_back( candidates[i].light );
+
+	// the lights texture: light data, then per grid cell the lights that reach it (strongest first)
+	{
+		const Vector3 snapped( float_snapped( viewer.x(), float( c_krCellSize ) ), float_snapped( viewer.y(), float( c_krCellSize ) ), float_snapped( viewer.z(), float( c_krCellSize ) ) );
+		const Vector3 gridMin = snapped - Vector3( c_krGridX / 2, c_krGridY / 2, c_krGridZ / 2 ) * float( c_krCellSize );
+		static std::vector<float> lastLights;
+		std::vector<float> key( g_krLightPreviewLights.size() * c_krLightTexels * 4 + 3 );
+		for( std::size_t i = 0; i < g_krLightPreviewLights.size(); ++i ){
+			const KrPreviewLight& l = g_krLightPreviewLights[i];
+			float* t = key.data() + i * c_krLightTexels * 4;
+			t[0] = l.origin.x(); t[1] = l.origin.y(); t[2] = l.origin.z(); t[3] = l.falloff;
+			t[4] = l.colour.x(); t[5] = l.colour.y(); t[6] = l.colour.z(); t[7] = l.radius * l.radius;
+			t[8] = l.spotDir.x(); t[9] = l.spotDir.y(); t[10] = l.spotDir.z(); t[11] = l.spotRadiusByDist;
+			t[12] = l.noAngle ? 1.f : 0.f; t[13] = l.angleScale; t[14] = 0; t[15] = 0;
+		}
+		std::copy( gridMin.data(), gridMin.data() + 3, key.end() - 3 );
+		extern int g_krMapGeneration;
+		static int generation = -1;
+		if( key != lastLights || g_krLightTex == 0 || generation != g_krMapGeneration ){
+			generation = g_krMapGeneration;
+			std::vector<float> data( std::size_t( c_krLightTexW ) * c_krLightTexRows * 4, -1.f );
+			std::copy( key.begin(), key.end() - 3, data.begin() );
+			lastLights = std::move( key );
+			g_krGridMin = gridMin;
+			// per cell: ( strength at the cell, light ) of every light whose reach touches the cell box
+			std::vector<std::vector<std::pair<float, int>>> cells( c_krGridX * c_krGridY * c_krGridZ );
+			for( std::size_t i = 0; i < g_krLightPreviewLights.size(); ++i ){
+				const KrPreviewLight& l = g_krLightPreviewLights[i];
+				const Vector3 lo = ( l.origin - Vector3( l.radius, l.radius, l.radius ) - gridMin ) / float( c_krCellSize );
+				const Vector3 hi = ( l.origin + Vector3( l.radius, l.radius, l.radius ) - gridMin ) / float( c_krCellSize );
+				const int x0 = std::max( 0, int( std::floor( lo.x() ) ) ), x1 = std::min( c_krGridX - 1, int( std::floor( hi.x() ) ) );
+				const int y0 = std::max( 0, int( std::floor( lo.y() ) ) ), y1 = std::min( c_krGridY - 1, int( std::floor( hi.y() ) ) );
+				const int z0 = std::max( 0, int( std::floor( lo.z() ) ) ), z1 = std::min( c_krGridZ - 1, int( std::floor( hi.z() ) ) );
+				const float peak = std::max( { l.colour.x(), l.colour.y(), l.colour.z() } );
+				for( int z = z0; z <= z1; ++z )
+					for( int y = y0; y <= y1; ++y )
+						for( int x = x0; x <= x1; ++x ){
+							const Vector3 cmin = gridMin + Vector3( x, y, z ) * float( c_krCellSize );
+							const Vector3 nearest( std::clamp( l.origin.x(), cmin.x(), cmin.x() + c_krCellSize ),
+							                       std::clamp( l.origin.y(), cmin.y(), cmin.y() + c_krCellSize ),
+							                       std::clamp( l.origin.z(), cmin.z(), cmin.z() + c_krCellSize ) );
+							const float d2 = vector3_length_squared( nearest - l.origin );
+							if( d2 > l.radius * l.radius )
+								continue;
+							const float strength = peak * ( l.falloff > 0 ? l.falloff / std::max( d2, 256.f ) : std::max( -l.falloff - std::sqrt( d2 ), 0.f ) / 255.f );
+							cells[( z * c_krGridY + y ) * c_krGridX + x].emplace_back( strength, int( i ) );
+						}
+			}
+			float* list = data.data() + std::size_t( c_krMaxPreviewLights ) * c_krLightTexels * 4;
+			for( std::size_t c = 0; c < cells.size(); ++c ){
+				auto& v = cells[c];
+				if( v.size() > std::size_t( c_krCellSlots ) )
+					std::partial_sort( v.begin(), v.begin() + c_krCellSlots, v.end(), []( const auto& a, const auto& b ){ return a.first > b.first; } );
+				for( std::size_t k = 0; k < v.size() && k < std::size_t( c_krCellSlots ); ++k )
+					list[c * c_krCellSlots + k] = float( v[k].second );
+			}
+			if( g_krLightTex == 0 ){
+				gl().glGenTextures( 1, &g_krLightTex );
+				gl().glBindTexture( GL_TEXTURE_2D, g_krLightTex );
+				gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+				gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+				gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+				gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+				gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, c_krLightTexW, c_krLightTexRows, 0, GL_RGBA, GL_FLOAT, data.data() );
+			}
+			else{
+				gl().glBindTexture( GL_TEXTURE_2D, g_krLightTex );
+				gl().glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, c_krLightTexW, c_krLightTexRows, GL_RGBA, GL_FLOAT, data.data() );
+			}
+			gl().glBindTexture( GL_TEXTURE_2D, 0 );
+		}
+	}
 
 	// sun from the sky shader on the map's sky brushes (rescanned when the map or the scene changes)
 	KrSun_update();
@@ -2473,18 +2586,23 @@ static void KrSkyShadow_render( camera_t& camera ){
 	if( !registered ){
 		registered = true;
 		AddSceneChangeCallback( FreeCaller<void(), KrSky_sceneChanged>() );
-		const float e = degrees_to_radians( 40.f );
+		// zenith, 6 directions at 62 degrees, 9 at 28 degrees: about even over the sky dome
 		g_krSkyDirs[0] = Vector3( 0, 0, 1 );
-		for( int i = 0; i < 8; ++i ){
-			const float a = degrees_to_radians( 45.f * i + 22.5f );
-			g_krSkyDirs[i + 1] = Vector3( std::cos( e ) * std::cos( a ), std::cos( e ) * std::sin( a ), std::sin( e ) );
-		}
+		const auto ring = []( int first, int count, float elevation, float offset ){
+			const float e = degrees_to_radians( elevation );
+			for( int i = 0; i < count; ++i ){
+				const float a = degrees_to_radians( 360.f * i / count + offset );
+				g_krSkyDirs[first + i] = Vector3( std::cos( e ) * std::cos( a ), std::cos( e ) * std::sin( a ), std::sin( e ) );
+			}
+		};
+		ring( 1, 6, 62.f, 15.f );
+		ring( 7, 9, 28.f, 0.f );
 	}
 	g_krSkyShadowTex = 0;
 	if( !g_krShadows || vector3_length_squared( g_krSkyAmbient ) == 0 )
 		return;
 	QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
-	constexpr int tile = 1024, size = tile * 3;
+	constexpr int tile = 1024, size = tile * c_krSkyGrid;
 	constexpr float halfExtent = 3072, depthRange = 32768;
 	if( s_skyFbo == 0 ){
 		gl().glGenTextures( 1, &s_skyTex );
@@ -2516,8 +2634,8 @@ static void KrSkyShadow_render( camera_t& camera ){
 	const Vector3 origin = Camera_getOrigin( camera );
 	const Vector3 centre( float_snapped( origin.x(), 512.f ), float_snapped( origin.y(), 512.f ), float_snapped( origin.z(), 512.f ) );
 	const Matrix4 proj = kr_ortho( -halfExtent, halfExtent, -halfExtent, halfExtent, 1, depthRange );
-	Matrix4 views[9];
-	for( int i = 0; i < 9; ++i ){
+	Matrix4 views[c_krSkyDirs];
+	for( int i = 0; i < c_krSkyDirs; ++i ){
 		const Vector3 forward = -g_krSkyDirs[i];
 		views[i] = kr_lookat( centre - forward * ( depthRange * 0.5f ), forward );
 	}
@@ -2537,8 +2655,8 @@ static void KrSkyShadow_render( camera_t& camera ){
 			gl().glDepthMask( GL_TRUE );
 			gl().glViewport( 0, 0, size, size );
 			gl().glClear( GL_DEPTH_BUFFER_BIT );
-			for( int i = 0; i < 9; ++i ){
-				gl().glViewport( ( i % 3 ) * tile, ( i / 3 ) * tile, tile, tile );
+			for( int i = 0; i < c_krSkyDirs; ++i ){
+				gl().glViewport( ( i % c_krSkyGrid ) * tile, ( i / c_krSkyGrid ) * tile, tile, tile );
 				View view( true );
 				view.Construct( proj, views[i], tile, tile );
 				ShadowRenderer renderer;
@@ -2555,10 +2673,11 @@ static void KrSkyShadow_render( camera_t& camera ){
 	g_krSkyShadowTex = s_skyTex;
 	g_krSkyBias = ( 2 * halfExtent / tile ) / depthRange;
 	const Matrix4 eye2world = matrix4_full_inverse( camera.modelview );
-	for( int i = 0; i < 9; ++i ){
+	for( int i = 0; i < c_krSkyDirs; ++i ){
 		// clip -> [0,1] of the tile -> atlas
-		const float ox = float( i % 3 ) / 3, oy = float( i / 3 ) / 3;
-		const Matrix4 bias( 0.5f / 3, 0, 0, 0,  0, 0.5f / 3, 0, 0,  0, 0, 0.5f, 0,  ox + 0.5f / 3, oy + 0.5f / 3, 0.5f, 1 );
+		constexpr float g = c_krSkyGrid;
+		const float ox = float( i % c_krSkyGrid ) / g, oy = float( i / c_krSkyGrid ) / g;
+		const Matrix4 bias( 0.5f / g, 0, 0, 0,  0, 0.5f / g, 0, 0,  0, 0, 0.5f, 0,  ox + 0.5f / g, oy + 0.5f / g, 0.5f, 1 );
 		g_krEye2Sky[i] = matrix4_multiplied_by_matrix4( matrix4_multiplied_by_matrix4( bias, proj ), matrix4_multiplied_by_matrix4( views[i], eye2world ) );
 	}
 }
@@ -2671,7 +2790,7 @@ static void KrCubeShadows_render( camera_t& camera ){
 		}
 	}
 	++s_cubeFrame;
-	const std::size_t count = std::min( { g_krLightPreviewLights.size(), c_krMaxCubeShadows, std::size_t( std::clamp( g_krShadowedLights, 0, int( c_krMaxCubeShadows ) ) ) } );
+	const std::size_t count = std::min( { g_krLightPreviewLights.size(), c_krMaxCubeShadows, std::size_t( std::clamp( g_krShadowedLights, 0, int( g_krMaxCubes ) ) ) } );
 	bool used[c_krMaxCubeShadows] = {};
 	int slotCube[c_krMaxCubeShadows];
 	// keep each light on the cube it already has
@@ -3577,7 +3696,7 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
-	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount128", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount1024", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );

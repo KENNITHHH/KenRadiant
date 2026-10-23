@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- KenRadiant: Compile window (hammer) -->
 <svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
-  <path d="M 58,58 18,108" style="fill:none;stroke:#c0c0c0;stroke-width:14;stroke-linecap:round" />
-  <path d="M 44,40 74,10 118,54 104,68 82,46 66,62 Z" style="fill:#ffa020;stroke:#ffa020;stroke-width:6;stroke-linejoin:round" />
+  <g transform="rotate(-40 64 64)">
+    <rect x="56" y="46" width="16" height="74" rx="7" style="fill:#c0c0c0" />
+    <path d="M 26,22 H 92 Q 104,22 106,34 L 106,40 Q 104,48 92,48 H 26 Q 18,48 18,40 V 30 Q 18,22 26,22 Z" style="fill:#ffa020" />
+    <rect x="14" y="26" width="8" height="18" rx="2" style="fill:#ffa020" />
+  </g>
 </svg>
