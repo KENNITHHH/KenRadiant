@@ -892,6 +892,7 @@ $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/kr_misc.o \
 	radiant/kr_compile.o \
 	radiant/kr_bsppreview.o \
+	radiant/kr_entitybrowser.o \
 	radiant/clippertool.o \
 	radiant/colors.o \
 	radiant/commands.o \

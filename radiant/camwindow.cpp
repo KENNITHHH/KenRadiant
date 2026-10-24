@@ -3096,6 +3096,26 @@ void KrCamera_goTo( const Vector3& origin ){
 	if( g_camwnd != nullptr )
 		Camera_setOrigin( *g_camwnd, origin );
 }
+/// KenRadiant: the surface point under widget pixel ( x, y ) of the 3D view; false = nothing there (point = 256 units ahead)
+bool KrCamera_pointAt( int x, int y, Vector3& point ){
+	if( g_camwnd == nullptr )
+		return false;
+	CamWnd& cam = *g_camwnd;
+	QWidget* widget = CamWnd_getWidget( cam );
+	const float w = std::max( 1, widget->width() ), h = std::max( 1, widget->height() );
+	const DeviceVector device( x / w * 2 - 1, 1 - y / h * 2 );
+	const DeviceVector eps( 4.f / std::max( 1, cam.getCamera().width ), 4.f / std::max( 1, cam.getCamera().height ) );
+	if( const auto hit = testSelect_unselected_scene_point( cam.getView(), device, eps ) ){
+		point = Vector3( hit->point );
+		return true;
+	}
+	// along the view ray through the pixel
+	const Matrix4 inv = matrix4_full_inverse( matrix4_multiplied_by_matrix4( cam.getCamera().projection, cam.getCamera().modelview ) );
+	const Vector4 farClip = matrix4_transformed_vector4( inv, Vector4( device.x(), device.y(), 1, 1 ) );
+	const Vector3 farPoint = vector4_projected( farClip );
+	point = Camera_getOrigin( cam ) + vector3_normalised( farPoint - Camera_getOrigin( cam ) ) * 256.f;
+	return false;
+}
 /// KenRadiant: the surface point in the middle of the 3D view (grid snapped), or 256 units in front of the camera
 Vector3 KrCamera_targetPoint(){
 	if( g_camwnd == nullptr )

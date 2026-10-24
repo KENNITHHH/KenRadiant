@@ -3,6 +3,11 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (16)
+### Editor
+- **Entities tab** (next to Textures / Models): every point entity of the game by group (pickup, info, target ...), searchable. Pick one, set its keys (the definition's keys + angle), spawnflags and - for SOF2 - the gametypes it appears in (dm tdm ctf inf elim dem, written as `"gametype" "dm tdm"`, none ticked = all), then **drag it into the 2D or 3D view**: in 3D it lands on the surface under the cursor (standing on floors, in front of walls, under ceilings), in 2D where you drop it. Double-click places it in the middle of the 3D view. Your settings per entity are kept while the editor runs.
+- **SOF2 sky shaders light the preview**: SOF2's own `sun r g b intensity degrees elevation` keyword is read like q3map_sun (mp_finca's `textures/skies/col2_jersey`), and `q3map_surfacelight` on a sky shader counts as sky light.
+
 ## Build 2026-10-24 (15)
 ### Editor
 - **Fixed: "orphan shader still referenced"** when shaders reload (skybox / game shader toggles, Flush & Reload) while Show Compiled Lighting is on.

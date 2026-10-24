@@ -1909,6 +1909,8 @@ void MainFrame::Create(){
 					tabs->setDocumentMode( true );
 					tabs->addTab( TextureBrowser_constructWindow( window ), "Textures" );
 					tabs->addTab( ModelBrowser_constructWindow( window ), "Models" );
+					extern QWidget* KrEntityBrowser_constructWindow( QWidget* parent );
+					tabs->addTab( KrEntityBrowser_constructWindow( window ), "Entities" ); // KenRadiant: drag entities into the views
 					m_vSplit2->addWidget( tabs );
 					g_texModelTabs = tabs;
 				}

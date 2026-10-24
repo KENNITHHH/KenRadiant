@@ -315,6 +315,7 @@ public:
 	bool m_krEmissive = false;
 	KrShaderEffects m_krFx;
 	std::vector<KrStage> m_krStages; // KenRadiant game look
+	float m_krSurfaceLight = 0;      // q3map_surfacelight (on a sky shader: light from the whole sky, like q3map_skyLight)
 	bool m_krLightPass = false, m_krAlphaShadow = false;
 
 	ShaderTemplate() :
@@ -1352,6 +1353,10 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				return false;
 			}
 			if ( depth == 0 ) { // end of shader
+				if( m_skyLight == 0 && m_krSurfaceLight > 0 && ( m_nFlags & QER_SKY ) ){ // SOF2 skies: surfacelight on the sky lights the map
+					m_skyLight = m_krSurfaceLight * 2;
+					m_skyIterations = 3;
+				}
 				for( KrStage& st : m_krStages ){ // the shader's vertex deforms move every stage
 					st.fx.deform = m_krFx.deform; st.fx.deformFunc = m_krFx.deformFunc; st.fx.deformDiv = m_krFx.deformDiv;
 					std::copy( std::begin( m_krFx.deformWave ), std::end( m_krFx.deformWave ), std::begin( st.fx.deformWave ) );
@@ -1548,7 +1553,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				RETURN_FALSE_IF_FAIL( Tokeniser_parseTextureName( tokeniser, m_textureName ) );
 				hasEditorImage = true;
 			}
-			else if ( string_equal_nocase( token, "q3map_sun" ) || string_equal_nocase( token, "q3map_sunExt" ) ) {
+			else if ( string_equal_nocase( token, "q3map_sun" ) || string_equal_nocase( token, "q3map_sunExt" ) || string_equal_nocase( token, "sun" ) /* SOF2's own shaders */ ) {
 				bool ok = true;
 				for( float& value : m_sun )
 					ok = ok && Tokeniser_getFloat( tokeniser, value );
@@ -1596,6 +1601,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 			else if ( string_equal_nocase( token, "q3map_surfacelight" ) ) {
 				m_krEmissive = true; // light emitting surface: fullbright in the light preview
+				float value = 0;
+				if( Tokeniser_getFloat( tokeniser, value ) )
+					m_krSurfaceLight = value;
 			}
 			else if ( string_equal_nocase( token, "qer_alphafunc" ) ) {
 				const char* alphafunc = tokeniser.getToken();
