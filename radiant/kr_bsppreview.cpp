@@ -292,7 +292,7 @@ const char* const c_fp =
 	"    if( u_src == 2 ) c.rgb *= shifted( texture2D( u_lm, v_lm ).rgb );\n"
 	"    else if( u_src == 3 ) c.rgb *= shifted( v_colour.rgb );\n"
 	"  }\n"
-	"  if( u_rgb == 1 ) c.rgb *= shifted( v_colour.rgb ) * 0.5; else if( u_rgb == 2 ) c.rgb *= u_const.rgb; // rgbGen vertex: halved by the engine (identityLight)\n"
+	"  if( u_rgb == 1 ) c.rgb *= shifted( v_colour.rgb ); else if( u_rgb == 2 ) c.rgb *= u_const.rgb; // rgbGen vertex: the stored colour as it is (measured in game with the Lighting Probe)\n"
 	"  if( u_alpha == 1 ) c.a *= v_colour.a; else if( u_alpha == 2 ) c.a *= u_const.a;\n"
 	"  if( ( u_afunc == 1 && c.a <= 0.0 ) || ( u_afunc == 2 && c.a >= 0.5 ) || ( u_afunc == 3 && c.a < 0.5 ) ) discard;\n"
 	"  gl_FragColor = vec4( pow( c.rgb, vec3( 1.0 / u_gamma ) ), c.a );\n"
@@ -537,7 +537,7 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				gl().glUniform1i( u_rgb, ( st.rgbGen == 1 || st.rgbGen == 4 ) ? 1 : ( st.rgbGen == 2 || st.rgbGen == 3 || st.rgbGen == 5 ) ? 2 : 0 );
 				Vector4 c( 1, 1, 1, 1 );
 				if( st.rgbGen == 2 ){ const float v = std::clamp( Wave( st.rgbFunc, st.rgbWave, time ), 0.f, 1.f ); c = Vector4( v, v, v, 1 ); }
-				else if( st.rgbGen == 5 ) c = Vector4( 0.5f, 0.5f, 0.5f, 1 ); // identityLighting
+				else if( st.rgbGen == 5 ) c = Vector4( 1, 1, 1, 1 ); // identityLighting: 1 with r_overBrightBits 0
 				else if( st.rgbGen == 3 ) c = Vector4( st.rgbConst[0], st.rgbConst[1], st.rgbConst[2], 1 );
 				int alpha = 0;
 				if( st.alphaGen == 1 ){ alpha = 2; c[3] = st.alphaConst; }

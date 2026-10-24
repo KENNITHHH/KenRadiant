@@ -53,7 +53,7 @@ uniform float u_overbright; // 2 ^ ( r_mapOverBrightBits - r_overBrightBits ): 2
 uniform float u_rgamma;     // r_gamma
 uniform float u_brightness; // q3map2 -brightness / -vertexscale of the LIGHT stage
 uniform float u_vscale;
-uniform int u_vertexlit;   // rgbGen vertex stage: vertex light, halved by the engine (identityLight)
+uniform int u_vertexlit;   // rgbGen vertex stage: vertex light (-vertexscale), used by the engine as stored
 uniform float u_lmscale; // game look: 2 when the shader multiplies its lightmap in twice (GL_DST_COLOR GL_SRC_COLOR)
 uniform int u_debug;   // Lighting Probe: 1 = output what q3map2 would store (lightmap / vertex light bytes), 0 = normal
 uniform int u_dbgcut;  // Lighting Probe: blended stage, leave out its see-through texels
@@ -265,7 +265,5 @@ void main()
 	if( peak > 1.0 )
 		shown /= peak;
 	shown *= u_lmscale;
-	if( u_vertexlit != 0 )
-		shown *= 0.5;
 	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
 }

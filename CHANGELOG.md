@@ -3,6 +3,10 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (20)
+### Editor
+- **Brightness set from your dust2 measurement** (Lighting Probe, editor vs SOF2 at the same spot, ~2900 points). The game does: lightmapped walls = 1.97 x texture x stored lightmap (the shader's `GL_DST_COLOR GL_SRC_COLOR` doubling, nothing else), vertex lit = the stored vertex colour as it is per stage (models 2.00 x, decals 2.07 x with their two stages). The editor halved vertex light (an `identityLight` 0.5 guess); that's gone, in Show Compiled Lighting and in the live preview. Domes, palm trunks, crates and decals were 2x too dark; walls already matched (1.01 x). `rgbGen identityLighting` is 1 (r_overBrightBits 0).
+
 ## Build 2026-10-24 (19)
 ### Editor
 - **Lighting Probe** (Build menu): measures instead of guessing. *Record* takes ~4000 points of the 3D view and writes, per point, the compiled surface (shader, lightmapped or vertex lit), its texture colour, the light q3map2 stored there, what the editor shows, and - with the live light on - what the live preview would have stored. *Compare with game screenshot* lines a SOF2 screenshot up with those points by their world positions (eye height, field of view and small turns are found by itself) and reports the game's brightness as "x texture x stored light" per kind of surface (walls, decals, models), next to the editor's, with a brightness curve and a per-shader list. Report files: `<map>_lightprobe.txt`, `<map>_lightprobe_compare.txt`, `<map>_lightprobe_editor.png` next to the map.

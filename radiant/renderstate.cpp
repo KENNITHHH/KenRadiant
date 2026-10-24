@@ -2560,8 +2560,8 @@ inline Vector4 KrStage_colour( const KrStage& st, float t ){
 		const float v = std::clamp( KrWave( st.rgbFunc, st.rgbWave, t ), 0.f, 1.f );
 		c = Vector4( v, v, v, 1 );
 	}
-	else if( st.rgbGen == 5 ) // identityLighting = 1 / 2^overbrightBits: the engine runs with hardware overbright on
-		c = Vector4( 0.5f, 0.5f, 0.5f, 1 );
+	else if( st.rgbGen == 5 ) // identityLighting = 1 / 2^r_overBrightBits: 1 as SOF2 is played (r_overBrightBits 0)
+		c = Vector4( 1, 1, 1, 1 );
 	else if( st.rgbGen == 3 )
 		c = Vector4( st.rgbConst[0], st.rgbConst[1], st.rgbConst[2], 1 );
 	if( st.alphaGen == 3 )
