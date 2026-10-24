@@ -358,6 +358,51 @@ CopiedString Bsp_pathForMap(){
 	return CopiedString( StringStream( PathExtensionless( Map_Name( g_map ) ), ".bsp" ) );
 }
 
+
+/// the map's .bsp loaded (again when it changed), shaders held
+bool Bsp_ensure(){
+	if( Map_Unnamed( g_map ) )
+		return false;
+	const CopiedString path = Bsp_pathForMap();
+	const QFileInfo info( path.c_str() );
+	if( !string_equal( path.c_str(), g_loadedFile.c_str() ) || ( info.exists() && info.lastModified() != g_loadedTime ) ){
+		static CopiedString failed;
+		static QDateTime failedTime;
+		if( !( string_equal( failed.c_str(), path.c_str() ) && failedTime == info.lastModified() ) && !Bsp_load( path.c_str() ) ){
+			failed = path;
+			failedTime = info.lastModified();
+		}
+	}
+	if( g_batches.empty() )
+		return false;
+	if( !g_observing ){
+		g_observing = true;
+		GlobalShaderSystem().attach( g_shaderObserver );
+	}
+	Shaders_acquire();
+	return true;
+}
+
+void Batch_loadStages( Batch& b, const std::vector<KrStage>& stages ){
+	if( b.stagesLoaded )
+		return;
+	b.stagesLoaded = true;
+	for( const KrStage& st : stages ){
+		std::vector<qtexture_t*> frames;
+		if( !st.frames.empty() )
+			for( const CopiedString& f : st.frames )
+				frames.push_back( GlobalTexturesCache().capture( f.c_str() ) );
+		else if( !st.image.empty() )
+			frames.push_back( GlobalTexturesCache().capture( st.image.c_str() ) );
+		b.stageTextures.push_back( std::move( frames ) );
+	}
+}
+bool Batch_translucent( const Batch& b, const std::vector<KrStage>* stages ){
+	return b.blend || ( stages != nullptr && !stages->empty() && stages->front().blend
+	                    && !( stages->front().src == BLEND_ONE && stages->front().dst == BLEND_ZERO ) && stages->front().special != 1 );
+}
+
+GLuint Batch_albedoTexture( Batch& b );
 ToggleItem g_show_item{ BoolExportCaller( g_show ) };
 void Show_toggle(){
 	g_show = !g_show;
@@ -371,30 +416,16 @@ void Show_toggle(){
 /// called by the 3D view before the scene: draws the compiled map; the editor's own surfaces lie at the same depth
 /// and lose (GL_LESS), so the compiled look shows while selections still draw on top
 void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
+	extern bool g_krProbeDebug;
+	if( g_krProbeDebug )
+		return; // Lighting Probe: the frame that reads the live preview's values
 	if( !g_show ){
 		if( !g_batches.empty() || !g_lightmaps.empty() )
 			Bsp_unload();
 		return;
 	}
-	if( Map_Unnamed( g_map ) )
+	if( !Bsp_ensure() )
 		return;
-	const CopiedString path = Bsp_pathForMap();
-	const QFileInfo info( path.c_str() );
-	if( !string_equal( path.c_str(), g_loadedFile.c_str() ) || ( info.exists() && info.lastModified() != g_loadedTime ) ){
-		static CopiedString failed;
-		static QDateTime failedTime;
-		if( !( string_equal( failed.c_str(), path.c_str() ) && failedTime == info.lastModified() ) && !Bsp_load( path.c_str() ) ){
-			failed = path;
-			failedTime = info.lastModified();
-		}
-	}
-	if( g_batches.empty() )
-		return;
-	if( !g_observing ){
-		g_observing = true;
-		GlobalShaderSystem().attach( g_shaderObserver );
-	}
-	Shaders_acquire();
 	if( g_program == 0 )
 		g_program = Program_create();
 	gl().glMatrixMode( GL_PROJECTION );
@@ -447,10 +478,11 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 			if( b.shader == nullptr || b.verts.empty() )
 				continue;
 			const std::vector<KrStage>* stages = g_krGameShaders ? b.shader->getStages() : nullptr;
-			const bool translucent = b.blend || ( stages != nullptr && !stages->empty() && stages->front().blend
-			                                      && !( stages->front().src == BLEND_ONE && stages->front().dst == BLEND_ZERO ) && stages->front().special != 1 );
+			const bool translucent = Batch_translucent( b, stages );
 			if( translucent != ( pass == 1 ) )
 				continue;
+			// decals: nearer than the editor's own polygonOffset faces (-1, -2), so the compiled look covers them
+			gl().glPolygonOffset( -1, translucent ? -4.f : -1.f );
 			gl().glActiveTexture( GL_TEXTURE1 );
 			gl().glBindTexture( GL_TEXTURE_2D, b.lightmap >= 0 ? g_lightmaps[b.lightmap] : 0 );
 			setArrays( b );
@@ -468,18 +500,7 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				continue;
 			}
 			// the shader's stages, as the engine draws them
-			if( !b.stagesLoaded ){
-				b.stagesLoaded = true;
-				for( const KrStage& st : *stages ){
-					std::vector<qtexture_t*> frames;
-					if( !st.frames.empty() )
-						for( const CopiedString& f : st.frames )
-							frames.push_back( GlobalTexturesCache().capture( f.c_str() ) );
-					else if( !st.image.empty() )
-						frames.push_back( GlobalTexturesCache().capture( st.image.c_str() ) );
-					b.stageTextures.push_back( std::move( frames ) );
-				}
-			}
+			Batch_loadStages( b, *stages );
 			for( std::size_t i = 0; i < stages->size(); ++i ){
 				const KrStage& st = ( *stages )[i];
 				const bool replace = !st.blend || ( st.src == BLEND_ONE && st.dst == BLEND_ZERO );
@@ -531,6 +552,26 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
 			}
 		}
+	// blended surfaces (decals) hide the editor's own faces behind them too: their depth, where they are seen
+	gl().glDisable( GL_BLEND );
+	gl().glDepthMask( GL_TRUE );
+	gl().glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	gl().glPolygonOffset( -1, -4 );
+	for( Batch& b : g_batches ){
+		if( b.shader == nullptr || b.verts.empty() || !Batch_translucent( b, g_krGameShaders ? b.shader->getStages() : nullptr ) )
+			continue;
+		setArrays( b );
+		gl().glUniform1i( u_src, 0 );
+		gl().glUniform1i( u_rgb, 0 );
+		gl().glUniform1i( u_alpha, 0 );
+		gl().glUniform1i( u_afunc, 3 ); // see-through texels stay open
+		gl().glUniform2f( u_tcscale, 1, 1 );
+		gl().glUniform2f( u_tcscroll, 0, 0 );
+		gl().glActiveTexture( GL_TEXTURE0 );
+		gl().glBindTexture( GL_TEXTURE_2D, Batch_albedoTexture( b ) );
+		gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
+	}
+	gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	gl().glDisable( GL_BLEND );
 	gl().glDepthMask( GL_TRUE );
 	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
@@ -544,6 +585,154 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	gl().glActiveTexture( GL_TEXTURE0 );
 	gl().glBindTexture( GL_TEXTURE_2D, 0 );
 	gl().glUseProgram( 0 );
+}
+
+
+namespace
+{
+const char* const c_dvp =
+	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour;\n"
+	"void main(){ v_st = gl_MultiTexCoord0.st; v_lm = gl_MultiTexCoord1.st; v_colour = gl_Color; gl_Position = ftransform(); }\n";
+const char* const c_dfp =
+	"uniform sampler2D u_tex; uniform sampler2D u_lm; uniform int u_mode; uniform int u_lmd; uniform int u_cut; uniform vec3 u_id;\n"
+	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour;\n"
+	"void main(){\n"
+	"  vec4 t = texture2D( u_tex, v_st );\n"
+	"  if( u_cut != 0 && t.a < 0.5 ) discard;\n"
+	"  if( u_mode == 1 ) gl_FragColor = vec4( u_lmd != 0 ? texture2D( u_lm, v_lm ).rgb : v_colour.rgb, 1.0 );\n"
+	"  else if( u_mode == 2 ) gl_FragColor = t;\n"
+	"  else gl_FragColor = vec4( u_id, 1.0 );\n"
+	"}\n";
+GLuint g_debugProgram = 0;
+GLint ud_mode, ud_lmd, ud_cut, ud_id;
+
+GLuint Batch_albedoTexture( Batch& b ){
+	if( const std::vector<KrStage>* stages = b.shader->getStages(); stages != nullptr && !stages->empty() ){
+		Batch_loadStages( b, *stages );
+		for( std::size_t i = 0; i < stages->size() && i < b.stageTextures.size(); ++i ){
+			const KrStage& st = ( *stages )[i];
+			if( st.special == 0 && st.tcGen == 0 && !b.stageTextures[i].empty() && b.stageTextures[i][0] != nullptr )
+				return b.stageTextures[i][0]->texture_number;
+		}
+	}
+	return b.shader->getTexture()->texture_number;
+}
+}
+
+/// Lighting Probe: draws the .bsp as data instead of pictures - mode 1 the stored light (lightmap texel or vertex
+/// colour, unchanged), 2 the shader's first image (with its alpha), 3 the surface batch id (index + 1 in RGB).
+/// Blended surfaces count where their image is at least half opaque. Returns false without a .bsp.
+bool KrBspPreview_drawDebug( int mode, const Matrix4& modelview, const Matrix4& projection ){
+	if( !Bsp_ensure() )
+		return false;
+	if( g_debugProgram == 0 ){
+		g_debugProgram = gl().glCreateProgram();
+		for( auto [type, src] : { std::pair<GLenum, const char*>{ GL_VERTEX_SHADER, c_dvp }, { GL_FRAGMENT_SHADER, c_dfp } } ){
+			GLuint sh = gl().glCreateShader( type );
+			gl().glShaderSource( sh, 1, &src, nullptr );
+			gl().glCompileShader( sh );
+			gl().glAttachShader( g_debugProgram, sh );
+			gl().glDeleteShader( sh );
+		}
+		gl().glLinkProgram( g_debugProgram );
+		gl().glUseProgram( g_debugProgram );
+		gl().glUniform1i( gl().glGetUniformLocation( g_debugProgram, "u_tex" ), 0 );
+		gl().glUniform1i( gl().glGetUniformLocation( g_debugProgram, "u_lm" ), 1 );
+		ud_mode = gl().glGetUniformLocation( g_debugProgram, "u_mode" );
+		ud_lmd = gl().glGetUniformLocation( g_debugProgram, "u_lmd" );
+		ud_cut = gl().glGetUniformLocation( g_debugProgram, "u_cut" );
+		ud_id = gl().glGetUniformLocation( g_debugProgram, "u_id" );
+	}
+	gl().glMatrixMode( GL_PROJECTION );
+	gl().glLoadMatrixf( reinterpret_cast<const float*>( &projection ) );
+	gl().glMatrixMode( GL_MODELVIEW );
+	gl().glLoadMatrixf( reinterpret_cast<const float*>( &modelview ) );
+	gl().glUseProgram( g_debugProgram );
+	gl().glUniform1i( ud_mode, mode );
+	gl().glDisable( GL_BLEND );
+	gl().glDisable( GL_DITHER );
+	gl().glEnable( GL_DEPTH_TEST );
+	gl().glDepthFunc( GL_LEQUAL );
+	gl().glDepthMask( GL_TRUE );
+	gl().glDisable( GL_CULL_FACE );
+	gl().glDisable( GL_ALPHA_TEST );
+	gl().glEnable( GL_POLYGON_OFFSET_FILL );
+	gl().glDisableClientState( GL_NORMAL_ARRAY );
+	gl().glEnableClientState( GL_VERTEX_ARRAY );
+	gl().glEnableClientState( GL_COLOR_ARRAY );
+	gl().glClientActiveTexture( GL_TEXTURE0 );
+	gl().glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	gl().glClientActiveTexture( GL_TEXTURE1 );
+	gl().glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	for( int pass = 0; pass < 2; ++pass )
+		for( std::size_t k = 0; k < g_batches.size(); ++k ){
+			Batch& b = g_batches[k];
+			if( b.shader == nullptr || b.verts.empty() )
+				continue;
+			const bool translucent = Batch_translucent( b, b.shader->getStages() );
+			if( translucent != ( pass == 1 ) )
+				continue;
+			// decals in front of their wall: a little nearer, like polygonOffset / sort banner in game
+			gl().glPolygonOffset( -1, translucent ? -4.f : -1.f );
+			const Vertex* v = b.verts.data();
+			gl().glVertexPointer( 3, GL_FLOAT, sizeof( Vertex ), v->xyz );
+			gl().glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( Vertex ), v->colour );
+			gl().glClientActiveTexture( GL_TEXTURE0 );
+			gl().glTexCoordPointer( 2, GL_FLOAT, sizeof( Vertex ), v->st );
+			gl().glClientActiveTexture( GL_TEXTURE1 );
+			gl().glTexCoordPointer( 2, GL_FLOAT, sizeof( Vertex ), v->lm );
+			gl().glActiveTexture( GL_TEXTURE1 );
+			gl().glBindTexture( GL_TEXTURE_2D, b.lightmap >= 0 ? g_lightmaps[b.lightmap] : 0 );
+			gl().glActiveTexture( GL_TEXTURE0 );
+			gl().glBindTexture( GL_TEXTURE_2D, Batch_albedoTexture( b ) );
+			const unsigned id = unsigned( k + 1 );
+			gl().glUniform3f( ud_id, ( id & 255 ) / 255.f, ( ( id >> 8 ) & 255 ) / 255.f, ( ( id >> 16 ) & 255 ) / 255.f );
+			gl().glUniform1i( ud_lmd, b.lightmap >= 0 ? 1 : 0 );
+			gl().glUniform1i( ud_cut, translucent ? 1 : 0 );
+			gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
+		}
+	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	gl().glClientActiveTexture( GL_TEXTURE0 );
+	gl().glDisableClientState( GL_COLOR_ARRAY );
+	gl().glDisable( GL_POLYGON_OFFSET_FILL );
+	gl().glPolygonOffset( -1, 1 );
+	gl().glDepthFunc( GL_LESS );
+	gl().glEnable( GL_DITHER );
+	gl().glActiveTexture( GL_TEXTURE1 );
+	gl().glBindTexture( GL_TEXTURE_2D, 0 );
+	gl().glActiveTexture( GL_TEXTURE0 );
+	gl().glBindTexture( GL_TEXTURE_2D, 0 );
+	gl().glUseProgram( 0 );
+	return true;
+}
+
+/// Lighting Probe: what a batch id stands for
+bool KrBspPreview_batchInfo( int id, CopiedString& shader, bool& lightmapped, bool& translucent, CopiedString& stages ){
+	if( id <= 0 || id > int( g_batches.size() ) )
+		return false;
+	const Batch& b = g_batches[id - 1];
+	shader = b.name;
+	lightmapped = b.lightmap >= 0;
+	const std::vector<KrStage>* st = b.shader != nullptr ? b.shader->getStages() : nullptr;
+	translucent = b.shader != nullptr && Batch_translucent( b, st );
+	StringOutputStream text( 128 );
+	if( st != nullptr )
+		for( const KrStage& s : *st ){
+			const char* const blend[] = { "ZERO", "ONE", "SRC_COLOR", "1-SRC_COLOR", "SRC_ALPHA", "1-SRC_ALPHA", "DST_COLOR", "1-DST_COLOR", "DST_ALPHA", "1-DST_ALPHA", "SRC_ALPHA_SAT" };
+			const char* const rgb[] = { "identity", "vertex", "wave", "const", "oneMinusVertex", "identityLighting" };
+			text << "{" << ( s.special == 1 ? "$lightmap" : s.special == 2 ? "$whiteimage" : !s.image.empty() ? s.image.c_str() : !s.frames.empty() ? s.frames.front().c_str() : "?" );
+			if( s.blend )
+				text << " " << ( s.src < 11 ? blend[s.src] : "?" ) << " " << ( s.dst < 11 ? blend[s.dst] : "?" );
+			text << " rgbGen " << ( s.rgbGen >= 0 && s.rgbGen < 6 ? rgb[s.rgbGen] : "?" ) << "}";
+		}
+	stages = text.c_str();
+	return true;
+}
+bool KrBspPreview_shown(){
+	return g_show;
+}
+const char* KrBspPreview_file(){
+	return g_loadedFile.c_str();
 }
 
 /// the editor closes: give back the shaders while the shader system still exists

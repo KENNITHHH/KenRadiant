@@ -3134,6 +3134,22 @@ bool KrCamera_pointAt( int x, int y, Vector3& point ){
 	point = Camera_getOrigin( cam ) + vector3_normalised( farPoint - Camera_getOrigin( cam ) ) * 256.f;
 	return false;
 }
+/// KenRadiant Lighting Probe: the 3D camera
+void KrCamera_getView( Vector3& origin, Vector3& angles, float& fov ){
+	fov = camera_t::fieldOfView;
+	if( g_camwnd == nullptr ){
+		origin = angles = Vector3( 0, 0, 0 );
+		return;
+	}
+	origin = Camera_getOrigin( g_camwnd->getCamera() );
+	angles = Camera_getAngles( g_camwnd->getCamera() );
+}
+void KrCamera_setView( const Vector3& origin, const Vector3& angles ){
+	if( g_camwnd == nullptr )
+		return;
+	Camera_setOrigin( g_camwnd->getCamera(), origin );
+	Camera_setAngles( g_camwnd->getCamera(), angles );
+}
 /// KenRadiant: the surface point in the middle of the 3D view (grid snapped), or 256 units in front of the camera
 Vector3 KrCamera_targetPoint(){
 	if( g_camwnd == nullptr )
@@ -3296,6 +3312,8 @@ void CamWnd::Cam_Draw(){
 		KrBspPreview_draw( m_Camera.modelview, m_Camera.projection ); // compiled lighting (.bsp), when on
 		renderer.render( m_Camera.modelview, m_Camera.projection );
 		g_krLightPreviewDrawing = false;
+		extern void KrProbe_afterScene( const Matrix4& modelview, const Matrix4& projection, int w, int h );
+		KrProbe_afterScene( m_Camera.modelview, m_Camera.projection, m_Camera.width, m_Camera.height ); // Lighting Probe readbacks
 		if( KrSelection_outlineAny() && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
 			KrOutline_draw( m_Camera, m_view );
 		// keep animated water / scrolling shaders moving (~30 fps) only while one is on screen
@@ -3825,6 +3843,8 @@ void CamWnd_Construct(){
 	KrMisc_registerCommands();
 	extern void KrCompile_registerCommands();
 	KrCompile_registerCommands();
+	extern void KrProbe_registerCommands();
+	KrProbe_registerCommands();
 	extern void KrBspPreview_registerCommands();
 	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant

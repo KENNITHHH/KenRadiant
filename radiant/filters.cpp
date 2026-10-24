@@ -163,6 +163,7 @@ void GameView_beforeShutdown(){
 	entities.setShowNames( g_gameView_names ); entities.setShowTargetNames( g_gameView_targetNames ); entities.setShowAngles( g_gameView_angles );
 	entities.setShowConnections( g_gameView_connections ); entities.setLightRadii( g_gameView_radii );
 }
+bool GameView_on(){ return g_gameView; } // KenRadiant Lighting Probe
 void GameView_toggle(){
 	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
 	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS

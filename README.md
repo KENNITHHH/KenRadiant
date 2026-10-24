@@ -41,6 +41,7 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Map Text window** | Toolbar / View → Map Text Window: the .map as text, synced with the selection both ways; Find selects what it finds. |
 | **Go To** | Toolbar / Ctrl+Shift+G: fly the camera to typed / pasted coordinates. |
 | **Compile window** | Hammer button / F9: presets, BSP / VIS / LIGHT tabs (hover for explanations), Problems list of compiler warnings (click to select / fly there), start SOF2 after the compile. |
+| **Lighting Probe** | Build → Lighting Probe: measures the lighting as numbers. Record reads, at a grid of points in the 3D view, the compiled .bsp's texture colour and stored light (lightmap / vertex colour bytes), what the editor shows and what the live preview would store; Compare matches a game screenshot taken with the copied `setviewpos` line and reports the game's own formula per kind of surface next to the editor's. Writes `<map>_lightprobe.txt` / `_compare.txt`. |
 | **Terrain** | q3map2 index-map terrain (alphamap .pcx) shows its layers blended in the 3D view; **Terrain Paint** paints layers into the .pcx (saved with the map). |
 | **Brush Shapes** | Box, cone, cylinder, curved / linear / spiral stairs, sphere with sliders that update the shape live (like Unreal's geometry brushes). |
 | **Check for Problems** | Misc menu / Ctrl+Alt+P: broken targets, missing models / textures, bad brushes ... click to select, double-click to fly there. |

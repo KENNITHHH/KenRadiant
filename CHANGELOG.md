@@ -3,6 +3,12 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (19)
+### Editor
+- **Lighting Probe** (Build menu): measures instead of guessing. *Record* takes ~4000 points of the 3D view and writes, per point, the compiled surface (shader, lightmapped or vertex lit), its texture colour, the light q3map2 stored there, what the editor shows, and - with the live light on - what the live preview would have stored. *Compare with game screenshot* lines a SOF2 screenshot up with those points by their world positions (eye height, field of view and small turns are found by itself) and reports the game's brightness as "x texture x stored light" per kind of surface (walls, decals, models), next to the editor's, with a brightness curve and a per-shader list. Report files: `<map>_lightprobe.txt`, `<map>_lightprobe_compare.txt`, `<map>_lightprobe_editor.png` next to the map.
+- **Fixed (found with the probe): live preview lightmaps 2.2x too bright with `-brightness`.** q3map2 applies `-brightness` to lightmaps *after* the gamma (and `-vertexscale` to vertex light before it); the preview did both before. Live lightmaps now land within ~10% of what q3map2 stores, vertex light within 3%.
+- **Fixed (found with the probe): decals far too bright in Show Compiled Lighting.** The editor's own decal faces (`polygonOffset` shaders) were drawn over the compiled decals, unlit and doubled by the additive stage (about 6x). The compiled decals now cover them.
+
 ## Build 2026-10-24 (18)
 ### Editor
 - **Live light preview uses your compile settings**: the Compile window's LIGHT `-brightness`, `-gamma`, `-compensate` and `-vertexscale` (from the fields, Extra options or All options) now change the preview the same way q3map2 changes the lightmaps. Your dust2 compile (`-gamma 2.2 -brightness 0.28358 -vertexscale 0.0625`) no longer shows super bright - put those flags in the Compile window (easiest: **Load...** your preset).

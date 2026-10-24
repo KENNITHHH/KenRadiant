@@ -1178,6 +1178,7 @@ void create_bsp_menu( QMenuBar *menubar ){
 
 	create_menu_item_with_mnemonic( menu, "Compile... (choose options)", "CompileWindow" ); // KenRadiant
 	create_check_menu_item_with_mnemonic( menu, "Show Compiled Lighting (.bsp lightmaps in the 3D view)", "ToggleCompiledLighting" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Lighting Probe... (measure editor vs game)", "KrLightingProbe" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Customize...", "BuildMenuCustomize" );
 	create_menu_item_with_mnemonic( menu, "Run recent build", "Build_runRecentExecutedBuild" );
 

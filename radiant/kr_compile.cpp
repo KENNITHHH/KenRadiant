@@ -1011,3 +1011,8 @@ void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, 
 	if( brightness <= 0 ) brightness = 1;
 	if( vertexScale <= 0 ) vertexScale = 1;
 }
+
+/// the Compile window's commands as text (Lighting Probe report)
+QString KrCompile_commands(){
+	return Compile_commandsText( g_options, nullptr );
+}

@@ -55,6 +55,8 @@ uniform float u_brightness; // q3map2 -brightness / -vertexscale of the LIGHT st
 uniform float u_vscale;
 uniform int u_vertexlit;   // rgbGen vertex stage: vertex light, halved by the engine (identityLight)
 uniform float u_lmscale; // game look: 2 when the shader multiplies its lightmap in twice (GL_DST_COLOR GL_SRC_COLOR)
+uniform int u_debug;   // Lighting Probe: 1 = output what q3map2 would store (lightmap / vertex light bytes), 0 = normal
+uniform int u_dbgcut;  // Lighting Probe: blended stage, leave out its see-through texels
 uniform vec4 u_stage;   // game look: the stage's rgbGen / alphaGen
 uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = fullbright glow
 
@@ -159,6 +161,14 @@ vec3 pointLight( float id, vec3 nw ){
 void main()
 {
 	vec4 tex = u_terrain > 0 ? terrainColour() : texture2D( u_tex, gl_TexCoord[0].st );
+	if( u_debug != 0 ){
+		if( u_dbgcut != 0 && tex.a * gl_Color.a * u_stage.a < 0.5 )
+			discard;
+		if( u_mode != 1 ){
+			gl_FragColor = vec4( 0.0, 0.0, 0.0, 0.0 ); // unlit / glowing: no stored light (alpha 0 marks it)
+			return;
+		}
+	}
 	if( u_mode == 0 ){
 		gl_FragColor = tex * gl_Color * u_stage;
 		return;
@@ -233,14 +243,23 @@ void main()
 		}
 	}
 	light = max( light, vec3( u_minlight ) );
-	light *= u_vertexlit != 0 ? u_vscale : u_brightness;
-	// what q3map2 does to the lightmap: compensate, gamma, saturation
-	light = max( light / u_compensate, vec3( 0.0 ) );
-	light = pow( light, vec3( 1.0 / u_gamma ) );
+	// what q3map2 does (ColorToBytes): vertex light is scaled by -vertexscale before the gamma, a lightmap by
+	// -brightness after it (it goes in as lmscale), then both by 1 / -compensate
+	if( u_vertexlit != 0 )
+		light *= u_vscale;
+	light = pow( max( light, vec3( 0.0 ) ), vec3( 1.0 / u_gamma ) );
+	if( u_vertexlit == 0 )
+		light *= u_brightness;
+	light /= u_compensate;
 	float grey = dot( light, vec3( 0.299, 0.587, 0.114 ) );
 	light = max( mix( vec3( grey ), light, u_saturation ), vec3( 0.0 ) );
 	// the engine doubles the lightmap (overbright shift) and clamps it keeping the colour: a fully lit surface
 	// shows its texture as it is, never washed out to white
+	if( u_debug != 0 ){ // q3map2 clamps keeping the colour and stores bytes
+		float top = max( light.r, max( light.g, light.b ) );
+		gl_FragColor = vec4( top > 1.0 ? light / top : light, 1.0 );
+		return;
+	}
 	vec3 shown = light * u_overbright;
 	float peak = max( shown.r, max( shown.g, shown.b ) );
 	if( peak > 1.0 )

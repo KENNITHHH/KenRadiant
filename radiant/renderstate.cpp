@@ -473,6 +473,7 @@ GLSLSkyboxProgram g_skyboxGLSL;
 #include "kr_terrain.h"
 bool g_krLightPreview = false;
 bool g_krLightPreviewDrawing = false;
+bool g_krProbeDebug = false; // Lighting Probe frame: the light preview writes stored light values
 Matrix4 g_krLightPreviewView = g_matrix4_identity;
 std::vector<KrPreviewLight> g_krLightPreviewLights;
 Vector3 g_krSunDirection( 0, 0, 1 );
@@ -550,7 +551,7 @@ public:
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
-	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale, u_brightness, u_vscale, u_vertexlit;
+	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale, u_brightness, u_vscale, u_vertexlit, u_debug, u_dbgcut;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -580,7 +581,7 @@ public:
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
-		u_lmscale = u( "u_lmscale" ); u_brightness = u( "u_brightness" ); u_vscale = u( "u_vscale" ); u_vertexlit = u( "u_vertexlit" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_lmscale = u( "u_lmscale" ); u_brightness = u( "u_brightness" ); u_vscale = u( "u_vscale" ); u_vertexlit = u( "u_vertexlit" ); u_debug = u( "u_debug" ); u_dbgcut = u( "u_dbgcut" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
@@ -736,6 +737,11 @@ public:
 		gl().glUniform4f( u_stage, stageColour[0], stageColour[1], stageColour[2], stageColour[3] );
 		gl().glUniform1f( u_lmscale, stage != nullptr ? stage->lmScale : 1.f );
 		gl().glUniform1i( u_vertexlit, stage != nullptr && stage->stage->rgbGen == 1 ? 1 : 0 );
+		// Lighting Probe: every surface writes its stored light value, no blending (the top surface wins)
+		gl().glUniform1i( u_debug, m_preview && g_krProbeDebug ? 1 : 0 );
+		if( m_preview && g_krProbeDebug ){
+			gl().glUniform1i( u_dbgcut, ( state.m_state & globalstate & RENDER_BLEND ) ? 1 : 0 );
+		}
 		gl().glUniform1i( u_env, env );
 		gl().glUniform1f( u_time, g_krShaderTime );
 		gl().glUniform1i( u_turb_on, turb ? 1 : 0 );
@@ -1919,6 +1925,8 @@ void OpenGLState_apply( const OpenGLState& self, OpenGLState& current, unsigned 
 	}
 
 	current.m_state = state;
+	if( g_krProbeDebug && current.m_program == &g_krLightGLSL )
+		gl().glDisable( GL_BLEND ); // Lighting Probe frame: values, not blended colours
 
 	GlobalOpenGL_debugAssertNoErrors();
 }
