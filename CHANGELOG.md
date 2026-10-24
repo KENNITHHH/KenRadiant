@@ -3,6 +3,11 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (25)
+### Editor
+- **Terrain Paint writes into the game folder** (engine path + base), not next to the map: with a map kept elsewhere (your Extracted copy) the layer shaders and the .pcx were written where neither the editor nor q3map2 looks ("Texture load failed: textures/<map>/terrain1_0"). The new shaders are also loaded before the terrain asks for them.
+- New Build menu preset **"KenRadiant: (like Raven's own maps)"** = `-light -fast -super 2 -filter`, no bounce, no -brightness / -gamma: measured against the original mp_shop.bsp, this q3map2 with these settings gives the same lightmaps (1.00x at every brightness). (Shows in new installs' Build menus; or set it in the Compile window.)
+
 ## Build 2026-10-24 (24)
 ### Editor
 - **Terrain Paint: your own layers.** Pick 2-4 textures (click one in the Textures tab, **+ Texture browser's texture**; Remove / Up / Down), select the ground brushes and **Create terrain from the selected brushes**: they go into a func_group (if they are not in one), KenRadiant writes the layer shaders (`textures/<map>/terrainN_0`, `_1`, `_0to1` ...) to `shaders/<map>_terrain.shader` (listed in shaderlist.txt when there is one, .bak kept), makes the .pcx index map, gives the upward faces `tools/_terrain`, and you paint. The lightmap stage uses the same blend as your map's own shaders (2x `GL_DST_COLOR GL_SRC_COLOR` or 1x). Texture scale (tcMod scale) and index map size are set there too.

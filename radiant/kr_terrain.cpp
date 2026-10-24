@@ -63,6 +63,7 @@
 #include "signal/isignal.h"
 #include "math/plane.h"
 #include "texwindow.h"
+#include "qerplugin.h"
 #include "entity.h"
 
 using DeviceVector = Vector2;
@@ -77,6 +78,8 @@ bool g_krTerrainShadersRealised = true; // false while the shader system reloads
 
 namespace
 {
+
+QString Terrain_baseDir();
 
 /* ---------------- .pcx (8 bit, RLE) ---------------- */
 
@@ -310,10 +313,7 @@ struct TerrainRecord : public Undoable
 		const char* root = GlobalFileSystem().findFile( indexMap.c_str() );
 		if( !string_empty( root ) && root[string_length( root ) - 1] == '/' )
 			return QString( root ) + indexMap.c_str();
-		const QString map = QString( Map_Name( g_map ) ).replace( '\\', '/' );
-		const int at = map.lastIndexOf( "/maps/", -1, Qt::CaseInsensitive );
-		const QString base = at >= 0 ? map.left( at + 1 ) : QFileInfo( map ).path() + '/';
-		return base + indexMap.c_str();
+		return Terrain_baseDir() + indexMap.c_str();
 	}
 	bool save(){
 		const QString path = savePath();
@@ -455,11 +455,10 @@ void KrTerrain_saveAll(){
 
 namespace
 {
-/// <game>/base/ : the folder above the map's maps/ folder
+/// the game folder the editor, q3map2 and the game read from (engine path + base/mod) - not the map's own folder:
+/// a map kept elsewhere (an Extracted copy) still gets its shaders and index maps where they are found
 QString Terrain_baseDir(){
-	const QString map = QString( Map_Name( g_map ) ).replace( '\\', '/' );
-	const int at = map.lastIndexOf( "/maps/", -1, Qt::CaseInsensitive );
-	return at >= 0 ? map.left( at + 1 ) : QFileInfo( map ).path() + '/';
+	return QString( GlobalRadiant().getEnginePath() ).replace( '\\', '/' ) + GlobalRadiant().getGameName() + '/';
 }
 QString Terrain_shaderFile(){
 	return Terrain_baseDir() + "shaders/" + QFileInfo( Map_Name( g_map ) ).completeBaseName() + "_terrain.shader";
@@ -876,6 +875,7 @@ public:
 		t.twoX = Map_lightmapTwoX();
 		if( !GenTerrain_write( t ) )
 			return;
+		RefreshShaders(); // load the new layer shaders before anything asks for them
 		const QString index = QString( "maps/%1_terrain%2.pcx" ).arg( mapName ).arg( n );
 		{
 			UndoableCommand undo( "makeTerrain" );
@@ -902,7 +902,6 @@ public:
 			else
 				globalErrorStream() << "terrain: can't write " << file.toLatin1().constData() << '\n';
 		}
-		RefreshShaders(); // the new layer shaders
 		globalOutputStream() << "terrain: " << t.key.toLatin1().constData() << " - " << int( t.images.size() ) << " layers, index map " << index.toLatin1().constData()
 		                     << ", lightmap blend " << ( t.twoX ? "2x like the map's shaders" : "1x like the map's shaders" ) << " - paint it with left-drag\n";
 		KrLightPreview_redraw();
