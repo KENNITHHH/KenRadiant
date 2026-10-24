@@ -3134,6 +3134,14 @@ bool KrCamera_pointAt( int x, int y, Vector3& point ){
 	point = Camera_getOrigin( cam ) + vector3_normalised( farPoint - Camera_getOrigin( cam ) ) * 256.f;
 	return false;
 }
+/// KenRadiant Performance: the 3D view's matrices (false without a 3D view)
+bool KrCamera_getMatrices( Matrix4& modelview, Matrix4& projection ){
+	if( g_camwnd == nullptr )
+		return false;
+	modelview = g_camwnd->getCamera().modelview;
+	projection = g_camwnd->getCamera().projection;
+	return true;
+}
 /// KenRadiant Lighting Probe: the 3D camera
 void KrCamera_getView( Vector3& origin, Vector3& angles, float& fov ){
 	fov = camera_t::fieldOfView;
@@ -3845,6 +3853,8 @@ void CamWnd_Construct(){
 	KrCompile_registerCommands();
 	extern void KrProbe_registerCommands();
 	KrProbe_registerCommands();
+	extern void KrPerf_registerCommands();
+	KrPerf_registerCommands();
 	extern void KrBspPreview_registerCommands();
 	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant

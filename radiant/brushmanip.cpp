@@ -1993,3 +1993,35 @@ void Scene_collectSurfaceLights( std::vector<KrPreviewLight>& lights ){
 			}
 	} );
 }
+
+/// KenRadiant Performance: structural world brushes no bigger than maxSize in every direction (trims, props, steps -
+/// they cut the vis portals without blocking much sight); counts all structural / detail world brushes too.
+/// select: select those (everything else deselected first)
+#include "ientity.h"
+int Scene_smallStructural( float maxSize, bool select, int& structural, int& detail ){
+	if( select )
+		GlobalSelectionSystem().setSelectedAll( false );
+	int small = 0;
+	structural = detail = 0;
+	Scene_forEachBrush( GlobalSceneGraph(), [&]( BrushInstance& instance ){
+		const scene::Path& path = instance.path();
+		if( path.size() < 2 )
+			return;
+		Entity* entity = Node_getEntity( path.parent() );
+		if( entity == nullptr || !string_equal( entity->getClassName(), "worldspawn" ) )
+			return;
+		Brush& brush = instance.getBrush();
+		if( brush.isDetail() ){
+			++detail;
+			return;
+		}
+		++structural;
+		const AABB& box = brush.localAABB();
+		if( box.extents.x() * 2 <= maxSize && box.extents.y() * 2 <= maxSize && box.extents.z() * 2 <= maxSize ){
+			++small;
+			if( select )
+				instance.setSelected( true );
+		}
+	} );
+	return small;
+}

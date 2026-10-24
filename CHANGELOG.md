@@ -3,6 +3,11 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (23)
+### Editor
+- **Performance view** (Build → Performance): what the game draws from the camera, from the compiled .bsp the way the engine picks it (vis cluster → PVS → leafs in view): triangles, surfaces (draw calls), passes (surfaces x shader stages), shaders, blended surfaces - colour bars against rough SOF2 budgets, updating as you fly - and the heaviest shaders in view. **Find worst spots + suggestions** ranks all vis clusters (Go flies there) and suggests fixes: run VIS, make small structural brushes detail (button, undoable), lightmap count, multi-stage shaders used a lot in heavy spots, the share of baked models. On your de_dust2.bsp: the worst spots see the whole map (~131k triangles), 82% of it baked models.
+- Live light: point-light shadows get more normal offset at grazing angles (less acne on walls lit from the side, e.g. mp_shop).
+
 ## Build 2026-10-24 (22)
 ### Editor
 - **Models in the live light preview at the game's brightness** (your third probe: live light itself was right - walls 1.04 x, decals 1.02 x, models 1.06 x what q3map2 stored - but models showed 0.54 x the game). The compiler bakes misc_models with the shader's `_bsp` variant when one exists (two `rgbGen vertex` stages, the 2x), the editor drew them with the plain one (`rgbGen lightingDiffuse`, one stage). The editor now uses the `_bsp` variant too, like q3map2 (after `_remap`).

@@ -144,7 +144,7 @@ vec3 pointLight( float id, vec3 nw ){
 			c *= ( radiusAtDist - sampleRadius ) / 32.0;
 	}
 	if( c > 0.0 && id < 7.5 ){
-		vec3 L = -d + nw * ( 3.0 + dist * 0.02 ); // (normal offset against acne)
+		vec3 L = -d + nw * ( 3.0 + dist * ( 0.02 + 0.04 * ( 1.0 - ndl ) ) ); // (normal offset against acne, more at grazing angles)
 		int i = int( id + 0.5 );
 		if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, ndl );
 		else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, ndl );
