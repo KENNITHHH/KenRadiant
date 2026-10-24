@@ -33,6 +33,7 @@ void KrLightPreview_redraw();
 void createShader( GLuint program, const char* filename, GLenum type );
 void GLSLProgram_link( GLuint program );
 #include "qerplugin.h"
+#include "moduleobserver.h"
 
 namespace
 {
@@ -56,7 +57,19 @@ enum { LUMP_SHADERS = 1, LUMP_DRAWVERTS = 10, LUMP_DRAWINDEXES = 11, LUMP_SURFAC
 enum { MST_PLANAR = 1, MST_PATCH = 2, MST_TRIANGLE_SOUP = 3 };
 
 struct Vertex { float xyz[3]; float st[2]; float lm[2]; unsigned char colour[4]; };
-struct Batch { IShader* shader = nullptr; int lightmap = -1; bool blend = false; std::vector<Vertex> verts; };
+struct Batch { CopiedString name; IShader* shader = nullptr; bool skip = false; int lightmap = -1; bool blend = false; std::vector<Vertex> verts; };
+
+/// shader reloads (Flush & Reload, skybox / game shader toggles) must not find our shader references: give them back
+/// and pick them up again on the next draw
+bool g_shadersReleased = false;
+class ShaderObserver : public ModuleObserver
+{
+public:
+	void realise() override {}
+	void unrealise() override;
+};
+ShaderObserver g_shaderObserver;
+bool g_observing = false;
 
 bool g_show = false;
 std::vector<Batch> g_batches;
@@ -65,6 +78,23 @@ CopiedString g_loadedFile;
 QDateTime g_loadedTime;
 GLuint g_program = 0;
 GLint u_lm, u_tex, u_uselm, u_shift, u_gamma;
+
+void ShaderObserver::unrealise(){
+	for( Batch& b : g_batches )
+		if( b.shader != nullptr ){
+			b.shader->DecRef();
+			b.shader = nullptr;
+		}
+	g_shadersReleased = true;
+}
+void Shaders_acquire(){
+	if( !g_shadersReleased )
+		return;
+	g_shadersReleased = false;
+	for( Batch& b : g_batches )
+		if( !b.skip && b.shader == nullptr )
+			b.shader = GlobalShaderSystem().getShaderForName( b.name.c_str() );
+}
 
 void Bsp_unload(){
 	for( Batch& b : g_batches )
@@ -165,10 +195,12 @@ bool Bsp_load( const char* path ){
 			Batch b;
 			char name[65] = {};
 			std::memcpy( name, shaders[s.shader].name, 64 );
+			b.name = name;
 			b.shader = GlobalShaderSystem().getShaderForName( name );
 			if( b.shader->getFlags() & ( QER_SKY | QER_NODRAW ) ){ // the editor draws the sky; nodraw is never seen
 				b.shader->DecRef();
 				b.shader = nullptr;
+				b.skip = true;
 			}
 			else{
 				b.blend = ( b.shader->getFlags() & QER_TRANS ) != 0;
@@ -177,7 +209,7 @@ bool Bsp_load( const char* path ){
 			g_batches.push_back( std::move( b ) );
 		}
 		Batch& b = g_batches[it->second];
-		if( b.shader == nullptr )
+		if( b.skip )
 			continue;
 		const BspVert* v = verts.data() + s.firstVert;
 		if( s.type == MST_PLANAR || s.type == MST_TRIANGLE_SOUP ){
@@ -294,6 +326,11 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	}
 	if( g_batches.empty() )
 		return;
+	if( !g_observing ){
+		g_observing = true;
+		GlobalShaderSystem().attach( g_shaderObserver );
+	}
+	Shaders_acquire();
 	if( g_program == 0 )
 		g_program = Program_create();
 	gl().glMatrixMode( GL_PROJECTION );
@@ -362,6 +399,10 @@ void KrBspPreview_shutdown(){
 			b.shader->DecRef();
 	g_batches.clear();
 	g_lightmaps.clear(); // (the textures die with the GL context)
+	if( g_observing ){
+		g_observing = false;
+		GlobalShaderSystem().detach( g_shaderObserver );
+	}
 }
 
 void KrBspPreview_registerCommands(){

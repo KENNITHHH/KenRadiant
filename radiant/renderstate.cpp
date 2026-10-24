@@ -507,7 +507,8 @@ KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
-int g_krPreviewLightCount = 2048;
+int g_krPreviewLightCount = int( c_krMaxPreviewLights );
+int g_krMapLightCount = 0;
 int g_krEngineShift = 1;
 float g_krEngineGamma = 1;
 int g_krMaxPreviewLightsGPU = int( c_krMaxPreviewLights );
@@ -559,7 +560,14 @@ public:
 		{
 			StringOutputStream filename( 256 );
 			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_vp.glsl" ), GL_VERTEX_SHADER );
-			createShader( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER );
+			// the lights texture layout comes from kr_lightpreview.h
+			const auto prefix = StringStream<512>( "#define KR_LIGHTS_TEXELS ", int( c_krMaxPreviewLights ) * c_krLightTexels, ".0\n",
+			                                       "#define KR_TH ", c_krLightTexRows, ".0\n",
+			                                       "#define KR_GRID vec3( ", c_krGridX, ".0, ", c_krGridY, ".0, ", c_krGridZ, ".0 )\n",
+			                                       "#define KR_CELL ", c_krCellSize, ".0\n",
+			                                       "#define KR_CELL_TEXELS ", c_krCellSlots / 4, "\n" );
+			if( !createShaderTry( m_program, filename( GlobalRadiant().getAppPath(), "gl/kr_light_fp.glsl" ), GL_FRAGMENT_SHADER, prefix ) )
+				globalErrorStream() << "light preview: kr_light_fp.glsl failed to compile\n";
 		}
 		GLSLProgram_link( m_program );
 		gl().glUseProgram( m_program );
@@ -2563,7 +2571,7 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 	if( list.empty() )
 		return false;
 	const auto multiplies = []( const KrStage& st ){
-		return st.blend && ( ( st.src == BLEND_DST_COLOUR && st.dst == BLEND_ZERO ) || ( st.src == BLEND_ZERO && st.dst == BLEND_SRC_COLOUR ) );
+		return st.blend && ( st.src == BLEND_DST_COLOUR || ( st.src == BLEND_ZERO && st.dst == BLEND_SRC_COLOUR ) ); // filter, 2x modulate ...
 	};
 	const KrStage& base = *list.front();
 	const bool baseOpaque = !base.blend || ( base.src == BLEND_ONE && base.dst == BLEND_ZERO ) || ( lightmapped && multiplies( base ) );

@@ -1404,7 +1404,8 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 			}
 			else if ( string_equal_nocase( token, "rgbgen" ) ) {
 				if( const char* gen = tokeniser.getToken() ){
-					stageVertexLit = string_equal_nocase( gen, "vertex" ) || string_equal_nocase( gen, "exactVertex" ) || string_equal_nocase( gen, "lightingDiffuse" );
+					// vertex, exactVertex, lightingDiffuse, lightingDiffuseEntity (JK2 / SOF2) ...: lit by the game
+					stageVertexLit = string_equal_nocase( gen, "vertex" ) || string_equal_nocase( gen, "exactVertex" ) || string_equal_nocase_n( gen, "lightingDiffuse", 15 );
 					if( stageVertexLit )
 						stage.rgbGen = 1;
 					else if( string_equal_nocase( gen, "wave" ) ){

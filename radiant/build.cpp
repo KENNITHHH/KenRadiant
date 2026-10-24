@@ -1341,3 +1341,18 @@ bool Build_runPreset( const char* name ){
 	}
 	return false;
 }
+
+#include "watchbsp.h"
+/// KenRadiant: runs a Build menu entry without saving / snapshotting the open map (decompiling another .bsp)
+bool Build_runPresetNoSave( const char* name ){
+	std::size_t index = 0;
+	for( const BuildPair& p : g_build_project ){
+		if( string_equal( p.first.c_str(), name ) ){
+			std::vector<CopiedString> commands = build_construct_commands( index );
+			BuildMonitor_Run( commands, "" );
+			return true;
+		}
+		++index;
+	}
+	return false;
+}

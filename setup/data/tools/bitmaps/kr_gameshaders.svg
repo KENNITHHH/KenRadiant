@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: shaders like in game (stacked shader stages) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 64,14 116,40 64,66 12,40 Z" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 22,62 64,84 106,62" style="fill:none;stroke:#c0c0c0;stroke-width:8;stroke-linejoin:round;stroke-linecap:round" />
+  <path d="M 22,84 64,106 106,84" style="fill:none;stroke:#ffa020;stroke-width:8;stroke-linejoin:round;stroke-linecap:round" />
+</svg>

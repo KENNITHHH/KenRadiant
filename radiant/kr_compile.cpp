@@ -43,10 +43,15 @@
 #include "math/vector.h"
 #include "kr_compile_flags.h"
 #include <QToolButton>
+#include <QInputDialog>
+#include <QFileDialog>
 #include <QScrollArea>
 
 void Build_setPreset( const char* name, const std::vector<CopiedString>& commands );
 bool Build_runPreset( const char* name );
+bool Build_runPresetNoSave( const char* name );
+void Map_LoadFile( const char* filename );
+bool ConfirmModified( const char* title );
 bool KrMapText_selectPrimitive( int entity, int brush, bool focus );
 void KrCamera_goTo( const Vector3& origin );
 
@@ -68,6 +73,9 @@ struct CompileOptions
 	float gamma = 1, compensate = 1;
 	CopiedString extraBsp, extraVis, extraLight;
 	CopiedString advBsp, advVis, advLight; // ticked "all options": "flag=value;flag=;..."
+	CopiedString decompBsp;
+	int decompFormat = 0; // map, map_bp
+	bool decompFast = false, decompModelclip = false, decompWtf = false, decompLegacy = false;
 	bool runGame = false;
 	CopiedString gameExe = "SoF2MP.exe";
 	CopiedString gameArgs = "+set sv_pure 0 +set developer 1 +devmap %mapname%";
@@ -259,6 +267,7 @@ class CompileDialog : public QDialog
 	QListWidget* m_problemList;
 	int m_problemsTab = -1;
 	QCheckBox *m_bspBox, *m_visBox, *m_lightBox;
+	QString m_lastPresetName;
 	std::vector<std::function<void()>> m_loaders; // options -> widgets
 
 	void hint( QWidget* widget, const QString& text ){
@@ -388,12 +397,16 @@ class CompileDialog : public QDialog
 			changed();
 		};
 		constexpr int columns = 4;
+		std::vector<std::size_t> order( N );
+		for( std::size_t i = 0; i < N; ++i )
+			order[i] = i;
+		std::sort( order.begin(), order.end(), [&flags]( std::size_t a, std::size_t b ){ return string_less_nocase( flags[a].flag, flags[b].flag ); } );
 		for( std::size_t i = 0; i < N; ++i ){
-			const KrCompileFlag& f = flags[i];
+			const KrCompileFlag& f = flags[order[i]];
 			auto *cell = new QWidget;
 			auto *h = new QHBoxLayout( cell );
 			h->setContentsMargins( 0, 0, 0, 0 );
-			auto *box = new QCheckBox( QString( f.flag ).mid( 1 ) );
+			auto *box = new QCheckBox( f.flag );
 			h->addWidget( box );
 			QLineEdit* value = nullptr;
 			if( !string_empty( f.arg ) ){
@@ -512,44 +525,53 @@ public:
 
 		m_tabs = new QTabWidget;
 		outer->addWidget( m_tabs, 1 );
+		// each tab: the options sorted by their q3map2 name, "-name  (what it is)"
 		{
 			QGridLayout* g = page( "BSP" );
-			check( g, 0, 0, "Meta surfaces (-meta)", o.meta, "Merges faces into big triangle surfaces per shader: faster in game, better lightmap packing. Keep it on." );
-			check( g, 0, 1, "Curves to meshes (-patchmeta)", o.patchmeta, "Patches become fixed triangle meshes that merge and light like brushes. Off = normal curves." );
-			check( g, 0, 2, "Leak test (-leaktest)", o.leaktest, "Stop when the map leaks instead of writing a broken .bsp. The pointfile (File > Pointfile) shows the way to the hole." );
-			check( g, 1, 0, "Entities only (-onlyents)", o.onlyents, "Only rewrites the entities in the existing .bsp (moved light, changed key). Seconds. Skips VIS; tick LIGHT if lights moved." );
-			check( g, 1, 1, "No curves (-nocurves)", o.nocurves, "Leaves all patches out: a quick test of the brush work only." );
-			check( g, 1, 2, "No detail (-nodetail)", o.nodetail, "Leaves detail brushes out: shows what the structural hull looks like (testing)." );
-			check( g, 2, 0, "No T-junction fix (-notjunc)", o.notjunc, "Skips fixing T-junctions. Faster, but sparkles / cracks can appear between faces. Testing only." );
-			spin( g, 2, 1, "Lightmap texel (-samplesize)", o.samplesize, 0, 128, "default 16", "World units per lightmap pixel for the whole map. Lower = sharper shadows, bigger lightmaps, slower light (8 sharp, 32 soft)." );
-			text( g, 3, "Extra options", o.extraBsp, "Anything else for the BSP stage, as on the command line." );
-			advanced( g, 4, c_krFlags_bsp, o.advBsp );
+			int n = 0;
+			const auto at = [&n]( int& row, int& col ){ row = n / 3; col = n % 3; ++n; };
+			int r, c;
+			at( r, c ); check( g, r, c, "-leaktest  (stop on leaks)", o.leaktest, "Stop when the map leaks instead of writing a broken .bsp. The pointfile (File > Pointfile) shows the way to the hole." );
+			at( r, c ); check( g, r, c, "-meta  (meta surfaces)", o.meta, "Merges faces into big triangle surfaces per shader: faster in game, better lightmap packing. Keep it on." );
+			at( r, c ); check( g, r, c, "-nocurves  (no patches)", o.nocurves, "Leaves all patches out: a quick test of the brush work only." );
+			at( r, c ); check( g, r, c, "-nodetail  (no detail)", o.nodetail, "Leaves detail brushes out: shows what the structural hull looks like (testing)." );
+			at( r, c ); check( g, r, c, "-notjunc  (no T-junction fix)", o.notjunc, "Skips fixing T-junctions. Faster, but sparkles / cracks can appear between faces. Testing only." );
+			at( r, c ); check( g, r, c, "-onlyents  (entities only)", o.onlyents, "Only rewrites the entities in the existing .bsp (moved light, changed key). Seconds. Skips VIS; tick LIGHT if lights moved." );
+			at( r, c ); check( g, r, c, "-patchmeta  (curves to meshes)", o.patchmeta, "Patches become fixed triangle meshes that merge and light like brushes. Off = normal curves." );
+			at( r, c ); spin( g, r, c, "-samplesize  (lightmap texel)", o.samplesize, 0, 128, "default 16", "World units per lightmap pixel for the whole map. Lower = sharper shadows, bigger lightmaps, slower light (8 sharp, 32 soft)." );
+			const int row = n / 3 + 1;
+			text( g, row, "Extra options", o.extraBsp, "Anything else for the BSP stage, as on the command line." );
+			advanced( g, row + 1, c_krFlags_bsp, o.advBsp );
 		}
 		{
 			QGridLayout* g = page( "VIS" );
-			check( g, 0, 0, "Fast (-fast)", o.visFast, "Rough visibility in a fraction of the time. For testing; use full VIS for a release." );
-			check( g, 0, 1, "Keep portals (-saveprt)", o.saveprt, "Keeps the .prt file to look at the portals (Plugins > Prtview) when placing hint brushes." );
-			check( g, 0, 2, "No passage vis (-nopassage)", o.nopassage, "Uses the older, slower vis method. Only if passage vis gives you wrong visibility." );
+			check( g, 0, 0, "-fast  (rough, quick)", o.visFast, "Rough visibility in a fraction of the time. For testing; use full VIS for a release." );
+			check( g, 0, 1, "-nopassage  (old method)", o.nopassage, "Uses the older, slower vis method. Only if passage vis gives you wrong visibility." );
+			check( g, 0, 2, "-saveprt  (keep portals)", o.saveprt, "Keeps the .prt file to look at the portals (Plugins > Prtview) when placing hint brushes." );
 			text( g, 1, "Extra options", o.extraVis, "Anything else for the VIS stage." );
 			advanced( g, 2, c_krFlags_vis, o.advVis );
 		}
 		{
 			QGridLayout* g = page( "LIGHT" );
-			combo( g, 0, 0, "Speed", o.quality, { "Faster", "Fast", "Full" }, { 0, 1, 2 },
-			       "Faster (-faster): very rough, light ends abruptly - quick looks only. Fast (-fast): what most maps ship with. Full: most accurate, slowest." );
-			combo( g, 0, 1, "Supersample (-super)", o.super, { "1", "2", "4" }, { 1, 2, 4 }, "Each lightmap pixel from N x N samples: smoother shadow edges. Costs N x N time. 2 is a good final value." );
-			spin( g, 0, 2, "Bounces (-bounce)", o.bounce, 0, 8, "off", "Light reflects off surfaces this many times and picks up their colour: fills rooms lit only through a door or window. Each bounce costs about one direct pass." );
-			check( g, 1, 0, "Smooth (-filter)", o.filter, "Blurs the lightmaps slightly to hide pixel steps on shadow edges. Cheap, usually on." );
-			check( g, 1, 1, "Corner dirt (-dirty)", o.dirty, "Darkens corners, creases and where objects meet the floor (ambient occlusion). Looks grounded; adds time." );
-			check( g, 1, 2, "Curves cast shadows (-patchshadows)", o.patchshadows, "q3map2 lets light pass through patches unless this is on. Arches, pipes, curved roofs." );
-			check( g, 2, 0, "Smooth shading (-shade)", o.shade, "Phong shading: light flows smoothly over round brush work and models instead of faceting." );
-			check( g, 2, 1, "No collapse (-nocollapse)", o.nocollapse, "Keeps identical lightmaps separate. Only for lightmap debugging." );
-			check( g, 2, 2, "No merge after light (-nomerge)", o.nomerge, "This q3map2 merges surfaces sharing a lightmap after -light. Turn on only if you see seams or wrong light on merged surfaces." );
-			spin( g, 3, 0, "Adaptive samples (-samples)", o.samples, 0, 4, "off", "Extra samples only where the light changes (shadow edges). Like -super but cheaper on flat areas." );
-			dspin( g, 3, 1, "Gamma (-gamma)", o.gamma, "Above 1 brightens dark and mid tones (1 = unchanged). The Sun Calibrator previews it." );
-			dspin( g, 3, 2, "Compensate (-compensate)", o.compensate, "Divides the lightmap brightness (1 = unchanged). With gamma, keeps bright spots from clipping." );
-			text( g, 4, "Extra options", o.extraLight, "Anything else for the LIGHT stage, e.g. -lightmapsize 256." );
-			advanced( g, 5, c_krFlags_light, o.advLight );
+			int n = 0;
+			const auto at = [&n]( int& row, int& col ){ row = n / 3; col = n % 3; ++n; };
+			int r, c;
+			at( r, c ); spin( g, r, c, "-bounce  (light bounces)", o.bounce, 0, 8, "off", "Light reflects off surfaces this many times and picks up their colour: fills rooms lit only through a door or window. Each bounce costs about one direct pass." );
+			at( r, c ); dspin( g, r, c, "-compensate", o.compensate, "Divides the lightmap brightness (1 = unchanged). With gamma, keeps bright spots from clipping." );
+			at( r, c ); check( g, r, c, "-dirty  (corner dirt)", o.dirty, "Darkens corners, creases and where objects meet the floor (ambient occlusion). Looks grounded; adds time." );
+			at( r, c ); combo( g, r, c, "-fast / -faster  (speed)", o.quality, { "-faster", "-fast", "full" }, { 0, 1, 2 },
+			                   "-faster: very rough, light ends abruptly - quick looks only. -fast: what most maps ship with. full (neither): most accurate, slowest." );
+			at( r, c ); check( g, r, c, "-filter  (smooth lightmaps)", o.filter, "Blurs the lightmaps slightly to hide pixel steps on shadow edges. Cheap, usually on." );
+			at( r, c ); dspin( g, r, c, "-gamma", o.gamma, "Above 1 brightens dark and mid tones (1 = unchanged). The Sun Calibrator previews it." );
+			at( r, c ); check( g, r, c, "-nocollapse  (keep lightmaps apart)", o.nocollapse, "Keeps identical lightmaps separate. Only for lightmap debugging." );
+			at( r, c ); check( g, r, c, "-nomerge  (no merge after light)", o.nomerge, "This q3map2 merges surfaces sharing a lightmap after -light (always, it makes the map faster). Turn on only if you see seams or wrong light on merged surfaces." );
+			at( r, c ); check( g, r, c, "-patchshadows  (curves cast shadows)", o.patchshadows, "q3map2 lets light pass through patches unless this is on. Arches, pipes, curved roofs." );
+			at( r, c ); spin( g, r, c, "-samples  (adaptive)", o.samples, 0, 4, "off", "Extra samples only where the light changes (shadow edges). Like -super but cheaper on flat areas." );
+			at( r, c ); check( g, r, c, "-shade  (smooth shading)", o.shade, "Phong shading: light flows smoothly over round brush work and models instead of faceting." );
+			at( r, c ); combo( g, r, c, "-super  (supersample)", o.super, { "1", "2", "4" }, { 1, 2, 4 }, "Each lightmap pixel from N x N samples: smoother shadow edges. Costs N x N time. 2 is a good final value." );
+			const int row = n / 3 + 1;
+			text( g, row, "Extra options", o.extraLight, "Anything else for the LIGHT stage, e.g. -samplesize 8." );
+			advanced( g, row + 1, c_krFlags_light, o.advLight );
 		}
 		{
 			QGridLayout* g = page( "Game" );
@@ -561,6 +583,66 @@ public:
 			QObject::connect( now, &QPushButton::clicked, [](){ Game_start(); } );
 			g->addWidget( now, 2, 0 );
 			g->setRowStretch( 3, 1 );
+		}
+		{
+			QGridLayout* g = page( "Decompile" );
+			int r = 0;
+			auto *file = text( g, r++, ".bsp to decompile", o.decompBsp, "Any compiled map. q3map2 writes <name>_converted.map next to it (brushes, patches, entities, misc_models), "
+			                   "with the texture alignment worked back out of the .bsp." );
+			auto *browse = new QPushButton( "Browse..." );
+			browse->setAutoDefault( false );
+			QObject::connect( browse, &QPushButton::clicked, [this, file](){
+				QString start = QString( o.decompBsp.c_str() );
+				if( start.isEmpty() )
+					start = QString( EnginePath_get() );
+				const QString f = QFileDialog::getOpenFileName( this, "Decompile .bsp", start, "Compiled maps (*.bsp);;All files (*)" );
+				if( f.isEmpty() )
+					return;
+				file->setText( f );
+				o.decompBsp = f.toLatin1().constData();
+			} );
+			g->addWidget( browse, r++, 1, Qt::AlignLeft );
+			combo( g, r, 0, "-format", o.decompFormat, { "map (Quake 3 / SOF2)", "map_bp (brush primitives)" }, { 0, 1 },
+			       "map: the normal SOF2 .map format KenRadiant uses. map_bp: brush primitives texture format." );
+			check( g, r, 1, "-fast  (no texture alignment)", o.decompFast, "Much quicker, but textures are not aligned like in the .bsp. For a quick look at the layout." );
+			check( g, r++, 2, "-legacydecompile  (old method)", o.decompLegacy, "The original q3map2 decompiler instead of this q3map2's 1:1 one. Only if the new one fails on a map." );
+			check( g, r, 0, "-modelclip  (model clip brushes)", o.decompModelclip, "Also decompile the clip brushes q3map2 made for models (skipped by default, they come back when you compile)." );
+			check( g, r++, 1, "-wtf  (mark failed alignment)", o.decompWtf, "Faces whose texture alignment couldn't be worked out get common/WTF, so you can find and fix them." );
+			auto *row = new QHBoxLayout;
+			auto *run = new QPushButton( "Decompile" );
+			run->setAutoDefault( false );
+			auto *open = new QPushButton( "Open the result" );
+			open->setAutoDefault( false );
+			hint( run, "Runs q3map2 -convert; progress in the console. The open map is not touched or saved." );
+			hint( open, "Opens <name>_converted.map (asks to save your current map first)." );
+			QObject::connect( run, &QPushButton::clicked, [this](){
+				if( o.decompBsp.empty() || !QFileInfo::exists( o.decompBsp.c_str() ) ){
+					QMessageBox::information( this, "Decompile", "Choose a .bsp file first." );
+					return;
+				}
+				QString c = QString( "[q3map2] -convert -format %1 -readbsp" ).arg( o.decompFormat == 1 ? "map_bp" : "map" );
+				if( o.decompFast ) c += " -fast";
+				if( o.decompLegacy ) c += " -legacydecompile";
+				if( o.decompModelclip ) c += " -modelclip";
+				if( o.decompWtf ) c += " -wtf";
+				c += QString( " \"%1\"" ).arg( QString( o.decompBsp.c_str() ).replace( '\\', '/' ) );
+				Build_setPreset( "KenRadiant: (Decompile)", { CopiedString( c.toLatin1().constData() ) } );
+				Build_runPresetNoSave( "KenRadiant: (Decompile)" );
+			} );
+			QObject::connect( open, &QPushButton::clicked, [this](){
+				const QString result = QString( o.decompBsp.c_str() ).replace( QRegularExpression( "\\.bsp$", QRegularExpression::CaseInsensitiveOption ), "" ) + "_converted.map";
+				if( !QFileInfo::exists( result ) ){
+					QMessageBox::information( this, "Decompile", "No " + result + " yet - press Decompile and wait for it to finish." );
+					return;
+				}
+				if( ConfirmModified( "Open Map" ) )
+					Map_LoadFile( result.toLatin1().constData() );
+			} );
+			row->addWidget( run );
+			row->addWidget( open );
+			row->addStretch();
+			g->addLayout( row, r++, 0, 1, 3 );
+			g->setRowStretch( r, 1 );
 		}
 		{
 			auto *w = new QWidget;
@@ -604,14 +686,20 @@ public:
 			auto *row = new QHBoxLayout;
 			auto *menu = new QPushButton( "Add to Build menu" );
 			menu->setAutoDefault( false );
-			hint( menu, QString( "Keeps these commands as '%1' at the top of the Build menu." ).arg( c_presetName ) );
+			hint( menu, "Keeps these commands as a Build menu entry with a name you choose (the same name replaces it)." );
 			QObject::connect( menu, &QPushButton::clicked, [this](){
 				std::vector<CopiedString> commands;
 				Compile_commandsText( o, &commands );
 				if( commands.empty() )
 					return;
-				Build_setPreset( c_presetName, commands );
-				globalOutputStream() << "Compile: Build menu entry '" << c_presetName << "' updated\n";
+				bool ok = false;
+				const QString name = QInputDialog::getText( this, "Add to Build menu", "Name of the Build menu entry:", QLineEdit::Normal,
+				                                            m_lastPresetName.isEmpty() ? QString( "KenRadiant: my settings" ) : m_lastPresetName, &ok ).trimmed();
+				if( !ok || name.isEmpty() )
+					return;
+				m_lastPresetName = name;
+				Build_setPreset( name.toLatin1().constData(), commands );
+				globalOutputStream() << "Compile: Build menu entry '" << name.toLatin1().constData() << "' added\n";
 			} );
 			auto *close = new QPushButton( "Close" );
 			close->setAutoDefault( false );
@@ -782,5 +870,7 @@ void KrCompile_registerCommands(){
 	prefF( "KrCompileGamma", o.gamma ); prefF( "KrCompileCompensate", o.compensate );
 	prefS( "KrCompileAdvBsp", o.advBsp ); prefS( "KrCompileAdvVis", o.advVis ); prefS( "KrCompileAdvLight", o.advLight );
 	prefS( "KrCompileExtraBsp", o.extraBsp ); prefS( "KrCompileExtraVis", o.extraVis ); prefS( "KrCompileExtraLight", o.extraLight );
+	prefS( "KrDecompileBsp", o.decompBsp ); prefI( "KrDecompileFormat", o.decompFormat ); prefB( "KrDecompileFast", o.decompFast );
+	prefB( "KrDecompileModelclip", o.decompModelclip ); prefB( "KrDecompileWtf", o.decompWtf ); prefB( "KrDecompileLegacy", o.decompLegacy );
 	prefB( "KrCompileRunGame", o.runGame ); prefS( "KrCompileGameExe", o.gameExe ); prefS( "KrCompileGameArgs", o.gameArgs );
 }

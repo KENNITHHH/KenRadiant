@@ -1671,16 +1671,21 @@ void Brush_constructMenu( QMenu* menu ){
 }
 
 /// KenRadiant light preview: the sky shaders used on brush faces of the map
+/// the map's sky shaders first, then every other shader on its brushes (q3map2 takes q3map_sun from any surface's shader)
 std::vector<CopiedString> Scene_findSkyShaders(){
-	std::vector<CopiedString> found;
-	Scene_ForEachBrush_ForEachFace( GlobalSceneGraph(), [&found]( Face& face ){
+	std::vector<CopiedString> sky;
+	std::set<CopiedString> other;
+	Scene_ForEachBrush_ForEachFace( GlobalSceneGraph(), [&sky, &other]( Face& face ){
+		const char* name = face.GetShader();
 		if( face.getShader().shaderFlags() & QER_SKY ){
-			const char* name = face.GetShader();
-			if( std::none_of( found.begin(), found.end(), [name]( const CopiedString& s ){ return string_equal_nocase( s.c_str(), name ); } ) )
-				found.emplace_back( name );
+			if( std::none_of( sky.begin(), sky.end(), [name]( const CopiedString& s ){ return string_equal_nocase( s.c_str(), name ); } ) )
+				sky.emplace_back( name );
 		}
+		else
+			other.insert( name );
 	} );
-	return found;
+	sky.insert( sky.end(), other.begin(), other.end() );
+	return sky;
 }
 
 /* ---- KenRadiant: Unreal-style brush geometry presets ---- */

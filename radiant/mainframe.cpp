@@ -1521,6 +1521,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
+	toolbar_append_toggle_button( toolbar, "Shaders like in game: every stage of a shader (glows, blends, rgbGen, animMap) - off = the editor image only", "kr_gameshaders.png", "ToggleGameShaders" );
 	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );
 	toolbar_append_button( toolbar, "Sun Calibrator: tweak the sky shader's q3map_sun live, preview gamma / compensate / bounce", "kr_sun.png", "SunCalibrator" );
 	toolbar->addSeparator();

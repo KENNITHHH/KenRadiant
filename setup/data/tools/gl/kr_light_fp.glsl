@@ -1,7 +1,7 @@
 // KenRadiant live light preview: texture * ( ambient + shadowed sun + point lights ), lights in eye space
 uniform sampler2D u_tex;
-// lights (up to 2048) in a float texture: 4 texels per light ( world position, falloff ), ( colour, reach² ),
-// ( spot direction, spot radius by distance ), ( no angle attenuation, _anglescale ); then a 20 x 20 x 10 grid of
+// lights (up to 8192) in a float texture: 4 texels per light ( world position, falloff ), ( colour, reach² ),
+// ( spot direction, spot radius by distance ), ( no angle attenuation, _anglescale ); then a grid of
 // 256-unit cells around the camera, each with the 48 strongest lights that reach it (-1 = end of the list)
 uniform sampler2D u_lights;
 uniform int u_has_lights;
@@ -9,9 +9,7 @@ uniform vec3 u_grid_min;
 uniform vec3 u_cam_world; // camera position: world = u_eye2world * eye + u_cam_world (models are drawn in their own space)
 vec3 g_wp;
 #define KR_TW 1024.0
-#define KR_LIGHTS_TEXELS 8192.0
-#define KR_GRID vec3( 20.0, 20.0, 10.0 )
-#define KR_CELL 256.0
+// KR_LIGHTS_TEXELS, KR_TH, KR_GRID, KR_CELL, KR_CELL_TEXELS: defined by the editor (kr_lightpreview.h)
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
@@ -82,7 +80,6 @@ vec4 terrainColour(){
 	return vec4( c.rgb / max( w.r + w.g + w.b + w.a, 0.001 ), 1.0 );
 }
 
-#define KR_TH 55.0
 vec4 lightTexel( float t ){
 	float y = floor( t / KR_TW );
 	return texture2D( u_lights, vec2( ( t - y * KR_TW + 0.5 ) / KR_TW, ( y + 0.5 ) / KR_TH ) );
@@ -141,7 +138,7 @@ vec3 pointLight( float id, vec3 nw ){
 			c *= ( radiusAtDist - sampleRadius ) / 32.0;
 	}
 	if( c > 0.0 && id < 7.5 ){
-		vec3 L = -d;
+		vec3 L = -d + nw * ( 2.0 + dist * 0.01 ); // (normal offset against acne)
 		int i = int( id + 0.5 );
 		if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, ndl );
 		else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, ndl );
@@ -173,7 +170,8 @@ void main()
 	float ndl = max( dot( n, u_sun_dir ), 0.0 );
 	float sun = ndl;
 	if( u_has_shadow != 0 && ndl > 0.0 ){
-		vec4 sc = u_eye2shadow * vec4( v_pos, 1.0 );
+		// normal offset: look the shadow up a little off the surface, no self-shadow stripes (acne) on walls
+		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 1.0 + 3.0 * ( 1.0 - ndl ) ), 1.0 );
 		if( sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0 ){
 			// slope-scaled bias, 5x5 PCF; the spread grows with the sun's deviance (q3map_sunExt)
 			float bias = u_bias_unit * ( 1.0 + 2.0 * min( sqrt( 1.0 - ndl * ndl ) / max( ndl, 0.05 ), 8.0 ) ) * max( 1.0, u_soft );
@@ -196,7 +194,7 @@ void main()
 			continue;
 		float vis = 1.0;
 		if( u_has_sky != 0 ){
-			vec4 sc = u_eye2sky[i] * vec4( v_pos, 1.0 );
+			vec4 sc = u_eye2sky[i] * vec4( v_pos + n * ( 4.0 + 8.0 * ( 1.0 - c ) ), 1.0 );
 			vec2 t0 = vec2( float( i - KR_SKY_GRID * ( i / KR_SKY_GRID ) ), float( i / KR_SKY_GRID ) ) * tileSize; // this direction's tile of the atlas
 			// a wide soft filter: q3map2's sky light comes from the whole dome, not from a few sharp directions
 			float r = 3.0 * tileSize / 1024.0;
@@ -216,9 +214,9 @@ void main()
 	if( u_has_lights != 0 ){
 		g_wp = u_eye2world * v_pos + u_cam_world;
 		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );
-		float base = KR_LIGHTS_TEXELS + ( cellf.x + KR_GRID.x * ( cellf.y + KR_GRID.y * cellf.z ) ) * 12.0;
+		float base = KR_LIGHTS_TEXELS + ( cellf.x + KR_GRID.x * ( cellf.y + KR_GRID.y * cellf.z ) ) * float( KR_CELL_TEXELS );
 		bool done = false;
-		for( int k = 0; k < 12 && !done; ++k ){
+		for( int k = 0; k < KR_CELL_TEXELS && !done; ++k ){
 			vec4 ids = lightTexel( base + float( k ) );
 			for( int j = 0; j < 4; ++j ){
 				float id = j == 0 ? ids.x : j == 1 ? ids.y : j == 2 ? ids.z : ids.w;

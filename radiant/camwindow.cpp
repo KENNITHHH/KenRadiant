@@ -2144,6 +2144,61 @@ static void KrSun_readMap(){
 		}
 		shader->DecRef();
 	}
+	// q3map2 also makes a sun of a light entity with "_sun" "1" and a target: the direction light -> target
+	if( !g_krSun.valid ){
+		std::map<CopiedString, Vector3> targets;
+		struct SunLight{ Vector3 origin, colour; float intensity; CopiedString target; };
+		std::vector<SunLight> suns;
+		const auto visit = [&]( Entity* e ){
+			Vector3 origin;
+			if( !string_parse_vector3( e->getKeyValue( "origin" ), origin ) )
+				return;
+			if( !string_empty( e->getKeyValue( "targetname" ) ) )
+				targets.emplace( e->getKeyValue( "targetname" ), origin );
+			int sun = 0;
+			if( string_equal_prefix( e->getClassName(), "light" ) && string_parse_int( e->getKeyValue( "_sun" ), sun ) && sun != 0 && !string_empty( e->getKeyValue( "target" ) ) ){
+				SunLight s{ origin, Vector3( 1, 1, 1 ), 300, e->getKeyValue( "target" ) };
+				if( !string_parse_float( e->getKeyValue( "_light" ), s.intensity ) )
+					string_parse_float( e->getKeyValue( "light" ), s.intensity );
+				if( string_parse_vector3( e->getKeyValue( "_color" ), s.colour ) ){
+					const float m = std::max( { s.colour.x(), s.colour.y(), s.colour.z() } );
+					s.colour = m > 0 ? s.colour / m : Vector3( 1, 1, 1 );
+				}
+				suns.push_back( s );
+			}
+		};
+		class Walker : public scene::Traversable::Walker
+		{
+			const std::function<void( Entity* )>& m_visit;
+		public:
+			Walker( const std::function<void( Entity* )>& visit ) : m_visit( visit ){}
+			bool pre( scene::Node& node ) const override {
+				if( Entity* e = Node_getEntity( node ) )
+					m_visit( e );
+				return false;
+			}
+		};
+		const std::function<void( Entity* )> visitor = visit;
+		Node_getTraversable( GlobalSceneGraph().root() )->traverse( Walker( visitor ) );
+		for( const SunLight& s : suns ){
+			const auto it = targets.find( s.target );
+			if( it == targets.end() )
+				continue;
+			const Vector3 toSun = vector3_normalised( s.origin - it->second );
+			g_krSun.valid = true;
+			g_krSun.shader = "";
+			g_krSun.colour = s.colour;
+			g_krSun.intensity = s.intensity;
+			g_krSun.degrees = radians_to_degrees( std::atan2( toSun.y(), toSun.x() ) );
+			g_krSun.elevation = radians_to_degrees( std::asin( std::clamp( toSun.z(), -1.f, 1.f ) ) );
+			g_krSun.skyLight = 0;
+			g_krSun.ext = false;
+			globalOutputStream() << "light preview: sun from the _sun light entity (target " << s.target.c_str() << ")\n";
+			break;
+		}
+	}
+	if( !g_krSun.valid )
+		globalOutputStream() << "light preview: no sun - no shader on the map's brushes has q3map_sun / q3map_sunExt / q3map_skyLight, no _sun light\n";
 	KrSun_changed();
 }
 static void KrSun_update(){
@@ -2177,6 +2232,7 @@ void KrSun_rescan(){
 /// gathers the lights for the live preview: light entities (origin, "light" intensity, "_color"), worldspawn ambient,
 /// and the sun of the first loaded sky shader with q3map_sun / q3map_skyLight
 #include <map>
+#include <functional>
 #ifndef GL_RGBA32F
 #define GL_RGBA32F 0x8814
 #endif
@@ -2277,13 +2333,15 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		l.spotRadiusByDist = ( radiusKey + 16 ) / dist;
 	}
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
+	g_krMapLightCount = int( candidates.size() );
 	g_krLightPreviewLights.clear();
 	for( std::size_t i = 0; i < candidates.size() && i < std::min( std::size_t( std::max( g_krPreviewLightCount, 1 ) ), std::size_t( g_krMaxPreviewLightsGPU ) ); ++i )
 		g_krLightPreviewLights.push_back( candidates[i].light );
 
 	// the lights texture: light data, then per grid cell the lights that reach it (strongest first)
 	{
-		const Vector3 snapped( float_snapped( viewer.x(), float( c_krCellSize ) ), float_snapped( viewer.y(), float( c_krCellSize ) ), float_snapped( viewer.z(), float( c_krCellSize ) ) );
+		// the grid moves in 1024-unit steps, so flying around rarely rebuilds it
+		const Vector3 snapped( float_snapped( viewer.x(), 1024.f ), float_snapped( viewer.y(), 1024.f ), float_snapped( viewer.z(), 1024.f ) );
 		const Vector3 gridMin = snapped - Vector3( c_krGridX / 2, c_krGridY / 2, c_krGridZ / 2 ) * float( c_krCellSize );
 		static std::vector<float> lastLights;
 		std::vector<float> key( g_krLightPreviewLights.size() * c_krLightTexels * 4 + 3 );
@@ -3711,7 +3769,7 @@ void CamWnd_Construct(){
 	GlobalPreferenceSystem().registerPreference( "KrEngineShift", IntImportStringCaller( g_krEngineShift ), IntExportStringCaller( g_krEngineShift ) );
 	GlobalPreferenceSystem().registerPreference( "KrEngineGamma", FloatImportStringCaller( g_krEngineGamma ), FloatExportStringCaller( g_krEngineGamma ) );
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
-	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount2048", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
+	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount8192", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
 	GlobalPreferenceSystem().registerPreference( "KrLightShadows", BoolImportStringCaller( g_krLightShadows ), BoolExportStringCaller( g_krLightShadows ) );
 	GlobalPreferenceSystem().registerPreference( "KrDeformVertexes", BoolImportStringCaller( g_krDeformVertexes ), BoolExportStringCaller( g_krDeformVertexes ) );
 	GlobalPreferenceSystem().registerPreference( "KrPolygonOffset", BoolImportStringCaller( g_krPolygonOffset ), BoolExportStringCaller( g_krPolygonOffset ) );

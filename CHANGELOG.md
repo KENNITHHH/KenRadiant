@@ -3,6 +3,15 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (15)
+### Editor
+- **Fixed: "orphan shader still referenced"** when shaders reload (skybox / game shader toggles, Flush & Reload) while Show Compiled Lighting is on.
+- **All lights**: up to 8192 preview lights, default all of them; the Sun Calibrator says how many light entities the map has. The light grid now covers 8192 x 8192 x 3072 units around the camera and only moves in 1024-unit steps.
+- **No more stripes on walls** (shadow acne): sun, sky and light shadows are looked up slightly off the surface.
+- **Sun found more often**: any shader on the map's brushes with q3map_sun / q3map_sunExt / q3map_skyLight (not only surfaceparm sky ones), and q3map2's `_sun` light entities (a light with `_sun 1` and a target). The console says when there is no sun and why.
+- **Shaders like in game: toolbar button** (stacked layers icon, next to Game View). More rgbGens count as lit (lightingDiffuseEntity), 2x-modulate stages are treated as the lightmapped base.
+- **Compile window**: options are labelled and sorted by their q3map2 name (`-bounce (light bounces)`, `-dirty (corner dirt)` ...), the *All q3map2 options* lists too; *Add to Build menu* asks for a name; new **Decompile** tab - browse to any .bsp, -format map / map_bp, -fast, -legacydecompile, -modelclip, -wtf; *Decompile* runs without touching the open map, *Open the result* opens `<name>_converted.map`.
+
 ## Build 2026-10-24 (14)
 ### Editor
 - **Shaders like in game** (View → Shader Effects, on by default): every stage of a shader is drawn the way the game draws it - blendFunc (add, filter, blend ...), alphaFunc, rgbGen (lightingDiffuse / vertex lit, wave, const), alphaGen, tcGen environment, animMap, per-stage tcMods. Glow stages (an extra `blendFunc GL_ONE GL_ONE` stage like `helipad_glass_glow`) now show. `$lightmap` stages are left out and the stage multiplied onto them becomes the lit base, so the live light preview stands in for the lightmap.

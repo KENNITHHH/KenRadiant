@@ -26,13 +26,13 @@ extern Vector3 g_krSunColour;          // 0 = no sun
 extern Vector3 g_krAmbient;            // worldspawn _ambient
 extern Vector3 g_krSkyAmbient;         // q3map_skyLight share (hemisphere)
 extern float g_krMinLight;             // worldspawn _minlight
-constexpr std::size_t c_krMaxPreviewLights = 2048;
+constexpr std::size_t c_krMaxPreviewLights = 8192;
+extern int g_krMapLightCount; // light entities in the map (last collect)
 extern int g_krMaxPreviewLightsGPU; // = c_krMaxPreviewLights (lights live in a float texture)
 // lights in a float texture, found per fragment through a world grid around the camera (clustered lighting)
 constexpr int c_krLightTexW = 1024;          // texels per row
 constexpr int c_krLightTexels = 4;           // per light
-constexpr int c_krGridX = 20, c_krGridY = 20, c_krGridZ = 10, c_krCellSize = 256, c_krCellSlots = 48;
-static_assert( ( 2048 * 4 + 20 * 20 * 10 * 48 / 4 + 1023 ) / 1024 == 55, "kr_light_fp.glsl KR_TH" );
+constexpr int c_krGridX = 32, c_krGridY = 32, c_krGridZ = 12, c_krCellSize = 256, c_krCellSlots = 48;
 constexpr int c_krLightTexRows = ( int( c_krMaxPreviewLights ) * c_krLightTexels + c_krGridX * c_krGridY * c_krGridZ * c_krCellSlots / 4 + c_krLightTexW - 1 ) / c_krLightTexW;
 extern unsigned int g_krLightTex;            // 0 = none
 extern Vector3 g_krGridMin;

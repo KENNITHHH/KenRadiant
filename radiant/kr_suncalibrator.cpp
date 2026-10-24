@@ -102,6 +102,7 @@ const std::vector<float> c_skyTolerance{ 2.5f, 0.5f };
 class SunCalibrator : public QDialog
 {
 	QLabel* m_shaderLabel;
+	QLabel* m_lightInfo = nullptr;
 	QPushButton* m_colourButton;
 	KrValue m_r{ 0, 1, 0.01f, 2 }, m_g{ 0, 1, 0.01f, 2 }, m_b{ 0, 1, 0.01f, 2 };
 	KrValue m_intensity{ 0, 3000, 5, 0 };
@@ -118,7 +119,7 @@ class SunCalibrator : public QDialog
 	KrValue m_compensate{ 0.5f, 4, 0.05f, 2 };
 	KrValue m_saturation{ 0, 2, 0.05f, 2 };
 	KrValue m_bounce{ 0, 8, 1, 0 };
-	KrValue m_lightCount{ 1, 2048, 1, 0 };
+	KrValue m_lightCount{ 1, 8192, 1, 0 };
 	KrValue m_engineShift{ 0, 2, 1, 0 };
 	KrValue m_engineGamma{ 0.5f, 3, 0.05f, 2 };
 	KrValue m_shadowedLights{ 0, 8, 1, 0 };
@@ -392,7 +393,9 @@ public:
 			auto *group = new QGroupBox( "Lights" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
-			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 2048. Each spot only adds up the 48 strongest lights that reach it", [this](){
+			m_lightInfo = new QLabel;
+			grid->addWidget( m_lightInfo, r++, 0, 1, 3 );
+			addValue( grid, r, "Lights", m_lightCount, "How many light entities (nearest to the camera) light the preview, up to 8192 (8192 = all of them; the console and this window say how many the map has). Each spot only adds up the 48 strongest lights that reach it", [this](){
 				g_krPreviewLightCount = int( m_lightCount.value() );
 				KrLightPreview_redraw();
 			} );
@@ -456,6 +459,10 @@ public:
 
 	/// shows the current sun (from the map, or the calibrator's own values)
 	void refresh(){
+		if( m_lightInfo != nullptr )
+			m_lightInfo->setText( !g_krLightPreview ? QString( "Turn the live light preview on (Ctrl+L) to count the map's lights." )
+			                      : QString( "This map has %1 light entities; the preview uses %2." ).arg( g_krMapLightCount )
+			                      .arg( std::min( g_krMapLightCount, g_krPreviewLightCount ) ) );
 		if( g_krSun.shader.empty() )
 			m_shaderLabel->setText( "No sky shader with q3map_sun on this map's sky brushes. You can still try values here; copy the lines into your sky shader." );
 		else
