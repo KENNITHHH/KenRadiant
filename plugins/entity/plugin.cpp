@@ -40,6 +40,8 @@
 #include "typesystem.h"
 
 #include "entity.h"
+#include "ishaders.h"
+#include "qerplugin.h"
 #include "skincache.h"
 
 #include "modulesystem/singletonmodule.h"
@@ -55,8 +57,13 @@ class EntityDependencies :
 	public GlobalFilterModuleRef,
 	public GlobalPreferenceSystemModuleRef,
 	public GlobalNamespaceModuleRef,
-	public GlobalModelSkinCacheModuleRef
+	public GlobalModelSkinCacheModuleRef,
+	public GlobalShadersModuleRef // KenRadiant: SOF2 _bsp shader variants of misc_models
 {
+public:
+	EntityDependencies() :
+		GlobalShadersModuleRef( GlobalRadiant().getRequiredGameDescriptionKeyValue( "shaders" ) ){
+	}
 };
 
 class EntityQ3API : public TypeSystemRef

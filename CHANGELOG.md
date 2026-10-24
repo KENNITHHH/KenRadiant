@@ -3,6 +3,11 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (22)
+### Editor
+- **Models in the live light preview at the game's brightness** (your third probe: live light itself was right - walls 1.04 x, decals 1.02 x, models 1.06 x what q3map2 stored - but models showed 0.54 x the game). The compiler bakes misc_models with the shader's `_bsp` variant when one exists (two `rgbGen vertex` stages, the 2x), the editor drew them with the plain one (`rgbGen lightingDiffuse`, one stage). The editor now uses the `_bsp` variant too, like q3map2 (after `_remap`).
+- Without light (preview off), the "same image added again with `rgbGen vertex`" stage of those shaders and decals adds nothing, so full-bright views don't show them doubled.
+
 ## Build 2026-10-24 (21)
 ### Editor
 - **Your second dust2 probe (Show Compiled Lighting) now matches SOF2**: walls 1.00 x, decals 1.00 x, models 1.02 x the game.

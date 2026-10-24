@@ -53,6 +53,10 @@
 #include "modelskinkey.h"
 
 #include "modelskin.h"
+#include "ishaders.h"
+#include "os/path.h"
+#include "stream/stringstream.h"
+#include <map>
 class RemapKeysObserver : public Entity::Observer, public ModelSkin
 {
 	class RemapKey
@@ -122,8 +126,22 @@ public:
 				fromlen = strlen( remapKey.m_from.c_str() );
 			}
 		}
-		return to;
+		// KenRadiant: like the SOF2 q3map2, a baked misc_model uses the shader's "_bsp" variant when the shader
+		// scripts define one (that is what the game draws: e.g. two rgbGen vertex stages instead of lightingDiffuse)
+		const char* base = string_empty( to ) ? name : to;
+		auto it = m_bspVariants.find( base );
+		if( it == m_bspVariants.end() ){
+			CopiedString variant;
+			const CopiedString bspName( StringStream<128>( PathExtensionless( base ), "_bsp" ) );
+			IShader* shader = GlobalShaderSystem().getShaderForName( bspName.c_str() );
+			if( !shader->IsDefault() )
+				variant = bspName;
+			shader->DecRef();
+			it = m_bspVariants.emplace( base, variant ).first;
+		}
+		return it->second.empty() ? to : it->second.c_str();
 	}
+	mutable std::map<CopiedString, CopiedString> m_bspVariants;
 	void forEachRemap( const SkinRemapCallback& callback ) const override {
 	}
 };

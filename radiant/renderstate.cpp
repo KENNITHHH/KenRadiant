@@ -495,6 +495,7 @@ struct KrStageGL
 	std::vector<GLuint> frames;  // animMap
 	bool lit = false;            // takes the light preview (else drawn at full brightness, e.g. glows)
 	float lmScale = 1;           // the lightmap stage's blend: 2 for GL_DST_COLOR GL_SRC_COLOR (2x modulate)
+	bool vertexCopy = false;     // the same image added again with rgbGen vertex (SOF2's 2x for vertex light): only lit
 };
 /// rgbGen / alphaGen of a stage at time t
 inline Vector4 KrStage_colour( const KrStage& st, float t );
@@ -721,6 +722,8 @@ public:
 		if( stage != nullptr ){
 			const KrStage& st = *stage->stage;
 			stageColour = KrStage_colour( st, g_krShaderTime );
+			if( stage->vertexCopy && !m_preview )
+				stageColour = Vector4( 0, 0, 0, 0 );
 			if( st.rgbGen == 2 || st.alphaGen == 2 || stage->frames.size() > 1 )
 				g_krAnimatedDrawn = true;
 			env = st.tcGen == 2 ? 1 : 0;
@@ -2669,6 +2672,9 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		}
 		// the light preview lights vertex-lit stages and the stage standing in for the lightmapped base
 		gls->lit = st.rgbGen == 1 || st.rgbGen == 4 || ( lightmapped && isBase && ( st.rgbGen == 0 || st.rgbGen == 5 ) );
+		// without light (preview off) a vertex-lit "2x" copy would double the full-bright texture: it adds nothing then
+		gls->vertexCopy = i > 0 && st.blend && st.dst == BLEND_ONE && st.rgbGen == 1
+		               && std::any_of( list.begin(), list.begin() + i, [&st]( const KrStage* e ){ return e->image == st.image; } );
 		if( lightmapped && isBase && gls->lit && st.rgbGen != 1 )
 			gls->lmScale = lmScale;
 		state.m_krEmissive = !gls->lit;
