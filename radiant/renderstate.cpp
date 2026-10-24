@@ -550,7 +550,7 @@ public:
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
-	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale;
+	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale, u_brightness, u_vscale, u_vertexlit;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -580,7 +580,7 @@ public:
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
-		u_lmscale = u( "u_lmscale" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_lmscale = u( "u_lmscale" ); u_brightness = u( "u_brightness" ); u_vscale = u( "u_vscale" ); u_vertexlit = u( "u_vertexlit" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
@@ -673,8 +673,15 @@ public:
 		gl().glUniform1f( u_overbright, float( 1 << std::clamp( g_krEngineShift, 0, 2 ) ) );
 		gl().glUniform1f( u_rgamma, std::clamp( g_krEngineGamma, 0.5f, 3.f ) );
 		const bool c = g_krCompile.enabled;
-		gl().glUniform1f( u_gamma, c ? std::max( 0.1f, g_krCompile.gamma ) : 1.f );
-		gl().glUniform1f( u_compensate, c ? std::max( 0.1f, g_krCompile.compensate ) : 1.f );
+		// what the LIGHT stage does to the lightmaps: the Compile window's -gamma / -compensate / -brightness / -vertexscale
+		// (the Sun Calibrator's compile preview overrides gamma and compensate while it is on)
+		float cgamma, ccompensate, cbrightness, cvscale;
+		extern void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, float& vertexScale );
+		KrCompile_lightParams( cgamma, ccompensate, cbrightness, cvscale );
+		gl().glUniform1f( u_gamma, c ? std::max( 0.1f, g_krCompile.gamma ) : cgamma );
+		gl().glUniform1f( u_compensate, c ? std::max( 0.1f, g_krCompile.compensate ) : ccompensate );
+		gl().glUniform1f( u_brightness, cbrightness );
+		gl().glUniform1f( u_vscale, cvscale );
 		gl().glUniform1f( u_saturation, c ? g_krCompile.saturation : 1.f );
 		gl().glUniform3f( u_bounce, g_krBounceFill.x(), g_krBounceFill.y(), g_krBounceFill.z() );
 		GlobalOpenGL_debugAssertNoErrors();
@@ -728,6 +735,7 @@ public:
 		}
 		gl().glUniform4f( u_stage, stageColour[0], stageColour[1], stageColour[2], stageColour[3] );
 		gl().glUniform1f( u_lmscale, stage != nullptr ? stage->lmScale : 1.f );
+		gl().glUniform1i( u_vertexlit, stage != nullptr && stage->stage->rgbGen == 1 ? 1 : 0 );
 		gl().glUniform1i( u_env, env );
 		gl().glUniform1f( u_time, g_krShaderTime );
 		gl().glUniform1i( u_turb_on, turb ? 1 : 0 );
@@ -2544,6 +2552,8 @@ inline Vector4 KrStage_colour( const KrStage& st, float t ){
 		const float v = std::clamp( KrWave( st.rgbFunc, st.rgbWave, t ), 0.f, 1.f );
 		c = Vector4( v, v, v, 1 );
 	}
+	else if( st.rgbGen == 5 ) // identityLighting = 1 / 2^overbrightBits: the engine runs with hardware overbright on
+		c = Vector4( 0.5f, 0.5f, 0.5f, 1 );
 	else if( st.rgbGen == 3 )
 		c = Vector4( st.rgbConst[0], st.rgbConst[1], st.rgbConst[2], 1 );
 	if( st.alphaGen == 3 )

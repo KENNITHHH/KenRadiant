@@ -3,6 +3,13 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (18)
+### Editor
+- **Live light preview uses your compile settings**: the Compile window's LIGHT `-brightness`, `-gamma`, `-compensate` and `-vertexscale` (from the fields, Extra options or All options) now change the preview the same way q3map2 changes the lightmaps. Your dust2 compile (`-gamma 2.2 -brightness 0.28358 -vertexscale 0.0625`) no longer shows super bright - put those flags in the Compile window (easiest: **Load...** your preset).
+- **Vertex-lit stages at the engine's real brightness** (`rgbGen vertex`, `identityLighting`): halved like SOF2's identityLight, in the live preview and in Show Compiled Lighting. Decals (posters, bullet holes) were about 2x too bright.
+- **Compile window: Load...** next to Preset fills every tab from one of your saved Build menu entries (BSP / VIS / LIGHT flags, values, extra options).
+- Glowing surfaces only come from shaders with `q3map_surfacelight` (sky shaders excluded), same as q3map2.
+
 ## Build 2026-10-24 (17)
 ### Editor
 - **Fixed: "scenegraph root already exists"** (and the following "destroying a referenced object" / runtime error on close) when the Decompile tab's *Open the result* opened the map - it now closes the old map first like File > Open.

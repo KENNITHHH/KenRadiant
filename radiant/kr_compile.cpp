@@ -29,6 +29,9 @@
 #include <QFileInfo>
 #include <vector>
 #include <functional>
+#include <type_traits>
+#include <iterator>
+#include <algorithm>
 #include <memory>
 #include <map>
 
@@ -50,6 +53,8 @@
 void Build_setPreset( const char* name, const std::vector<CopiedString>& commands );
 bool Build_runPreset( const char* name );
 bool Build_runPresetNoSave( const char* name );
+std::vector<CopiedString> Build_presetNames();
+std::vector<CopiedString> Build_presetCommands( const char* name );
 void Map_LoadFile( const char* filename );
 void Map_Free();
 void MRU_AddFile( const char* str );
@@ -465,6 +470,97 @@ class CompileDialog : public QDialog
 			f();
 		changed();
 	}
+	/// a Build menu entry's commands back into the window's settings
+	void loadCommands( const std::vector<CopiedString>& commands ){
+		CompileOptions p;
+		p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
+		p.decompBsp = o.decompBsp; p.decompFormat = o.decompFormat; p.decompFast = o.decompFast;
+		p.decompModelclip = o.decompModelclip; p.decompWtf = o.decompWtf; p.decompLegacy = o.decompLegacy;
+		p.bsp = p.vis = p.light = false;
+		p.meta = p.saveprt = p.filter = false;
+		p.super = 1; p.bounce = 0;
+		const auto argCount = []( const char* arg ){
+			const QString a = QString( arg ).remove( '<' ).remove( '>' ).trimmed();
+			return a.isEmpty() ? 0 : int( a.split( ' ', Qt::SkipEmptyParts ).size() );
+		};
+		for( const CopiedString& command : commands ){
+			QStringList t = QProcess::splitCommand( QString( command.c_str() ) );
+			t.erase( std::remove_if( t.begin(), t.end(), []( const QString& x ){ return x.contains( "[q3map2]" ) || x.contains( "[MapFile]" ) || x.contains( "[ExtraResourcePaths]" ); } ), t.end() );
+			const int stage = t.contains( "-vis" ) ? 1 : t.contains( "-light" ) ? 2 : t.contains( "-convert" ) ? 3 : 0;
+			if( stage == 3 )
+				continue;
+			QStringList extra, adv;
+			bool fast = false, faster = false;
+			for( int i = 0; i < t.size(); ++i ){
+				const QString f = t[i];
+				const auto next = [&]( auto& value ){
+					if( i + 1 < t.size() ){
+						using T = std::decay_t<decltype( value )>;
+						if constexpr ( std::is_same_v<T, int> ) value = t[++i].toInt();
+						else value = t[++i].toFloat();
+					}
+				};
+				const KrCompileFlag* table = stage == 0 ? c_krFlags_bsp : stage == 1 ? c_krFlags_vis : c_krFlags_light;
+				const std::size_t size = stage == 0 ? std::size( c_krFlags_bsp ) : stage == 1 ? std::size( c_krFlags_vis ) : std::size( c_krFlags_light );
+				if( stage == 0 ){
+					p.bsp = true;
+					if( f == "-meta" ) { p.meta = true; continue; }
+					if( f == "-patchmeta" ) { p.patchmeta = true; continue; }
+					if( f == "-leaktest" ) { p.leaktest = true; continue; }
+					if( f == "-onlyents" ) { p.onlyents = true; continue; }
+					if( f == "-nocurves" ) { p.nocurves = true; continue; }
+					if( f == "-nodetail" ) { p.nodetail = true; continue; }
+					if( f == "-notjunc" ) { p.notjunc = true; continue; }
+					if( f == "-samplesize" ) { next( p.samplesize ); continue; }
+				}
+				else if( stage == 1 ){
+					p.vis = true;
+					if( f == "-vis" ) continue;
+					if( f == "-fast" ) { p.visFast = true; continue; }
+					if( f == "-saveprt" ) { p.saveprt = true; continue; }
+					if( f == "-nopassage" ) { p.nopassage = true; continue; }
+				}
+				else{
+					p.light = true;
+					if( f == "-light" ) continue;
+					if( f == "-fast" ) { fast = true; continue; }
+					if( f == "-faster" ) { faster = true; continue; }
+					if( f == "-super" ) { next( p.super ); continue; }
+					if( f == "-samples" ) { next( p.samples ); continue; }
+					if( f == "-filter" ) { p.filter = true; continue; }
+					if( f == "-bounce" ) { next( p.bounce ); continue; }
+					if( f == "-dirty" ) { p.dirty = true; continue; }
+					if( f == "-patchshadows" ) { p.patchshadows = true; continue; }
+					if( f == "-shade" ) { p.shade = true; continue; }
+					if( f == "-nocollapse" ) { p.nocollapse = true; continue; }
+					if( f == "-nomerge" ) { p.nomerge = true; continue; }
+					if( f == "-gamma" ) { next( p.gamma ); continue; }
+					if( f == "-compensate" ) { next( p.compensate ); continue; }
+				}
+				// one of the "all options"?
+				const KrCompileFlag* found = nullptr;
+				for( std::size_t k = 0; k < size; ++k )
+					if( f == table[k].flag )
+						found = &table[k];
+				if( found != nullptr ){
+					QStringList values;
+					for( int n = argCount( found->arg ); n > 0 && i + 1 < t.size(); --n )
+						values << t[++i];
+					adv << f + '=' + values.join( ' ' );
+				}
+				else
+					extra << ( f.contains( ' ' ) ? '"' + f + '"' : f );
+			}
+			if( stage == 2 )
+				p.quality = faster ? 0 : fast ? 1 : 2;
+			CopiedString& ex = stage == 0 ? p.extraBsp : stage == 1 ? p.extraVis : p.extraLight;
+			CopiedString& ad = stage == 0 ? p.advBsp : stage == 1 ? p.advVis : p.advLight;
+			ex = extra.join( ' ' ).toLatin1().constData();
+			ad = ( adv.join( ';' ) + ( adv.isEmpty() ? "" : ";" ) ).toLatin1().constData();
+		}
+		o = p;
+		load();
+	}
 	void preset( int which ){
 		CompileOptions p;
 		p.extraBsp = o.extraBsp; p.extraVis = o.extraVis; p.extraLight = o.extraLight;
@@ -503,6 +599,25 @@ public:
 				presets->setCurrentIndex( 0 );
 			} );
 			row->addWidget( presets );
+			auto *fromMenu = new QPushButton( "Load..." );
+			fromMenu->setAutoDefault( false );
+			hint( fromMenu, "Load the settings of a Build menu entry (yours or KenRadiant's) into this window." );
+			QObject::connect( fromMenu, &QPushButton::clicked, [this](){
+				QStringList names;
+				for( const CopiedString& n : Build_presetNames() ){
+					const auto commands = Build_presetCommands( n.c_str() );
+					if( std::any_of( commands.begin(), commands.end(), []( const CopiedString& c ){ return strstr( c.c_str(), "[q3map2]" ) != nullptr && strstr( c.c_str(), "-convert" ) == nullptr; } ) )
+						names << n.c_str();
+				}
+				bool ok = false;
+				const QString name = QInputDialog::getItem( this, "Load from the Build menu", "Build menu entry:", names, 0, false, &ok );
+				if( !ok || name.isEmpty() )
+					return;
+				loadCommands( Build_presetCommands( name.toLatin1().constData() ) );
+				m_lastPresetName = name;
+				globalOutputStream() << "Compile: loaded '" << name.toLatin1().constData() << "'\n";
+			} );
+			row->addWidget( fromMenu );
 			row->addSpacing( 12 );
 			m_bspBox = stageBox( "BSP", o.bsp, "Builds the geometry (.bsp) from the brushes, patches and models. Needed after any brush change." );
 			m_visBox = stageBox( "VIS", o.vis, "Works out what can be seen from where, so the game skips what's behind walls. The frame rate depends on it." );
@@ -878,4 +993,21 @@ void KrCompile_registerCommands(){
 	prefS( "KrDecompileBsp", o.decompBsp ); prefI( "KrDecompileFormat", o.decompFormat ); prefB( "KrDecompileFast", o.decompFast );
 	prefB( "KrDecompileModelclip", o.decompModelclip ); prefB( "KrDecompileWtf", o.decompWtf ); prefB( "KrDecompileLegacy", o.decompLegacy );
 	prefB( "KrCompileRunGame", o.runGame ); prefS( "KrCompileGameExe", o.gameExe ); prefS( "KrCompileGameArgs", o.gameArgs );
+}
+
+/// what the LIGHT stage will do to the lightmaps, for the live light preview: -gamma, -compensate, -brightness, -vertexscale
+/// (from the Compile window's settings, its extra options and ticked "all options")
+void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, float& vertexScale ){
+	gamma = g_options.gamma; compensate = g_options.compensate; brightness = 1; vertexScale = 1;
+	const QStringList t = QProcess::splitCommand( QString( g_options.extraLight.c_str() ) + Compile_advanced( g_options.advLight ) );
+	for( int i = 0; i + 1 < t.size(); ++i ){
+		if( t[i] == "-gamma" ) gamma = t[i + 1].toFloat();
+		else if( t[i] == "-compensate" ) compensate = t[i + 1].toFloat();
+		else if( t[i] == "-brightness" ) brightness = t[i + 1].toFloat();
+		else if( t[i] == "-vertexscale" ) vertexScale = t[i + 1].toFloat();
+	}
+	if( gamma <= 0 ) gamma = 1;
+	if( compensate <= 0 ) compensate = 1;
+	if( brightness <= 0 ) brightness = 1;
+	if( vertexScale <= 0 ) vertexScale = 1;
 }

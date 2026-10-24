@@ -1356,3 +1356,19 @@ bool Build_runPresetNoSave( const char* name ){
 	}
 	return false;
 }
+
+/// KenRadiant: the Build menu entries (names) and the commands of one
+std::vector<CopiedString> Build_presetNames(){
+	std::vector<CopiedString> names;
+	for( const BuildPair& p : g_build_project )
+		names.push_back( p.first );
+	return names;
+}
+std::vector<CopiedString> Build_presetCommands( const char* name ){
+	std::vector<CopiedString> commands;
+	for( const BuildPair& p : g_build_project )
+		if( string_equal( p.first.c_str(), name ) )
+			for( const BuildCommand& c : p.second )
+				commands.emplace_back( c.c_str() );
+	return commands;
+}

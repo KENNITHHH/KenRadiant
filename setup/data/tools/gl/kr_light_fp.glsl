@@ -51,6 +51,9 @@ uniform float u_saturation;
 uniform vec3 u_bounce;
 uniform float u_overbright; // 2 ^ ( r_mapOverBrightBits - r_overBrightBits ): 2 in SOF2 fullscreen
 uniform float u_rgamma;     // r_gamma
+uniform float u_brightness; // q3map2 -brightness / -vertexscale of the LIGHT stage
+uniform float u_vscale;
+uniform int u_vertexlit;   // rgbGen vertex stage: vertex light, halved by the engine (identityLight)
 uniform float u_lmscale; // game look: 2 when the shader multiplies its lightmap in twice (GL_DST_COLOR GL_SRC_COLOR)
 uniform vec4 u_stage;   // game look: the stage's rgbGen / alphaGen
 uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = fullbright glow
@@ -230,6 +233,7 @@ void main()
 		}
 	}
 	light = max( light, vec3( u_minlight ) );
+	light *= u_vertexlit != 0 ? u_vscale : u_brightness;
 	// what q3map2 does to the lightmap: compensate, gamma, saturation
 	light = max( light / u_compensate, vec3( 0.0 ) );
 	light = pow( light, vec3( 1.0 / u_gamma ) );
@@ -242,5 +246,7 @@ void main()
 	if( peak > 1.0 )
 		shown /= peak;
 	shown *= u_lmscale;
+	if( u_vertexlit != 0 )
+		shown *= 0.5;
 	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
 }
