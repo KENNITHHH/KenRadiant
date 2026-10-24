@@ -493,6 +493,7 @@ struct KrStageGL
 	const KrStage* stage = nullptr;
 	std::vector<GLuint> frames;  // animMap
 	bool lit = false;            // takes the light preview (else drawn at full brightness, e.g. glows)
+	float lmScale = 1;           // the lightmap stage's blend: 2 for GL_DST_COLOR GL_SRC_COLOR (2x modulate)
 };
 /// rgbGen / alphaGen of a stage at time t
 inline Vector4 KrStage_colour( const KrStage& st, float t );
@@ -509,7 +510,7 @@ bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
 int g_krPreviewLightCount = int( c_krMaxPreviewLights );
 int g_krMapLightCount = 0;
-int g_krEngineShift = 1;
+int g_krEngineShift = 0; // SOF2 as KENNITH plays it: lightmaps as stored, the shaders' own 2x modulate brightens them
 float g_krEngineGamma = 1;
 int g_krMaxPreviewLightsGPU = int( c_krMaxPreviewLights );
 unsigned int g_krLightTex = 0;
@@ -549,7 +550,7 @@ public:
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
-	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs;
+	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -579,7 +580,7 @@ public:
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
-		u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_lmscale = u( "u_lmscale" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
@@ -726,6 +727,7 @@ public:
 			}
 		}
 		gl().glUniform4f( u_stage, stageColour[0], stageColour[1], stageColour[2], stageColour[3] );
+		gl().glUniform1f( u_lmscale, stage != nullptr ? stage->lmScale : 1.f );
 		gl().glUniform1i( u_env, env );
 		gl().glUniform1f( u_time, g_krShaderTime );
 		gl().glUniform1i( u_turb_on, turb ? 1 : 0 );
@@ -2544,7 +2546,9 @@ inline Vector4 KrStage_colour( const KrStage& st, float t ){
 	}
 	else if( st.rgbGen == 3 )
 		c = Vector4( st.rgbConst[0], st.rgbConst[1], st.rgbConst[2], 1 );
-	if( st.alphaGen == 1 )
+	if( st.alphaGen == 3 )
+		c[3] = 0.5f; // vertex alpha: the editor has none (the compiled view shows the real one)
+	else if( st.alphaGen == 1 )
 		c[3] = st.alphaConst;
 	else if( st.alphaGen == 2 )
 		c[3] = std::clamp( KrWave( st.alphaFunc2, st.alphaWave, t ), 0.f, 1.f );
@@ -2560,10 +2564,13 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 	if( stages == nullptr || ( flags & ( QER_SKY | QER_KR_TERRAIN ) ) || m_shader->krNotFound() )
 		return false;
 	bool lightmapped = false;
+	float lmScale = 1;
 	std::vector<const KrStage*> list;
 	for( const KrStage& st : *stages ){
 		if( st.special == 1 || st.tcGen == 1 ){
 			lightmapped = true;
+			if( st.blend && ( ( st.src == BLEND_DST_COLOUR && st.dst == BLEND_SRC_COLOUR ) || ( st.src == BLEND_SRC_COLOUR && st.dst == BLEND_DST_COLOUR ) ) )
+				lmScale = 2; // dst * lm + lm * dst
 			continue;
 		}
 		list.push_back( &st );
@@ -2644,6 +2651,8 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		}
 		// the light preview lights vertex-lit stages and the stage standing in for the lightmapped base
 		gls->lit = st.rgbGen == 1 || st.rgbGen == 4 || ( lightmapped && isBase && ( st.rgbGen == 0 || st.rgbGen == 5 ) );
+		if( lightmapped && isBase && gls->lit && st.rgbGen != 1 )
+			gls->lmScale = lmScale;
 		state.m_krEmissive = !gls->lit;
 		state.m_krStage = gls.get();
 		m_krStagesGL.push_back( std::move( gls ) );

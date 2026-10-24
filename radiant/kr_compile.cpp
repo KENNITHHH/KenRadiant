@@ -51,6 +51,8 @@ void Build_setPreset( const char* name, const std::vector<CopiedString>& command
 bool Build_runPreset( const char* name );
 bool Build_runPresetNoSave( const char* name );
 void Map_LoadFile( const char* filename );
+void Map_Free();
+void MRU_AddFile( const char* str );
 bool ConfirmModified( const char* title );
 bool KrMapText_selectPrimitive( int entity, int brush, bool focus );
 void KrCamera_goTo( const Vector3& origin );
@@ -635,8 +637,11 @@ public:
 					QMessageBox::information( this, "Decompile", "No " + result + " yet - press Decompile and wait for it to finish." );
 					return;
 				}
-				if( ConfirmModified( "Open Map" ) )
+				if( ConfirmModified( "Open Map" ) ){ // like File > Open: the old map goes first
+					MRU_AddFile( result.toLatin1().constData() );
+					Map_Free();
 					Map_LoadFile( result.toLatin1().constData() );
+				}
 			} );
 			row->addWidget( run );
 			row->addWidget( open );

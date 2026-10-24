@@ -257,6 +257,21 @@ class EntityBrowser : public QWidget
 			if( e->flagnames[i][0] == '\0' || string_equal( e->flagnames[i], "-" ) )
 				continue;
 			auto *box = new QCheckBox( e->flagnames[i] );
+			// the definition's comment usually explains the flag: "NAME : what it does" / "NAME - ..." / "NAME what it does"
+			{
+				QString tip;
+				const QString flag( e->flagnames[i] );
+				for( const QString& line : QString( e->comments() ).split( '\n' ) ){
+					const QString t = line.trimmed();
+					if( t.startsWith( flag, Qt::CaseInsensitive ) && t.size() > flag.size() && !t.at( flag.size() ).isLetterOrNumber() && t.at( flag.size() ) != '_' ){
+						tip = t.mid( flag.size() ).trimmed();
+						while( !tip.isEmpty() && ( tip[0] == ':' || tip[0] == '-' || tip[0] == '=' ) )
+							tip = tip.mid( 1 ).trimmed();
+						break;
+					}
+				}
+				box->setToolTip( QString( "spawnflag %1 (value %2)%3" ).arg( flag ).arg( 1 << i ).arg( tip.isEmpty() ? QString( " - the definition doesn't describe it" ) : ": " + tip ) );
+			}
 			box->setChecked( setup.spawnflags & ( 1 << i ) );
 			box->setProperty( "bit", i );
 			QObject::connect( box, &QCheckBox::toggled, [this, i]( bool on ){

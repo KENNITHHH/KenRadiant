@@ -945,6 +945,9 @@ public:
 	const KrShaderEffects* getEffects() const override {
 		return m_template.m_krFx.any() ? &m_template.m_krFx : nullptr;
 	}
+	float krSurfaceLight() const override {
+		return m_template.m_krSurfaceLight;
+	}
 	const std::vector<KrStage>* getStages() const override {
 		return m_template.m_krStages.empty() ? nullptr : &m_template.m_krStages;
 	}
@@ -1454,6 +1457,8 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 						stage.alphaGen = 1;
 						Tokeniser_getFloat( tokeniser, stage.alphaConst );
 					}
+					else if( string_equal_nocase( gen, "vertex" ) )
+						stage.alphaGen = 3; // vertex alpha (terrain blends, q3map_alphaMod ...)
 					else if( string_equal_nocase( gen, "wave" ) ){
 						stage.alphaGen = 2;
 						stage.alphaFunc2 = KrWaveFunc( tokeniser.getToken() );

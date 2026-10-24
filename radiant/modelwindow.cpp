@@ -51,6 +51,8 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSplitter>
+#include <QLineEdit>
+#include <QKeyEvent>
 #include <QTreeView>
 #include <QHeaderView>
 #include <QStandardItemModel>
@@ -1297,6 +1299,39 @@ protected:
 	}
 };
 
+/// KenRadiant: models whose path contains the text, from every folder (shown like a folder)
+static ModelFS g_modelSearch;
+static void ModelBrowser_collect( const ModelFS& fs, const CopiedString& prefix, const QString& text, std::set<CopiedString>& out ){
+	for( const CopiedString& f : fs.m_files ){
+		const auto path = StringStream<256>( prefix, f );
+		if( out.size() < 400 && QString( path.c_str() ).contains( text, Qt::CaseInsensitive ) )
+			out.emplace( path.c_str() );
+	}
+	for( const ModelFS& sub : fs.m_folders )
+		ModelBrowser_collect( sub, CopiedString( StringStream<256>( prefix, sub.m_folderName, '/' ) ), text, out );
+}
+static void ModelBrowser_search( const QString& text ){
+	if( text.trimmed().size() < 2 )
+		return;
+	ModelGraph_clear();
+	g_modelSearch.m_files.clear();
+	ModelBrowser_collect( g_ModelBrowser.m_modelFS, CopiedString( "" ), text.trimmed(), g_modelSearch.m_files );
+	g_ModelBrowser.m_currentFolder = &g_modelSearch;
+	g_ModelBrowser.m_currentFolderPath = "";
+	{
+		ScopeDisableScreenUpdates disableScreenUpdates( "search", "Loading Models" );
+		for( const CopiedString& filename : g_modelSearch.m_files ){
+			auto *modelNode = new ModelNode;
+			modelNode->setModel( filename.c_str() );
+			NodeSmartReference node( modelNode->node() );
+			Node_getTraversable( g_modelGraph->root() )->insert( node );
+		}
+		g_ModelBrowser.forEachModelInstance( models_set_transforms() );
+	}
+	globalOutputStream() << "model search \"" << text.trimmed().toLatin1().constData() << "\": " << int( g_modelSearch.m_files.size() ) << " models\n";
+	g_ModelBrowser.queueDraw();
+}
+
 QWidget* ModelBrowser_constructWindow( QWidget* toplevel ){
 	g_ModelBrowser.m_parent = toplevel;
 
@@ -1320,6 +1355,27 @@ QWidget* ModelBrowser_constructWindow( QWidget* toplevel ){
 		toolbar->setIconSize( QSize( iconSize, iconSize ) );
 
 		toolbar_append_button( toolbar, "Reload Model Folders Tree View", "refresh_modelstree.png", FreeCaller<void(), ModelBrowser_constructTree>() );
+	}
+	{	// KenRadiant: search all folders
+		auto *search = new QLineEdit;
+		search->setPlaceholderText( "Search models (Enter), e.g. tree_lrg" );
+		search->setClearButtonEnabled( true );
+		search->setToolTip( "Shows every model whose path contains the text, from all folders (up to 400)" );
+		class KeepKeys : public QObject
+		{
+		protected:
+			bool eventFilter( QObject* obj, QEvent* event ) override {
+				if( event->type() == QEvent::ShortcutOverride ){
+					auto *key = static_cast<QKeyEvent*>( event );
+					if( key->modifiers() == Qt::NoModifier || key->modifiers() == Qt::ShiftModifier || key->modifiers() == Qt::KeypadModifier )
+						event->accept();
+				}
+				return QObject::eventFilter( obj, event );
+			}
+		};
+		search->installEventFilter( new KeepKeys );
+		QObject::connect( search, &QLineEdit::returnPressed, [search](){ ModelBrowser_search( search->text() ); } );
+		vbox->addWidget( search );
 	}
 	{	// TreeView
 		g_ModelBrowser.m_treeView = new TexBro_QTreeView;

@@ -816,6 +816,7 @@ void Scene_BrushConstructPrefab( scene::Graph& graph, EBrushPrefab type, std::si
 }
 
 #include <set>
+#include <map>
 #include "grid.h"
 /// KenRadiant (Blender-style bevel, Shift+B): cuts selected brush edges with a 45°-style chamfer of one grid unit.
 /// Edge mode: the selected edges; face mode: every edge of the selected faces; whole brushes: all their edges.
@@ -1916,5 +1917,79 @@ void Scene_collectHiddenCasters( std::vector<Vector3>& triangles ){
 				triangles.push_back( Vector3( w[i].vertex ) );
 			}
 		}
+	} );
+}
+
+/// KenRadiant light preview: q3map_surfacelight faces as small lights (like q3map2's area lights): one per ~128 x 128 piece
+/// of each face, facing out of it, as bright as value * area / 4 photons; colour from the texture
+void Scene_collectSurfaceLights( std::vector<KrPreviewLight>& lights ){
+	lights.clear();
+	std::map<CopiedString, std::pair<float, Vector3>> shaders; // name -> ( value, colour )
+	Scene_ForEachBrush_ForEachFace( GlobalSceneGraph(), [&]( Face& face ){
+		if( lights.size() >= 4096 )
+			return;
+		const char* name = face.GetShader();
+		auto it = shaders.find( name );
+		if( it == shaders.end() ){
+			float value = 0;
+			Vector3 colour( 1, 1, 1 );
+			IShader* shader = GlobalShaderSystem().getShaderForName( name );
+			if( shader != nullptr ){
+				if( !( shader->getFlags() & QER_SKY ) )
+					value = shader->krSurfaceLight();
+				if( value > 0 && shader->getTexture() != nullptr ){
+					colour = shader->getTexture()->color;
+					const float m = std::max( { colour.x(), colour.y(), colour.z() } );
+					colour = m > 0 ? colour / m : Vector3( 1, 1, 1 );
+				}
+				shader->DecRef();
+			}
+			it = shaders.emplace( name, std::make_pair( value, colour ) ).first;
+		}
+		const float value = it->second.first;
+		if( value <= 0 || !face.contributes() )
+			return;
+		const Winding& w = face.getWinding();
+		if( w.numpoints < 3 )
+			return;
+		const Vector3 normal = face.getPlane().plane3().normal();
+		// the face in its plane: axis-aligned grid of 128-unit pieces over the winding's bounds
+		const Vector3 u = vector3_normalised( Vector3( w[1].vertex ) - Vector3( w[0].vertex ) );
+		const Vector3 v = vector3_cross( normal, u );
+		float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
+		const Vector3 o( w[0].vertex );
+		for( std::size_t i = 0; i < w.numpoints; ++i ){
+			const Vector3 d = Vector3( w[i].vertex ) - o;
+			u0 = std::min( u0, float( vector3_dot( d, u ) ) ); u1 = std::max( u1, float( vector3_dot( d, u ) ) );
+			v0 = std::min( v0, float( vector3_dot( d, v ) ) ); v1 = std::max( v1, float( vector3_dot( d, v ) ) );
+		}
+		const int nu = std::clamp( int( std::ceil( ( u1 - u0 ) / 128 ) ), 1, 16 ), nv = std::clamp( int( std::ceil( ( v1 - v0 ) / 128 ) ), 1, 16 );
+		const float pieceArea = ( ( u1 - u0 ) / nu ) * ( ( v1 - v0 ) / nv );
+		for( int a = 0; a < nu; ++a )
+			for( int b = 0; b < nv; ++b ){
+				const Vector3 p = o + u * ( u0 + ( a + 0.5f ) * ( u1 - u0 ) / nu ) + v * ( v0 + ( b + 0.5f ) * ( v1 - v0 ) / nv );
+				// inside the (convex) winding?
+				int positive = 0, negative = 0; // (either winding order)
+				for( std::size_t i = 0; i < w.numpoints; ++i ){
+					const Vector3 e = Vector3( w[( i + 1 ) % w.numpoints].vertex ) - Vector3( w[i].vertex );
+					const float side = float( vector3_dot( vector3_cross( e, p - Vector3( w[i].vertex ) ), normal ) );
+					positive += side > 0.01f;
+					negative += side < -0.01f;
+				}
+				const bool inside = positive == 0 || negative == 0;
+				if( !inside )
+					continue;
+				const float photons = value * pieceArea * 0.25f; // q3map2 -areascale 0.25
+				if( photons < 1000 )
+					continue;
+				KrPreviewLight l;
+				l.origin = p + normal * 2;
+				l.colour = it->second.second;
+				l.falloff = photons / 255.f;
+				l.radius = std::min( std::sqrt( photons ), 4096.f );
+				l.spotDir = normal;
+				l.spotRadiusByDist = 50; // a half space: only in front of the surface
+				lights.push_back( l );
+			}
 	} );
 }

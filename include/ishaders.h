@@ -142,6 +142,8 @@ public:
 	virtual const struct KrShaderEffects* getEffects() const { return nullptr; }
 	/// KenRadiant game look: the shader's stages as the game draws them (nullptr = no stage list, e.g. a plain texture)
 	virtual const std::vector<struct KrStage>* getStages() const { return nullptr; }
+	/// KenRadiant: q3map_surfacelight value (0 = none)
+	virtual float krSurfaceLight() const { return 0; }
 };
 
 
@@ -192,7 +194,7 @@ struct KrStage
 	int rgbFunc = 0;
 	float rgbWave[4] = { 1, 0, 0, 0 };  // base amp phase freq
 	float rgbConst[3] = { 1, 1, 1 };
-	int alphaGen = 0;                   // 0 1.0, 1 const, 2 wave
+	int alphaGen = 0;                   // 0 1.0, 1 const, 2 wave, 3 vertex
 	int alphaFunc2 = 0;
 	float alphaWave[4] = { 1, 0, 0, 0 };
 	float alphaConst = 1;

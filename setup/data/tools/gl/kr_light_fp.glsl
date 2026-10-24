@@ -51,6 +51,7 @@ uniform float u_saturation;
 uniform vec3 u_bounce;
 uniform float u_overbright; // 2 ^ ( r_mapOverBrightBits - r_overBrightBits ): 2 in SOF2 fullscreen
 uniform float u_rgamma;     // r_gamma
+uniform float u_lmscale; // game look: 2 when the shader multiplies its lightmap in twice (GL_DST_COLOR GL_SRC_COLOR)
 uniform vec4 u_stage;   // game look: the stage's rgbGen / alphaGen
 uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = fullbright glow
 
@@ -138,7 +139,7 @@ vec3 pointLight( float id, vec3 nw ){
 			c *= ( radiusAtDist - sampleRadius ) / 32.0;
 	}
 	if( c > 0.0 && id < 7.5 ){
-		vec3 L = -d + nw * ( 2.0 + dist * 0.01 ); // (normal offset against acne)
+		vec3 L = -d + nw * ( 3.0 + dist * 0.02 ); // (normal offset against acne)
 		int i = int( id + 0.5 );
 		if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, ndl );
 		else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, ndl );
@@ -171,7 +172,7 @@ void main()
 	float sun = ndl;
 	if( u_has_shadow != 0 && ndl > 0.0 ){
 		// normal offset: look the shadow up a little off the surface, no self-shadow stripes (acne) on walls
-		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 1.0 + 3.0 * ( 1.0 - ndl ) ), 1.0 );
+		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 2.0 + 4.0 * ( 1.0 - ndl ) ), 1.0 );
 		if( sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0 ){
 			// slope-scaled bias, 5x5 PCF; the spread grows with the sun's deviance (q3map_sunExt)
 			float bias = u_bias_unit * ( 1.0 + 2.0 * min( sqrt( 1.0 - ndl * ndl ) / max( ndl, 0.05 ), 8.0 ) ) * max( 1.0, u_soft );
@@ -194,7 +195,7 @@ void main()
 			continue;
 		float vis = 1.0;
 		if( u_has_sky != 0 ){
-			vec4 sc = u_eye2sky[i] * vec4( v_pos + n * ( 4.0 + 8.0 * ( 1.0 - c ) ), 1.0 );
+			vec4 sc = u_eye2sky[i] * vec4( v_pos + n * ( 6.0 + 12.0 * ( 1.0 - c ) ), 1.0 );
 			vec2 t0 = vec2( float( i - KR_SKY_GRID * ( i / KR_SKY_GRID ) ), float( i / KR_SKY_GRID ) ) * tileSize; // this direction's tile of the atlas
 			// a wide soft filter: q3map2's sky light comes from the whole dome, not from a few sharp directions
 			float r = 3.0 * tileSize / 1024.0;
@@ -240,5 +241,6 @@ void main()
 	float peak = max( shown.r, max( shown.g, shown.b ) );
 	if( peak > 1.0 )
 		shown /= peak;
+	shown *= u_lmscale;
 	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
 }

@@ -152,13 +152,25 @@ void SkyboxPreview_set( bool on );
 bool SkyboxPreview_get();
 ToggleItem g_gameView_item{ BoolExportCaller( g_gameView ) };
 #include "ientity.h"
+static bool g_gameView_names, g_gameView_targetNames, g_gameView_angles, g_gameView_connections, g_gameView_radii;
+/// the editor closes in Game View: save the real filter / display settings, not Game View's
+void GameView_beforeShutdown(){
+	if( !g_gameView )
+		return;
+	g_gameView = false;
+	g_filters_globals.exclude = g_gameView_savedExclude;
+	EntityCreator& entities = GlobalEntityCreator();
+	entities.setShowNames( g_gameView_names ); entities.setShowTargetNames( g_gameView_targetNames ); entities.setShowAngles( g_gameView_angles );
+	entities.setShowConnections( g_gameView_connections ); entities.setLightRadii( g_gameView_radii );
+}
 void GameView_toggle(){
 	constexpr unsigned int editorOnly = EXCLUDE_CAULK | EXCLUDE_CLIP | EXCLUDE_HINTSSKIPS | EXCLUDE_TRIGGERS | EXCLUDE_LIGHTS | EXCLUDE_PATHS
 	                                  | EXCLUDE_CLUSTERPORTALS | EXCLUDE_AREAPORTALS | EXCLUDE_BOTCLIP | EXCLUDE_LIGHTGRID | EXCLUDE_VISPORTALS
 	                                  | EXCLUDE_NODRAW | EXCLUDE_POINT_ENT; // point entities = sounds, info_*, targets (models and lights have their own filters)
 	g_gameView = !g_gameView;
 	// entity names, angles, target lines and light radii are editor-only too
-	static bool names, targetNames, angles, connections, radii;
+	bool& names = g_gameView_names; bool& targetNames = g_gameView_targetNames; bool& angles = g_gameView_angles;
+	bool& connections = g_gameView_connections; bool& radii = g_gameView_radii;
 	EntityCreator& entities = GlobalEntityCreator();
 	if( g_gameView ){
 		g_gameView_savedExclude = g_filters_globals.exclude;

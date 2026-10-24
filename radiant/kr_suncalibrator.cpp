@@ -441,8 +441,9 @@ public:
 			auto *group = new QGroupBox( "Game look (how SOF2 shows the lightmaps)" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
-			addValue( grid, r, "Overbright", m_engineShift, "r_mapOverBrightBits minus r_overBrightBits: 1 = SOF2 in fullscreen (lightmaps x2, the default look), "
-			          "0 = windowed / no hardware gamma (x1, darker), 2 = x4 (washed out)", [this](){
+			addValue( grid, r, "Overbright", m_engineShift, "Extra brightening of the lightmaps and vertex light (powers of 2): 0 = as stored, which matches SOF2 with "
+			          "r_mapOverBrightBits 1 / r_overBrightBits 0 - shaders that multiply their lightmap in twice (GL_DST_COLOR GL_SRC_COLOR) are brightened by that. "
+			          "Raise it if the game looks brighter than the editor", [this](){
 				g_krEngineShift = int( m_engineShift.value() );
 				KrLightPreview_redraw();
 			} );

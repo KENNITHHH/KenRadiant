@@ -3,6 +3,17 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (17)
+### Editor
+- **Fixed: "scenegraph root already exists"** (and the following "destroying a referenced object" / runtime error on close) when the Decompile tab's *Open the result* opened the map - it now closes the old map first like File > Open.
+- **Show Compiled Lighting draws shaders like the game**: every stage with its blend, `rgbGen vertex` / `alphaGen vertex` from the .bsp's vertex light and alpha (terrain blends, the road overlay), the `$lightmap` stage with its own blendFunc (so `GL_DST_COLOR GL_SRC_COLOR` doubles like in game), alphaFunc, tcMod scale / scroll, animMap. Your converted decals (blend + additive copy, `rgbGen vertex`) come out like in game instead of very bright.
+- **Brightness model fixed to match SOF2 as you play it** (r_mapOverBrightBits 1, r_overBrightBits 0): lightmaps and vertex light are used as stored; the shader's own lightmap blend does the brightening (2x for `GL_DST_COLOR GL_SRC_COLOR`). *Overbright* in Game look is now an extra brightening and starts at 0. Vertex-lit stages are clamped at 1 like the engine does.
+- **Glowing surfaces light the preview**: faces with `q3map_surfacelight` become small lights (one per ~128 x 128 piece, only in front of the face, as bright as q3map2's area lights), coloured by their texture. The console says how many.
+- **Fewer stripes (acne)**: bigger normal offsets for sun, sky and light shadows.
+- **Models tab search**: type part of a path (e.g. `tree_lrg`) and press Enter - every model from all folders that matches is shown.
+- **Entities tab**: spawnflags explain themselves on hover (from the definition's comment) and show their value.
+- **Entity angle arrows / names come back**: closing the editor in Game View saved Game View's hidden settings (angles, names, filters). Now the real settings are saved. If your arrows are still off: View > Show > Show Entity Angles once.
+
 ## Build 2026-10-24 (16)
 ### Editor
 - **Entities tab** (next to Textures / Models): every point entity of the game by group (pickup, info, target ...), searchable. Pick one, set its keys (the definition's keys + angle), spawnflags and - for SOF2 - the gametypes it appears in (dm tdm ctf inf elim dem, written as `"gametype" "dm tdm"`, none ticked = all), then **drag it into the 2D or 3D view**: in 3D it lands on the surface under the cursor (standing on floors, in front of walls, under ceilings), in 2D where you drop it. Double-click places it in the middle of the 3D view. Your settings per entity are kept while the editor runs.

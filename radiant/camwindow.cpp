@@ -2332,6 +2332,24 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		l.spotDir = dir;
 		l.spotRadiusByDist = ( radiusKey + 16 ) / dist;
 	}
+	// glowing surfaces (q3map_surfacelight) light their surroundings too, like q3map2's area lights
+	{
+		void Scene_collectSurfaceLights( std::vector<KrPreviewLight>& lights );
+		static std::vector<KrPreviewLight> surfaceLights;
+		static int generation = -1;
+		extern int g_krMapGeneration;
+		static QElapsedTimer lastScan;
+		if( generation != g_krMapGeneration || !lastScan.isValid() || lastScan.elapsed() > 2000 ){
+			generation = g_krMapGeneration;
+			lastScan.start();
+			const std::size_t before = surfaceLights.size();
+			Scene_collectSurfaceLights( surfaceLights );
+			if( surfaceLights.size() != before )
+				globalOutputStream() << "light preview: " << int( surfaceLights.size() ) << " lights from glowing surfaces (q3map_surfacelight)\n";
+		}
+		for( const KrPreviewLight& l : surfaceLights )
+			candidates.push_back( { l, vector3_length( l.origin - viewer ) - l.radius, "" } );
+	}
 	std::sort( candidates.begin(), candidates.end(), []( const Candidate& a, const Candidate& b ){ return a.score < b.score; } );
 	g_krMapLightCount = int( candidates.size() );
 	g_krLightPreviewLights.clear();
@@ -3786,7 +3804,7 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "ToggleGameShaders", makeCallbackF( GameShaders_toggle ), ToggleItem::AddCallbackCaller( g_gameShaders_item ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrGameShaders", BoolImportStringCaller( g_krGameShaders ), BoolExportStringCaller( g_krGameShaders ) );
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
-	GlobalPreferenceSystem().registerPreference( "KrEngineShift", IntImportStringCaller( g_krEngineShift ), IntExportStringCaller( g_krEngineShift ) );
+	GlobalPreferenceSystem().registerPreference( "KrEngineShift2", IntImportStringCaller( g_krEngineShift ), IntExportStringCaller( g_krEngineShift ) );
 	GlobalPreferenceSystem().registerPreference( "KrEngineGamma", FloatImportStringCaller( g_krEngineGamma ), FloatExportStringCaller( g_krEngineGamma ) );
 	GlobalPreferenceSystem().registerPreference( "KrShadowedLights", IntImportStringCaller( g_krShadowedLights ), IntExportStringCaller( g_krShadowedLights ) );
 	GlobalPreferenceSystem().registerPreference( "KrPreviewLightCount8192", IntImportStringCaller( g_krPreviewLightCount ), IntExportStringCaller( g_krPreviewLightCount ) );
