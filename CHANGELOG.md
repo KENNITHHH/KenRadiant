@@ -3,6 +3,11 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (21)
+### Editor
+- **Your second dust2 probe (Show Compiled Lighting) now matches SOF2**: walls 1.00 x, decals 1.00 x, models 1.02 x the game.
+- **Fixed (found with the probe): decals, posters and other `cull none` surfaces lit from behind in the live light preview** (they got about a third of the light q3map2 gives them - the dark poster and B arrow). The editor draws two-sided surfaces with the other winding, so the preview took their back for their front; it now uses the side the camera sees.
+
 ## Build 2026-10-24 (20)
 ### Editor
 - **Brightness set from your dust2 measurement** (Lighting Probe, editor vs SOF2 at the same spot, ~2900 points). The game does: lightmapped walls = 1.97 x texture x stored lightmap (the shader's `GL_DST_COLOR GL_SRC_COLOR` doubling, nothing else), vertex lit = the stored vertex colour as it is per stage (models 2.00 x, decals 2.07 x with their two stages). The editor halved vertex light (an `identityLight` 0.5 guess); that's gone, in Show Compiled Lighting and in the live preview. Domes, palm trunks, crates and decals were 2x too dark; walls already matched (1.01 x). `rgbGen identityLighting` is 1 (r_overBrightBits 0).

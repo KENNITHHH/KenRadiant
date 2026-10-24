@@ -178,7 +178,9 @@ void main()
 		return;
 	}
 	vec3 n = normalize( v_normal );
-	if( !gl_FrontFacing )
+	// the side the camera sees (two-sided "cull none" surfaces: the editor draws those with the other front-face
+	// winding, so gl_FrontFacing can't be trusted)
+	if( dot( n, v_pos ) > 0.0 )
 		n = -n;
 
 	float ndl = max( dot( n, u_sun_dir ), 0.0 );
