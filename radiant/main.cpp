@@ -474,6 +474,8 @@ int main( int argc, char* argv[] ){
 	{
 		extern void KrTerrain_shutdown();
 		KrTerrain_shutdown();
+		extern void KrBspPreview_shutdown();
+		KrBspPreview_shutdown();
 	}
 	Map_Free();
 

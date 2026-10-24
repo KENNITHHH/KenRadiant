@@ -11,6 +11,8 @@ uniform float u_ddiv;
 uniform vec4 u_dwave;    // base amp phase freq
 uniform vec3 u_dmove;
 uniform vec3 u_bulge;    // width height speed
+uniform int u_env;       // tcGen environment
+uniform vec3 u_cam_vs;   // camera position (world)
 
 varying vec3 v_pos;
 varying vec3 v_normal;
@@ -48,6 +50,12 @@ void main()
 		st.t += sin( ( gl_Vertex.y * 1.0 / 128.0 * 0.125 + now ) * 6.2831853 ) * u_turb.y;
 	}
 
+	if( u_env != 0 ){ // Quake 3 tcGen environment
+		vec3 viewer = normalize( u_cam_vs - vertex.xyz );
+		vec3 n = normalize( gl_Normal );
+		vec3 reflected = n * 2.0 * dot( n, viewer ) - viewer;
+		st = vec2( 0.5 + reflected.y * 0.5, 0.5 - reflected.z * 0.5 );
+	}
 	v_world = vertex.xyz;
 	v_pos = vec3( gl_ModelViewMatrix * vertex );
 	v_normal = gl_NormalMatrix * gl_Normal;

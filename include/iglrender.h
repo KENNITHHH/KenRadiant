@@ -96,6 +96,7 @@ public:
 	GLProgram* m_program;
 	// KenRadiant: shader effects previewed in the 3D view (tcMod, deformVertexes, polygonOffset), glow surfaces
 	const struct KrShaderEffects* m_krFx = nullptr;
+	const struct KrStageGL* m_krStage = nullptr; // game look: this pass is one stage of the shader
 	bool m_krEmissive = false;
 	bool m_krOffsetFill = false;   // polygon offset fill (selection tint)
 	int m_krTerrain = -1;          // index-map terrain (KrTerrain_gl id)

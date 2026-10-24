@@ -970,6 +970,8 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 	}
 	{ // KenRadiant
 		QMenu* submenu = menu->addMenu( "Shader Effects" );
+		create_check_menu_item_with_mnemonic( submenu, "Shaders Like In Game (all stages, glow, blend, rgbGen, animMap)", "ToggleGameShaders" );
+		submenu->addSeparator();
 		create_check_menu_item_with_mnemonic( submenu, "Animate tcMod (scroll, rotate, stretch, turb)", "ToggleAnimateShaders" );
 		create_check_menu_item_with_mnemonic( submenu, "deformVertexes (wave, move, bulge)", "ToggleDeformVertexes" );
 		create_check_menu_item_with_mnemonic( submenu, "polygonOffset (decals in front)", "TogglePolygonOffset" );
@@ -1175,6 +1177,7 @@ void create_bsp_menu( QMenuBar *menubar ){
 	menu->setTearOffEnabled( g_Layout_enableDetachableMenus.m_value );
 
 	create_menu_item_with_mnemonic( menu, "Compile... (choose options)", "CompileWindow" ); // KenRadiant
+	create_check_menu_item_with_mnemonic( menu, "Show Compiled Lighting (.bsp lightmaps in the 3D view)", "ToggleCompiledLighting" ); // KenRadiant
 	create_menu_item_with_mnemonic( menu, "Customize...", "BuildMenuCustomize" );
 	create_menu_item_with_mnemonic( menu, "Run recent build", "Build_runRecentExecutedBuild" );
 

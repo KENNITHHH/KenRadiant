@@ -39,6 +39,7 @@
 #include "os/path.h"
 #include "mainframe.h"
 #include "map.h"
+#include "qerplugin.h"
 #include "math/vector.h"
 #include "kr_compile_flags.h"
 #include <QToolButton>
@@ -75,11 +76,29 @@ CompileOptions g_options;
 
 const char* const c_presetName = "KenRadiant: (Compile window)";
 
+/// options that compile but don't work in the loaded game (greyed out in the lists); nullptr = fine
+const char* Flag_unsupported( const QString& flag ){
+	const char* game = GlobalRadiant().getGameDescriptionKeyValue( "q3map2_type" );
+	if( !string_equal_nocase( game, "sof2" ) )
+		return nullptr;
+	if( flag == "-deluxe" || flag == "-deluxemode" )
+		return "SOF2's renderer has no deluxemaps (no bump mapping): the extra lightmaps are wasted and can break the lightmap order";
+	if( flag == "-external" || flag == "-lightmapsize" || flag == "-extlmhacksize" || flag == "-lightmapdir" )
+		return "SOF2MP only reads the 128 x 128 lightmaps stored inside the .bsp";
+	if( flag == "-wolf" )
+		return "Wolfenstein light falloff - not how SOF2 lights are meant to look";
+	if( flag == "-cpma" )
+		return "vertex light mode of CPMA (a Quake 3 mod)";
+	return nullptr;
+}
+
 /// the ticked entries of a stage's "all options" list
 QString Compile_advanced( const CopiedString& adv ){
 	QString out;
 	for( const QString& line : QString( adv.c_str() ).split( ';', Qt::SkipEmptyParts ) ){
 		const QStringList p = line.split( '=' );
+		if( Flag_unsupported( p[0] ) != nullptr )
+			continue;
 		out += ' ' + p[0];
 		if( p.size() > 1 && !p[1].trimmed().isEmpty() )
 			out += ' ' + p[1].trimmed();
@@ -391,7 +410,17 @@ class CompileDialog : public QDialog
 				} );
 			}
 			h->addStretch();
-			const QString help = QString( "%1 %2 - %3" ).arg( f.flag, f.arg, f.help );
+			const char* unsupported = Flag_unsupported( f.flag );
+			const QString help = unsupported != nullptr ? QString( "%1 - doesn't work in SOF2: %2" ).arg( f.flag, unsupported )
+			                                            : QString( "%1 %2 - %3" ).arg( f.flag, f.arg, f.help );
+			if( unsupported != nullptr ){
+				box->setEnabled( false );
+				if( value != nullptr )
+					value->setEnabled( false );
+				cell->setProperty( "krHint", help ); // disabled widgets get no hover events: the cell shows it
+				cell->setToolTip( help );
+				cell->installEventFilter( &m_hints );
+			}
 			hint( box, help );
 			if( value != nullptr )
 				hint( value, help );

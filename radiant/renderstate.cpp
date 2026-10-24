@@ -485,6 +485,17 @@ bool g_krAnimateShaders = true;
 bool g_krDeformVertexes = true;
 bool g_krPolygonOffset = true;
 bool g_krGlow = true;
+bool g_krGameShaders = true; // draw every stage of a shader like the game (View > Shader Effects)
+
+/// one stage of a shader as a render pass
+struct KrStageGL
+{
+	const KrStage* stage = nullptr;
+	std::vector<GLuint> frames;  // animMap
+	bool lit = false;            // takes the light preview (else drawn at full brightness, e.g. glows)
+};
+/// rgbGen / alphaGen of a stage at time t
+inline Vector4 KrStage_colour( const KrStage& st, float t );
 float g_krShaderTime = 0;
 bool g_krAnimatedDrawn = false; // an animated shader was drawn this frame: the 3D view keeps redrawing
 unsigned int g_krShadowTex = 0;
@@ -537,7 +548,7 @@ public:
 	GLint u_tex, u_count, u_sun_dir, u_sun_col, u_ambient, u_eye2shadow, u_has_shadow, u_texel, u_bias_unit, u_soft;
 	GLint u_cube_far2;
 	GLint u_terrain, u_tmins, u_tsize, u_tscale;
-	GLint u_overbright, u_rgamma;
+	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
@@ -560,7 +571,7 @@ public:
 		u_sun_dir = u( "u_sun_dir" ); u_sun_col = u( "u_sun_col" ); u_ambient = u( "u_ambient" );
 		u_eye2shadow = u( "u_eye2shadow" ); u_has_shadow = u( "u_has_shadow" ); u_texel = u( "u_texel" ); u_bias_unit = u( "u_bias_unit" ); u_soft = u( "u_soft" );
 		u_cube_far = u( "u_cube_far" ); u_cube_far2 = u( "u_cube_far2" ); u_cube_near = u( "u_cube_near" ); u_eye2world = u( "u_eye2world" );
-		u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
+		u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		gl().glUniform1i( u_tex, 0 );
@@ -665,7 +676,8 @@ public:
 		const bool turb = fx != nullptr && fx->turb && g_krAnimateShaders;
 		const int deform = fx != nullptr && g_krDeformVertexes ? fx->deform : 0;
 		const KrTerrainGL* terrain = state.m_krTerrain >= 0 && ( globalstate & RENDER_TEXTURE ) ? KrTerrain_gl( state.m_krTerrain ) : nullptr;
-		bind( m_preview || turb || deform != 0 || terrain != nullptr );
+		const KrStageGL* stage = ( globalstate & RENDER_TEXTURE ) ? state.m_krStage : nullptr;
+		bind( m_preview || turb || deform != 0 || terrain != nullptr || stage != nullptr );
 		if( !m_bound )
 			return;
 		gl().glUniform1i( u_terrain, terrain != nullptr ? terrain->layers : 0 );
@@ -684,8 +696,29 @@ public:
 		}
 		if( turb || deform != 0 )
 			g_krAnimatedDrawn = true;
-		gl().glUniform1i( u_mode, m_preview ? ( state.m_krEmissive && g_krGlow ? 2 : 1 ) : 0 );
-		gl().glUniform1i( u_fflight, ( globalstate & RENDER_LIGHTING ) ? 1 : 0 );
+		gl().glUniform1i( u_mode, m_preview ? ( state.m_krEmissive && ( g_krGlow || stage != nullptr ) ? 2 : 1 ) : 0 );
+		gl().glUniform1i( u_fflight, ( globalstate & RENDER_LIGHTING ) && ( stage == nullptr || stage->lit ) ? 1 : 0 );
+		// game look stage: rgbGen / alphaGen colour, tcGen environment, animMap frame
+		Vector4 stageColour( 1, 1, 1, 1 );
+		int env = 0;
+		if( stage != nullptr ){
+			const KrStage& st = *stage->stage;
+			stageColour = KrStage_colour( st, g_krShaderTime );
+			if( st.rgbGen == 2 || st.alphaGen == 2 || stage->frames.size() > 1 )
+				g_krAnimatedDrawn = true;
+			env = st.tcGen == 2 ? 1 : 0;
+			if( stage->frames.size() > 1 && st.animFreq > 0 ){
+				const std::size_t frame = std::size_t( std::max( 0.f, g_krShaderTime * st.animFreq ) ) % stage->frames.size();
+				gl().glActiveTexture( GL_TEXTURE0 );
+				gl().glBindTexture( GL_TEXTURE_2D, stage->frames[frame] );
+			}
+			if( env ){
+				const Matrix4 inv = matrix4_full_inverse( g_krLightPreviewView );
+				gl().glUniform3f( u_cam_vs, inv[12], inv[13], inv[14] );
+			}
+		}
+		gl().glUniform4f( u_stage, stageColour[0], stageColour[1], stageColour[2], stageColour[3] );
+		gl().glUniform1i( u_env, env );
 		gl().glUniform1f( u_time, g_krShaderTime );
 		gl().glUniform1i( u_turb_on, turb ? 1 : 0 );
 		gl().glUniform1i( u_deform, deform );
@@ -887,12 +920,19 @@ class OpenGLShader final : public Shader
 	IShader* m_shader;
 	std::size_t m_used;
 	ModuleObservers m_observers;
+	std::vector<qtexture_t*> m_krTextures;                 // game look: stage images
+	std::vector<std::unique_ptr<KrStageGL>> m_krStagesGL;
+	bool constructStages( OpenGLState& first );
 public:
 	OpenGLShader() : m_shader( 0 ), m_used( 0 ){
 	}
 	~OpenGLShader() = default;
 	void construct( const char* name );
 	void destroy(){
+		for( qtexture_t* t : m_krTextures )
+			GlobalTexturesCache().release( t );
+		m_krTextures.clear();
+		m_krStagesGL.clear();
 		if ( m_shader ) {
 			m_shader->DecRef();
 		}
@@ -2334,6 +2374,9 @@ void OpenGLShader::construct( const char* name ){
 
 			state.m_program = &g_skyboxGLSL;
 		}
+		else if( g_krGameShaders && constructStages( state ) ){
+			// game look: one pass per shader stage
+		}
 		else
 		{
 			state.m_texture = m_shader->getTexture()->texture_number;
@@ -2483,3 +2526,119 @@ bool Shader_castsShadow( Shader* shader ){
 	return !( flags & ( QER_SKY | QER_TRANS | QER_FOG ) ) || ( flags & QER_ALPHATEST ); // masked foliage casts cut-out shadows
 }
 
+
+
+inline Vector4 KrStage_colour( const KrStage& st, float t ){
+	Vector4 c( 1, 1, 1, 1 );
+	if( st.rgbGen == 2 ){
+		const float v = std::clamp( KrWave( st.rgbFunc, st.rgbWave, t ), 0.f, 1.f );
+		c = Vector4( v, v, v, 1 );
+	}
+	else if( st.rgbGen == 3 )
+		c = Vector4( st.rgbConst[0], st.rgbConst[1], st.rgbConst[2], 1 );
+	if( st.alphaGen == 1 )
+		c[3] = st.alphaConst;
+	else if( st.alphaGen == 2 )
+		c[3] = std::clamp( KrWave( st.alphaFunc2, st.alphaWave, t ), 0.f, 1.f );
+	return c;
+}
+
+/// KenRadiant game look: a pass per stage - the stage's image, blend, alpha test, rgbGen / alphaGen, tcGen environment,
+/// tcMods. $lightmap stages are left out: the light preview (or nothing) stands in for the lightmap, and the stage
+/// that multiplies onto it becomes the base
+bool OpenGLShader::constructStages( OpenGLState& first ){
+	const std::vector<KrStage>* stages = m_shader->getStages();
+	const int flags = m_shader->getFlags();
+	if( stages == nullptr || ( flags & ( QER_SKY | QER_KR_TERRAIN ) ) || m_shader->krNotFound() )
+		return false;
+	bool lightmapped = false;
+	std::vector<const KrStage*> list;
+	for( const KrStage& st : *stages ){
+		if( st.special == 1 || st.tcGen == 1 ){
+			lightmapped = true;
+			continue;
+		}
+		list.push_back( &st );
+	}
+	if( list.empty() )
+		return false;
+	const auto multiplies = []( const KrStage& st ){
+		return st.blend && ( ( st.src == BLEND_DST_COLOUR && st.dst == BLEND_ZERO ) || ( st.src == BLEND_ZERO && st.dst == BLEND_SRC_COLOUR ) );
+	};
+	const KrStage& base = *list.front();
+	const bool baseOpaque = !base.blend || ( base.src == BLEND_ONE && base.dst == BLEND_ZERO ) || ( lightmapped && multiplies( base ) );
+	static GLuint white = 0;
+	if( white == 0 ){
+		const unsigned char px[4] = { 255, 255, 255, 255 };
+		gl().glGenTextures( 1, &white );
+		gl().glBindTexture( GL_TEXTURE_2D, white );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px );
+		gl().glBindTexture( GL_TEXTURE_2D, 0 );
+	}
+	const auto load = [this]( const CopiedString& name ) -> GLuint {
+		qtexture_t* t = GlobalTexturesCache().capture( name.c_str() );
+		m_krTextures.push_back( t );
+		return t != nullptr ? t->texture_number : 0;
+	};
+	int pass = 0;
+	for( std::size_t i = 0; i < list.size(); ++i ){
+		const KrStage& st = *list[i];
+		auto gls = std::make_unique<KrStageGL>();
+		gls->stage = &st;
+		GLuint texture = st.special == 2 ? white : 0;
+		if( st.special != 2 ){
+			if( !st.frames.empty() ){
+				for( const CopiedString& f : st.frames )
+					if( const GLuint t = load( f ); t != 0 )
+						gls->frames.push_back( t );
+				texture = gls->frames.empty() ? 0 : gls->frames.front();
+			}
+			else
+				texture = load( st.image );
+		}
+		if( texture == 0 ){
+			if( i == 0 )
+				return false; // the base image is missing: draw it the editor way
+			continue;
+		}
+		OpenGLState& state = pass == 0 ? first : appendDefaultPass();
+		const bool isBase = pass == 0;
+		++pass;
+		state.m_texture = texture;
+		state.m_state = RENDER_FILL | RENDER_TEXTURE | RENDER_DEPTHTEST | RENDER_COLOURWRITE | RENDER_LIGHTING | RENDER_SMOOTH | RENDER_PROGRAM;
+		state.m_program = &g_krLightGLSL;
+		state.m_colour = Vector4( 1, 1, 1, 1 );
+		state.m_krFx = &st.fx;
+		if( !( flags & QER_CULL ) || m_shader->getCull() == IShader::eCullBack )
+			state.m_state |= RENDER_CULLFACE;
+		if( st.alphaFunc != 0 ){
+			state.m_state |= RENDER_ALPHATEST;
+			state.m_alphafunc = st.alphaFunc == 1 ? GL_GREATER : st.alphaFunc == 2 ? GL_LESS : GL_GEQUAL;
+			state.m_alpharef = st.alphaFunc == 1 ? 0.f : 0.5f;
+		}
+		if( isBase && baseOpaque ){
+			state.m_state |= RENDER_DEPTHWRITE;
+			state.m_sort = list.size() > 1 ? OpenGLState::eSortMultiFirst : OpenGLState::eSortFullbright;
+		}
+		else{
+			if( st.blend ){
+				state.m_state |= RENDER_BLEND;
+				state.m_blend_src = convertBlendFactor( st.src );
+				state.m_blend_dst = convertBlendFactor( st.dst );
+			}
+			state.m_depthfunc = GL_LEQUAL;
+			if( st.depthWrite )
+				state.m_state |= RENDER_DEPTHWRITE;
+			state.m_sort = baseOpaque ? OpenGLState::ESort( std::min( int( OpenGLState::eSortMultiFirst ) + pass - 1, int( OpenGLState::eSortMultiLast ) ) )
+			                          : OpenGLState::eSortTranslucent;
+		}
+		// the light preview lights vertex-lit stages and the stage standing in for the lightmapped base
+		gls->lit = st.rgbGen == 1 || st.rgbGen == 4 || ( lightmapped && isBase && ( st.rgbGen == 0 || st.rgbGen == 5 ) );
+		state.m_krEmissive = !gls->lit;
+		state.m_krStage = gls.get();
+		m_krStagesGL.push_back( std::move( gls ) );
+	}
+	return pass != 0;
+}

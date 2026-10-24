@@ -314,6 +314,7 @@ public:
 	float m_sunDeviance = 0, m_sunSamples = 16; // q3map_sunExt extras
 	bool m_krEmissive = false;
 	KrShaderEffects m_krFx;
+	std::vector<KrStage> m_krStages; // KenRadiant game look
 	bool m_krLightPass = false, m_krAlphaShadow = false;
 
 	ShaderTemplate() :
@@ -943,6 +944,9 @@ public:
 	const KrShaderEffects* getEffects() const override {
 		return m_template.m_krFx.any() ? &m_template.m_krFx : nullptr;
 	}
+	const std::vector<KrStage>* getStages() const override {
+		return m_template.m_krStages.empty() ? nullptr : &m_template.m_krStages;
+	}
 // IShaders implementation -----------------
 	void IncRef() override {
 		++m_refcount;
@@ -1268,6 +1272,22 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 	// KenRadiant: emissive / animated preview
 	bool stageAdditive = false, stageVertexLit = false, stageLightmap = false, stageGlow = false;
 	KrShaderEffects stageFx; // tcMods of the current stage
+	KrStage stage;           // the current stage as the game draws it
+	m_krStages.clear();
+	const auto blendFactor = []( const char* f ) -> BlendFactor {
+		if( string_equal_nocase( f, "gl_zero" ) ) return BLEND_ZERO;
+		if( string_equal_nocase( f, "gl_one" ) ) return BLEND_ONE;
+		if( string_equal_nocase( f, "gl_src_color" ) ) return BLEND_SRC_COLOUR;
+		if( string_equal_nocase( f, "gl_one_minus_src_color" ) ) return BLEND_ONE_MINUS_SRC_COLOUR;
+		if( string_equal_nocase( f, "gl_src_alpha" ) ) return BLEND_SRC_ALPHA;
+		if( string_equal_nocase( f, "gl_one_minus_src_alpha" ) ) return BLEND_ONE_MINUS_SRC_ALPHA;
+		if( string_equal_nocase( f, "gl_dst_color" ) ) return BLEND_DST_COLOUR;
+		if( string_equal_nocase( f, "gl_one_minus_dst_color" ) ) return BLEND_ONE_MINUS_DST_COLOUR;
+		if( string_equal_nocase( f, "gl_dst_alpha" ) ) return BLEND_DST_ALPHA;
+		if( string_equal_nocase( f, "gl_one_minus_dst_alpha" ) ) return BLEND_ONE_MINUS_DST_ALPHA;
+		if( string_equal_nocase( f, "gl_src_alpha_saturate" ) ) return BLEND_SRC_ALPHA_SATURATE;
+		return BLEND_ONE;
+	};
 
 	tokeniser.nextLine();
 
@@ -1290,6 +1310,7 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				stageAlphaFunc = "";
 				stageAdditive = stageVertexLit = stageLightmap = stageGlow = false;
 				stageFx = KrShaderEffects(); // tcMods are per stage
+				stage = KrStage();
 			}
 			continue;
 		}
@@ -1298,6 +1319,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				// an extra additive stage that is not vertex lit (the "2x" overbright copy is) = glow, or SOF2's glow keyword
 				if( ( stageGlow || ( stageAdditive && stageNum > 1 && !stageVertexLit ) ) && !stageLightmap )
 					m_krEmissive = true;
+				stage.fx = stageFx;
+				if( !stage.image.empty() || stage.special != 0 || !stage.frames.empty() )
+					m_krStages.push_back( stage );
 				if( stageHasImage && !imageStageDone ){
 					std::copy( std::begin( stageFx.scroll ), std::end( stageFx.scroll ), std::begin( m_krFx.scroll ) );
 					m_krFx.rotate = stageFx.rotate;
@@ -1328,6 +1352,13 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				return false;
 			}
 			if ( depth == 0 ) { // end of shader
+				for( KrStage& st : m_krStages ){ // the shader's vertex deforms move every stage
+					st.fx.deform = m_krFx.deform; st.fx.deformFunc = m_krFx.deformFunc; st.fx.deformDiv = m_krFx.deformDiv;
+					std::copy( std::begin( m_krFx.deformWave ), std::end( m_krFx.deformWave ), std::begin( st.fx.deformWave ) );
+					std::copy( std::begin( m_krFx.deformMove ), std::end( m_krFx.deformMove ), std::begin( st.fx.deformMove ) );
+					std::copy( std::begin( m_krFx.bulge ), std::end( m_krFx.bulge ), std::begin( st.fx.bulge ) );
+					st.fx.polygonOffset = m_krFx.polygonOffset;
+				}
 				break;
 			}
 
@@ -1337,30 +1368,102 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 		if ( depth == 2 ) {
 			if ( string_equal_nocase( token, "map" ) || string_equal_nocase( token, "clampmap" ) || string_equal_nocase( token, "animmap" ) ) {
 				if ( string_equal_nocase( token, "animmap" ) ) {
-					tokeniser.getToken(); // frequency
+					const std::size_t line = tokeniser.getLine();
+					Tokeniser_getFloat( tokeniser, stage.animFreq );
+					// the frames: the rest of the line
+					for( const char* frame; ( frame = tokeniser.getToken() ) != 0; ){
+						if( tokeniser.getLine() != line ){
+							tokeniser.ungetToken();
+							break;
+						}
+						if( stage.frames.size() < 16 )
+							stage.frames.emplace_back( StringStream<64>( PathExtensionless( frame ) ) );
+					}
+					if( !stage.frames.empty() ){
+						stageHasImage = true;
+						if( firstStageImage.empty() )
+							firstStageImage = stage.frames.front();
+						stage.image = stage.frames.front();
+					}
+					continue;
 				}
 				if ( const char* image = tokeniser.getToken(); image != 0 && image[0] != '$' && image[0] != '*' ) {
 					stageHasImage = true;
+					stage.image = StringStream<64>( PathExtensionless( image ) );
 					if( firstStageImage.empty() )
 						firstStageImage = StringStream<64>( PathExtensionless( image ) );
 				}
 				else if( image != 0 && string_equal_nocase( image, "$lightmap" ) ){
 					stageLightmap = true;
+					stage.special = 1;
+				}
+				else if( image != 0 && ( string_equal_nocase( image, "$whiteimage" ) || string_equal_nocase( image, "*white" ) ) ){
+					stage.special = 2;
 				}
 				continue;
 			}
 			else if ( string_equal_nocase( token, "rgbgen" ) ) {
-				if( const char* gen = tokeniser.getToken() )
+				if( const char* gen = tokeniser.getToken() ){
 					stageVertexLit = string_equal_nocase( gen, "vertex" ) || string_equal_nocase( gen, "exactVertex" ) || string_equal_nocase( gen, "lightingDiffuse" );
+					if( stageVertexLit )
+						stage.rgbGen = 1;
+					else if( string_equal_nocase( gen, "wave" ) ){
+						stage.rgbGen = 2;
+						stage.rgbFunc = KrWaveFunc( tokeniser.getToken() );
+						for( float& v : stage.rgbWave )
+							Tokeniser_getFloat( tokeniser, v );
+					}
+					else if( string_equal_nocase( gen, "const" ) || string_equal_nocase( gen, "constant" ) ){
+						stage.rgbGen = 3;
+						const char* t = tokeniser.getToken(); // ( r g b )
+						if( t != 0 && !string_equal( t, "(" ) )
+							tokeniser.ungetToken();
+						for( float& v : stage.rgbConst )
+							Tokeniser_getFloat( tokeniser, v );
+						t = tokeniser.getToken();
+						if( t != 0 && !string_equal( t, ")" ) )
+							tokeniser.ungetToken();
+					}
+					else if( string_equal_nocase( gen, "oneMinusVertex" ) )
+						stage.rgbGen = 4;
+					else if( string_equal_nocase( gen, "identityLighting" ) )
+						stage.rgbGen = 5;
+				}
 				continue;
 			}
 			else if ( string_equal_nocase( token, "glow" ) ) {
 				stageGlow = true;
+				stage.glow = true;
 				continue;
 			}
 			else if ( string_equal_nocase( token, "depthWrite" ) ) {
 				if( stageNum == 1 )
 					m_krFx.depthWrite = true;
+				stage.depthWrite = true;
+				continue;
+			}
+			else if ( string_equal_nocase( token, "alphagen" ) ) {
+				if( const char* gen = tokeniser.getToken() ){
+					if( string_equal_nocase( gen, "const" ) || string_equal_nocase( gen, "constant" ) ){
+						stage.alphaGen = 1;
+						Tokeniser_getFloat( tokeniser, stage.alphaConst );
+					}
+					else if( string_equal_nocase( gen, "wave" ) ){
+						stage.alphaGen = 2;
+						stage.alphaFunc2 = KrWaveFunc( tokeniser.getToken() );
+						for( float& v : stage.alphaWave )
+							Tokeniser_getFloat( tokeniser, v );
+					}
+				}
+				continue;
+			}
+			else if ( string_equal_nocase( token, "tcgen" ) || string_equal_nocase( token, "texgen" ) ) {
+				if( const char* gen = tokeniser.getToken() ){
+					if( string_equal_nocase( gen, "environment" ) )
+						stage.tcGen = 2;
+					else if( string_equal_nocase( gen, "lightmap" ) )
+						stage.tcGen = 1;
+				}
 				continue;
 			}
 			else if ( string_equal_nocase( token, "tcmod" ) ) {
@@ -1389,8 +1492,10 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				continue;
 			}
 			else if ( string_equal_nocase( token, "alphafunc" ) ) {
-				if( const char* func = tokeniser.getToken() )
+				if( const char* func = tokeniser.getToken() ){
 					stageAlphaFunc = func;
+					stage.alphaFunc = string_equal_nocase( func, "GT0" ) ? 1 : string_equal_nocase( func, "LT128" ) ? 2 : 3;
+				}
 				continue;
 			}
 			else if ( string_equal_nocase( token, "blendfunc" ) ) {
@@ -1407,6 +1512,11 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				}
 				if( stageNum == 1 )
 					m_q3BlendFunc = BlendFuncExpression( first.c_str(), second.c_str() );
+				stage.blend = true;
+				if( string_equal_nocase( first.c_str(), "add" ) ){ stage.src = BLEND_ONE; stage.dst = BLEND_ONE; }
+				else if( string_equal_nocase( first.c_str(), "filter" ) ){ stage.src = BLEND_DST_COLOUR; stage.dst = BLEND_ZERO; }
+				else if( string_equal_nocase( first.c_str(), "blend" ) ){ stage.src = BLEND_SRC_ALPHA; stage.dst = BLEND_ONE_MINUS_SRC_ALPHA; }
+				else{ stage.src = blendFactor( first.c_str() ); stage.dst = blendFactor( second.c_str() ); }
 				stageAdditive = string_equal_nocase( first.c_str(), "add" )
 				             || ( string_equal_nocase( second.c_str(), "gl_one" ) && ( string_equal_nocase( first.c_str(), "gl_one" ) || string_equal_nocase( first.c_str(), "gl_src_alpha" ) ) );
 				continue;

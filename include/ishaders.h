@@ -20,6 +20,8 @@
  */
 
 #pragma once
+#include <vector>
+#include "string/string.h"
 
 #include "generic/constant.h"
 #include "generic/callback.h"
@@ -138,7 +140,10 @@ public:
 	virtual bool isEmissive() const { return false; }
 	/// KenRadiant: shader effects the 3D view can animate (first image stage tcMods, deformVertexes, polygonOffset)
 	virtual const struct KrShaderEffects* getEffects() const { return nullptr; }
+	/// KenRadiant game look: the shader's stages as the game draws them (nullptr = no stage list, e.g. a plain texture)
+	virtual const std::vector<struct KrStage>* getStages() const { return nullptr; }
 };
+
 
 /// KenRadiant: what the editor previews of a shader's animation; wave funcs: 0 none, 1 sin, 2 triangle, 3 square, 4 sawtooth, 5 inversesawtooth
 struct KrShaderEffects
@@ -170,6 +175,30 @@ struct KrShaderEffects
 	bool any() const {
 		return textureMatrix() || vertexProgram() || polygonOffset || depthWrite;
 	}
+};
+
+/// KenRadiant game look: one shader stage
+struct KrStage
+{
+	CopiedString image;                 // texture (no extension), empty for $lightmap / $whiteimage
+	int special = 0;                    // 1 $lightmap, 2 $whiteimage
+	std::vector<CopiedString> frames;   // animMap
+	float animFreq = 0;
+	bool blend = false;                 // blendFunc given (else opaque replace)
+	BlendFactor src = 1, dst = 0;       // BLEND_ONE, BLEND_ZERO
+	int alphaFunc = 0;                  // 1 GT0, 2 LT128, 3 GE128
+	bool depthWrite = false;
+	int rgbGen = 0;                     // 0 identity, 1 lit (vertex / exactVertex / lightingDiffuse), 2 wave, 3 const, 4 oneMinusVertex, 5 identityLighting
+	int rgbFunc = 0;
+	float rgbWave[4] = { 1, 0, 0, 0 };  // base amp phase freq
+	float rgbConst[3] = { 1, 1, 1 };
+	int alphaGen = 0;                   // 0 1.0, 1 const, 2 wave
+	int alphaFunc2 = 0;
+	float alphaWave[4] = { 1, 0, 0, 0 };
+	float alphaConst = 1;
+	int tcGen = 0;                      // 0 base, 1 lightmap, 2 environment
+	bool glow = false;                  // SOF2 glow keyword
+	KrShaderEffects fx;                 // this stage's tcMods (+ the shader's deformVertexes)
 };
 
 typedef Callback<void(const char*)> ShaderNameCallback;

@@ -3,6 +3,14 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (14)
+### Editor
+- **Shaders like in game** (View → Shader Effects, on by default): every stage of a shader is drawn the way the game draws it - blendFunc (add, filter, blend ...), alphaFunc, rgbGen (lightingDiffuse / vertex lit, wave, const), alphaGen, tcGen environment, animMap, per-stage tcMods. Glow stages (an extra `blendFunc GL_ONE GL_ONE` stage like `helipad_glass_glow`) now show. `$lightmap` stages are left out and the stage multiplied onto them becomes the lit base, so the live light preview stands in for the lightmap.
+- **Show Compiled Lighting** (Build menu): draws the map's compiled .bsp in the 3D view with its real baked lightmaps (and vertex light), brightened like SOF2 (Game look settings). It reloads by itself when a compile writes a new .bsp, so: compile, look, change, compile again. Patches are drawn too.
+- **Engine limits** in Check for Problems (Ctrl+Alt+P): game entities (1024 slots, ~64 for players), brush entities (256 inline models), different models / sounds on entities (256 each, shared with weapons and players), different shaders (1024 in a .bsp), brushes. Warns well before the limit; the counts are printed in the console.
+- **Compile window**: options that don't work in SOF2 are greyed out with the reason (-deluxe / -deluxemode: no deluxemaps in SOF2; -external / -lightmapsize / -extlmhacksize / -lightmapdir: SOF2MP only reads 128 x 128 lightmaps in the .bsp; -wolf, -cpma) and are never added to the command.
+- **Update notice** at the top right is no longer cut off: "Update available - click to download (you have ...)".
+
 ## Build 2026-10-24 (13)
 ### Editor
 - **Compile window: every q3map2 option**: each tab (BSP, VIS, LIGHT) has *All N q3map2 options* - every other option of that stage as a compact grid of ticks with value boxes (typing a value ticks it), described by q3map2's own help text when you point at it (95 for LIGHT, 43 for BSP).

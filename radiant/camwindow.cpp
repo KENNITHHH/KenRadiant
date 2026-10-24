@@ -2855,6 +2855,14 @@ static void PolygonOffset_toggle(){
 	if( g_camwnd )
 		CamWnd_Update( *g_camwnd );
 }
+extern bool g_krGameShaders;
+void RefreshShaders();
+ToggleItem g_gameShaders_item{ BoolExportCaller( g_krGameShaders ) };
+static void GameShaders_toggle(){
+	g_krGameShaders = !g_krGameShaders;
+	g_gameShaders_item.update();
+	RefreshShaders(); // render states are built per shader
+}
 ToggleItem g_glow_item{ BoolExportCaller( g_krGlow ) };
 static void Glow_toggle(){
 	g_krGlow = !g_krGlow;
@@ -3147,6 +3155,7 @@ void CamWnd::Cam_Draw(){
 		globalstate |= RENDER_LINESTIPPLE | RENDER_POLYGONSTIPPLE;
 //	}
 
+	g_krLightPreviewView = m_Camera.modelview; // (tcGen environment needs the camera too)
 	// KenRadiant: shader animation clock
 	{
 		static QElapsedTimer clock;
@@ -3187,6 +3196,8 @@ void CamWnd::Cam_Draw(){
 			m_draw_size.render( renderer, m_state_text, m_view );
 		}
 
+		extern void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection );
+		KrBspPreview_draw( m_Camera.modelview, m_Camera.projection ); // compiled lighting (.bsp), when on
 		renderer.render( m_Camera.modelview, m_Camera.projection );
 		g_krLightPreviewDrawing = false;
 		if( KrSelection_outlineAny() && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
@@ -3694,6 +3705,8 @@ void CamWnd_Construct(){
 	GlobalToggles_insert( "ToggleLightShadows", makeCallbackF( LightShadows_toggle ), ToggleItem::AddCallbackCaller( g_lightShadows_item ) ); // KenRadiant
 	GlobalToggles_insert( "ToggleDeformVertexes", makeCallbackF( DeformVertexes_toggle ), ToggleItem::AddCallbackCaller( g_deformVertexes_item ) ); // KenRadiant
 	GlobalToggles_insert( "TogglePolygonOffset", makeCallbackF( PolygonOffset_toggle ), ToggleItem::AddCallbackCaller( g_polygonOffset_item ) ); // KenRadiant
+	GlobalToggles_insert( "ToggleGameShaders", makeCallbackF( GameShaders_toggle ), ToggleItem::AddCallbackCaller( g_gameShaders_item ) ); // KenRadiant
+	GlobalPreferenceSystem().registerPreference( "KrGameShaders", BoolImportStringCaller( g_krGameShaders ), BoolExportStringCaller( g_krGameShaders ) );
 	GlobalToggles_insert( "ToggleGlowShaders", makeCallbackF( Glow_toggle ), ToggleItem::AddCallbackCaller( g_glow_item ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrEngineShift", IntImportStringCaller( g_krEngineShift ), IntExportStringCaller( g_krEngineShift ) );
 	GlobalPreferenceSystem().registerPreference( "KrEngineGamma", FloatImportStringCaller( g_krEngineGamma ), FloatExportStringCaller( g_krEngineGamma ) );
@@ -3716,6 +3729,8 @@ void CamWnd_Construct(){
 	KrMisc_registerCommands();
 	extern void KrCompile_registerCommands();
 	KrCompile_registerCommands();
+	extern void KrBspPreview_registerCommands();
+	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant
 	GlobalCommands_insert( "CycleSelectionStyle", makeCallbackF( SelectionStyle_cycle ), QKeySequence( "J" ) ); // KenRadiant
 	GlobalPreferenceSystem().registerPreference( "KrSelectionStyle", IntImportStringCaller( g_krSelectionStyle ), IntExportStringCaller( g_krSelectionStyle ) );

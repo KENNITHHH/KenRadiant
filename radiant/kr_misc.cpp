@@ -30,6 +30,8 @@
 #include <functional>
 #include <QKeyEvent>
 #include <QStatusBar>
+#include <QResizeEvent>
+#include <QCoreApplication>
 
 #include "version.h"
 #include "math/vector.h"
@@ -64,6 +66,14 @@ void Version_show( const QString& text, const QString& tip, bool update ){
 		return;
 	g_versionButton->setText( text );
 	g_versionButton->setToolTip( tip );
+	// the menu bar sizes its corner widget only on resize: make room for the new text now
+	g_versionButton->setMinimumWidth( g_versionButton->fontMetrics().horizontalAdvance( text ) + 40 );
+	g_versionButton->adjustSize();
+	if( QWidget* bar = g_versionButton->parentWidget() ){
+		QResizeEvent event( bar->size(), bar->size() );
+		QCoreApplication::sendEvent( bar, &event );
+		bar->update();
+	}
 	g_versionButton->setStyleSheet( update ? "QToolButton { color: #ffa020; font-weight: bold; font-size: 11pt; padding: 1px 8px; }"
 	                                       : "QToolButton { font-size: 10pt; padding: 1px 8px; }" );
 }
@@ -111,7 +121,7 @@ void Update_check( bool verbose ){
 					globalOutputStream() << "update check: this is the latest build (" << tag.toLatin1().constData() << ")\n";
 			}
 			else{
-				Version_show( QString( "KenRadiant %1  -  update available" ).arg( commit ),
+				Version_show( QString( "Update available - click to download  (you have %1)" ).arg( commit ),
 				              QString( "A newer build is on GitHub (%1, commit %2). Click to open the download page." ).arg( tag, latest.left( 7 ) ), true );
 				globalOutputStream() << "update check: a newer KenRadiant build is on GitHub (" << tag.toLatin1().constData() << ", " << latest.left( 7 ).toLatin1().constData() << ")\n";
 			}

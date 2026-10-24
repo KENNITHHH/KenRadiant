@@ -26,6 +26,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <algorithm>
 #include <cmath>
 
 #include "iundo.h"
@@ -280,6 +281,9 @@ public:
 	mutable std::map<std::string, scene::Path> m_brushPlanes, m_entities;
 	mutable std::map<std::string, scene::Path> m_missingTex;
 	mutable int m_playerStarts = 0;
+	// engine limit counts
+	mutable int m_gameEntities = 0, m_inlineModels = 0, m_brushes = 0;
+	mutable std::set<std::string> m_shaders, m_sounds, m_models;
 	ProblemWalker( std::vector<KrProblem>& problems ) : m_problems( problems ){}
 
 	void add( const char* kind, const QString& text, const scene::Path& path ) const {
@@ -308,6 +312,20 @@ public:
 			const char* classname = entity->getClassName();
 			if( string_equal_prefix( classname, "info_player" ) )
 				++m_playerStarts;
+			// what is still an entity in the game (q3map2 bakes / removes these)
+			static const char* const compiledAway[] = { "worldspawn", "func_group", "misc_model", "misc_gamemodel", "light", "info_null", "_decal", "_skybox", "misc_terrain" };
+			const bool gone = std::any_of( std::begin( compiledAway ), std::end( compiledAway ), [classname]( const char* c ){ return string_equal_nocase( classname, c ); } );
+			if( !gone ){
+				++m_gameEntities;
+				if( entity->isContainer() )
+					++m_inlineModels;
+				const char* model = entity->getKeyValue( "model" );
+				if( !string_empty( model ) && model[0] != '*' )
+					m_models.insert( model );
+			}
+			for( const char* key : { "noise", "sound", "soundSet", "music" } )
+				if( const char* v = entity->getKeyValue( key ); !string_empty( v ) )
+					m_sounds.insert( v );
 			if( entity->getEntityClass().unknown && !string_equal( classname, "worldspawn" ) )
 				add( "Unknown entity", QString( "%1 is not defined in the game's entity definitions" ).arg( classname ), path );
 			for( const char* key : { "target", "target2", "target3", "target4", "killtarget" } ){
@@ -337,6 +355,9 @@ public:
 			}
 		}
 		else if( Brush* brush = Node_getBrush( node ) ){
+			++m_brushes;
+			for( const auto& face : *brush )
+				m_shaders.insert( face->GetShader() );
 			std::size_t faces = 0;
 			std::string key;
 			for( const auto& face : *brush ){
@@ -357,6 +378,7 @@ public:
 			}
 		}
 		else if( Patch* patch = Node_getPatch( node ) ){
+			m_shaders.insert( patch->GetShader() );
 			checkShader( patch->GetShader(), path );
 		}
 		return true;
@@ -369,6 +391,19 @@ public:
 				add( "Broken target", QString( "%1 \"%2\": no entity has this targetname" ).arg( t.key.c_str(), t.value.c_str() ), t.path );
 		if( m_playerStarts == 0 )
 			add( "No player start", "no info_player_* entity: the map can't be played", scene::Path() );
+		// SOF2MP's Quake 3 engine limits (sof2vbo / other engines may allow more); warn well before, the game also spawns entities
+		const auto limit = [this]( const char* what, std::size_t count, std::size_t warn, std::size_t max, const char* why ){
+			if( count >= warn )
+				add( count >= max ? "Engine limit!" : "Engine limit", QString( "%1: %2 of %3 - %4" ).arg( what ).arg( count ).arg( max ).arg( why ), scene::Path() );
+		};
+		limit( "Game entities", m_gameEntities, 800, 960, "the game has 1024 entity slots and needs ~64 for players plus room for weapons, effects and items" );
+		limit( "Brush entities (inline models)", m_inlineModels, 200, 255, "doors, movers, triggers ...: 256 inline models in a map, model 0 is the world" );
+		limit( "Different models on entities", m_models.size(), 160, 256, "the game's model list (MAX_MODELS 256) is shared with weapons and players" );
+		limit( "Different sounds on entities", m_sounds.size(), 128, 256, "the game's sound list (MAX_SOUNDS 256) is shared with weapons and players" );
+		limit( "Different shaders", m_shaders.size(), 900, 1024, "q3map2 stops at 1024 shaders in a .bsp (MAX_MAP_SHADERS)" );
+		limit( "Brushes", std::size_t( m_brushes ), 28000, 32768, "q3map2's brush limit (MAX_MAP_BRUSHES)" );
+		globalOutputStream() << "Check for Problems: " << m_gameEntities << " game entities, " << m_inlineModels << " brush entities, " << int( m_models.size() ) << " models, "
+		                     << int( m_sounds.size() ) << " sounds, " << int( m_shaders.size() ) << " shaders, " << m_brushes << " brushes\n";
 	}
 };
 

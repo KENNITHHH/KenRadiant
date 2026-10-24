@@ -53,6 +53,7 @@ uniform float u_saturation;
 uniform vec3 u_bounce;
 uniform float u_overbright; // 2 ^ ( r_mapOverBrightBits - r_overBrightBits ): 2 in SOF2 fullscreen
 uniform float u_rgamma;     // r_gamma
+uniform vec4 u_stage;   // game look: the stage's rgbGen / alphaGen
 uniform int u_mode; // 0 = unlit (fixed-function look), 1 = lit preview, 2 = fullbright glow
 
 varying vec3 v_pos;
@@ -158,11 +159,11 @@ void main()
 {
 	vec4 tex = u_terrain > 0 ? terrainColour() : texture2D( u_tex, gl_TexCoord[0].st );
 	if( u_mode == 0 ){
-		gl_FragColor = tex * gl_Color;
+		gl_FragColor = tex * gl_Color * u_stage;
 		return;
 	}
 	if( u_mode == 2 ){
-		gl_FragColor = vec4( tex.rgb, tex.a * gl_Color.a );
+		gl_FragColor = vec4( tex.rgb * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
 		return;
 	}
 	vec3 n = normalize( v_normal );
@@ -241,5 +242,5 @@ void main()
 	float peak = max( shown.r, max( shown.g, shown.b ) );
 	if( peak > 1.0 )
 		shown /= peak;
-	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ), tex.a * gl_Color.a );
+	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
 }
