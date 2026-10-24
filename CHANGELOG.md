@@ -3,6 +3,12 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (24)
+### Editor
+- **Terrain Paint: your own layers.** Pick 2-4 textures (click one in the Textures tab, **+ Texture browser's texture**; Remove / Up / Down), select the ground brushes and **Create terrain from the selected brushes**: they go into a func_group (if they are not in one), KenRadiant writes the layer shaders (`textures/<map>/terrainN_0`, `_1`, `_0to1` ...) to `shaders/<map>_terrain.shader` (listed in shaderlist.txt when there is one, .bak kept), makes the .pcx index map, gives the upward faces `tools/_terrain`, and you paint. The lightmap stage uses the same blend as your map's own shaders (2x `GL_DST_COLOR GL_SRC_COLOR` or 1x). Texture scale (tcMod scale) and index map size are set there too.
+- Move the mouse over a terrain made this way: its layers show in the list - add, remove or reorder them and **Apply**: the shaders are rewritten and the painted layers follow (a removed layer becomes layer 0). Checked with q3map2: the compiled .bsp uses the new layer shaders.
+- **Performance view counts like the engine**: each surface is culled against the view and one-sided faces seen from behind are left out (SOF2's R_CullSurface), so "in view" is closer to r_speeds; shows the leaf count too.
+
 ## Build 2026-10-24 (23)
 ### Editor
 - **Performance view** (Build → Performance): what the game draws from the camera, from the compiled .bsp the way the engine picks it (vis cluster → PVS → leafs in view): triangles, surfaces (draw calls), passes (surfaces x shader stages), shaders, blended surfaces - colour bars against rough SOF2 budgets, updating as you fly - and the heaviest shaders in view. **Find worst spots + suggestions** ranks all vis clusters (Go flies there) and suggests fixes: run VIS, make small structural brushes detail (button, undoable), lightmap count, multi-stage shaders used a lot in heavy spots, the share of baked models. On your de_dust2.bsp: the worst spots see the whole map (~131k triangles), 82% of it baked models.
