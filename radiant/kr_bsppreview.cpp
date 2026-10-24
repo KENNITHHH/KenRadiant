@@ -56,7 +56,7 @@ static_assert( sizeof( BspVert ) == 80 && sizeof( BspSurface ) == 148 && sizeof(
 enum { LUMP_SHADERS = 1, LUMP_DRAWVERTS = 10, LUMP_DRAWINDEXES = 11, LUMP_SURFACES = 13, LUMP_LIGHTMAPS = 14 };
 enum { MST_PLANAR = 1, MST_PATCH = 2, MST_TRIANGLE_SOUP = 3 };
 
-struct Vertex { float xyz[3]; float st[2]; float lm[2]; unsigned char colour[4]; };
+struct Vertex { float xyz[3]; float st[2]; float lm[2]; unsigned char colour[4]; float normal[3]; };
 struct Batch {
 	CopiedString name; IShader* shader = nullptr; bool skip = false; int lightmap = -1; bool blend = false; std::vector<Vertex> verts;
 	std::vector<std::vector<qtexture_t*>> stageTextures; // per stage: image / animMap frames (game shaders on)
@@ -141,6 +141,7 @@ Vertex Vertex_from( const BspVert& v ){
 	std::copy( v.st, v.st + 2, o.st );
 	o.lm[0] = v.lm[0][0]; o.lm[1] = v.lm[0][1];
 	std::copy( v.colour[0], v.colour[0] + 4, o.colour );
+	std::copy( v.normal, v.normal + 3, o.normal );
 	return o;
 }
 Vertex Vertex_lerp3( const Vertex& a, const Vertex& b, const Vertex& c, float t ){ // quadratic bezier
@@ -150,6 +151,7 @@ Vertex Vertex_lerp3( const Vertex& a, const Vertex& b, const Vertex& c, float t 
 	for( int i = 0; i < 2; ++i ) o.st[i] = a.st[i] * wa + b.st[i] * wb + c.st[i] * wc;
 	for( int i = 0; i < 2; ++i ) o.lm[i] = a.lm[i] * wa + b.lm[i] * wb + c.lm[i] * wc;
 	for( int i = 0; i < 4; ++i ) o.colour[i] = (unsigned char)std::clamp( a.colour[i] * wa + b.colour[i] * wb + c.colour[i] * wc, 0.f, 255.f );
+	for( int i = 0; i < 3; ++i ) o.normal[i] = a.normal[i] * wa + b.normal[i] * wb + c.normal[i] * wc;
 	return o;
 }
 
@@ -272,9 +274,16 @@ bool Bsp_load( const char* path ){
 }
 
 const char* const c_vp =
-	"uniform vec2 u_tcscale; uniform vec2 u_tcscroll; uniform int u_tclm;\n"
+	"uniform vec2 u_tcscale; uniform vec2 u_tcscroll; uniform int u_tclm; uniform int u_env; uniform vec3 u_campos;\n"
 	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour;\n"
-	"void main(){ v_st = ( u_tclm != 0 ? gl_MultiTexCoord1.st : gl_MultiTexCoord0.st ) * u_tcscale + u_tcscroll; v_lm = gl_MultiTexCoord1.st; v_colour = gl_Color; gl_Position = ftransform(); }\n";
+	"void main(){\n"
+	"  vec2 st = u_tclm != 0 ? gl_MultiTexCoord1.st : gl_MultiTexCoord0.st;\n"
+	"  if( u_env != 0 ){ // tcGen environment, like the engine (RB_CalcEnvironmentTexCoords)\n"
+	"    vec3 n = normalize( gl_Normal ); vec3 viewer = normalize( u_campos - gl_Vertex.xyz );\n"
+	"    vec3 r = n * ( 2.0 * dot( n, viewer ) ) - viewer; st = vec2( 0.5 + r.y * 0.5, 0.5 - r.z * 0.5 );\n"
+	"  }\n"
+	"  v_st = st * u_tcscale + u_tcscroll; v_lm = gl_MultiTexCoord1.st; v_colour = gl_Color; gl_Position = ftransform();\n"
+	"}\n";
 // u_src: 0 texture, 1 the lightmap ($lightmap stage), 2 texture * lightmap (a shader without stages), 3 texture * vertex light (same, vertex lit)
 // u_rgb: 0 identity, 1 vertex light, 2 constant (u_const); u_alpha: 0 texture, 1 vertex alpha, 2 constant
 const char* const c_fp =
@@ -297,7 +306,7 @@ const char* const c_fp =
 	"  if( ( u_afunc == 1 && c.a <= 0.0 ) || ( u_afunc == 2 && c.a >= 0.5 ) || ( u_afunc == 3 && c.a < 0.5 ) ) discard;\n"
 	"  gl_FragColor = vec4( pow( c.rgb, vec3( 1.0 / u_gamma ) ), c.a );\n"
 	"}\n";
-GLint u_src, u_rgb, u_alpha, u_afunc, u_const, u_tcscale, u_tcscroll, u_tclm;
+GLint u_src, u_rgb, u_alpha, u_afunc, u_const, u_tcscale, u_tcscroll, u_tclm, u_env, u_campos;
 
 GLuint Program_create(){
 	GLuint program = gl().glCreateProgram();
@@ -320,7 +329,7 @@ GLuint Program_create(){
 	const auto u = [program]( const char* n ){ return gl().glGetUniformLocation( program, n ); };
 	u_tex = u( "u_tex" ); u_lm = u( "u_lm" ); u_shift = u( "u_shift" ); u_gamma = u( "u_gamma" );
 	u_src = u( "u_src" ); u_rgb = u( "u_rgb" ); u_alpha = u( "u_alpha" ); u_afunc = u( "u_afunc" ); u_const = u( "u_const" );
-	u_tcscale = u( "u_tcscale" ); u_tcscroll = u( "u_tcscroll" ); u_tclm = u( "u_tclm" );
+	u_tcscale = u( "u_tcscale" ); u_tcscroll = u( "u_tcscroll" ); u_tclm = u( "u_tclm" ); u_env = u( "u_env" ); u_campos = u( "u_campos" );
 	gl().glUniform1i( u_tex, 0 );
 	gl().glUniform1i( u_lm, 1 );
 	gl().glUseProgram( 0 );
@@ -442,19 +451,25 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	gl().glDisable( GL_ALPHA_TEST );
 	gl().glEnable( GL_POLYGON_OFFSET_FILL );
 	gl().glPolygonOffset( -1, -1 );
-	gl().glDisableClientState( GL_NORMAL_ARRAY );
+	gl().glEnableClientState( GL_NORMAL_ARRAY );
 	gl().glEnableClientState( GL_VERTEX_ARRAY );
 	gl().glEnableClientState( GL_COLOR_ARRAY );
 	gl().glClientActiveTexture( GL_TEXTURE0 );
 	gl().glEnableClientState( GL_TEXTURE_COORD_ARRAY );
 	gl().glClientActiveTexture( GL_TEXTURE1 );
 	gl().glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	{
+		const Matrix4 inv = matrix4_full_inverse( modelview );
+		gl().glUniform3f( u_campos, inv[12], inv[13], inv[14] );
+	}
+	gl().glUniform1i( u_env, 0 );
 	extern bool g_krGameShaders;
 	extern float g_krShaderTime;
 	const float time = g_krShaderTime;
 	const auto setArrays = []( const Batch& b ){
 		const Vertex* v = b.verts.data();
 		gl().glVertexPointer( 3, GL_FLOAT, sizeof( Vertex ), v->xyz );
+		gl().glNormalPointer( GL_FLOAT, sizeof( Vertex ), v->normal );
 		gl().glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( Vertex ), v->colour );
 		gl().glClientActiveTexture( GL_TEXTURE0 );
 		gl().glTexCoordPointer( 2, GL_FLOAT, sizeof( Vertex ), v->st );
@@ -549,7 +564,9 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				gl().glUniform2f( u_tcscale, st.fx.scale[0], st.fx.scale[1] );
 				gl().glUniform2f( u_tcscroll, std::fmod( st.fx.scroll[0] * time, 1.f ), std::fmod( st.fx.scroll[1] * time, 1.f ) );
 				gl().glUniform1i( u_tclm, 0 );
+				gl().glUniform1i( u_env, st.tcGen == 2 ? 1 : 0 );
 				gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
+				gl().glUniform1i( u_env, 0 );
 			}
 		}
 	// blended surfaces (decals) hide the editor's own faces behind them too: their depth, where they are seen
@@ -574,6 +591,7 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	gl().glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	gl().glDisable( GL_BLEND );
 	gl().glDepthMask( GL_TRUE );
+	gl().glDisableClientState( GL_NORMAL_ARRAY );
 	gl().glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 	gl().glClientActiveTexture( GL_TEXTURE0 );
 	gl().glDisableClientState( GL_COLOR_ARRAY );

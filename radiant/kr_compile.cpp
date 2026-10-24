@@ -49,6 +49,9 @@
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QScrollArea>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QMenu>
 
 void Build_setPreset( const char* name, const std::vector<CopiedString>& commands );
 bool Build_runPreset( const char* name );
@@ -776,7 +779,48 @@ public:
 			auto *prev = new QPushButton( "Previous" );
 			auto *next = new QPushButton( "Next" );
 			auto *clear = new QPushButton( "Clear" );
-			for( auto *b : { prev, next, clear } ){
+			auto *copy = new QPushButton( "Copy" );
+			copy->setToolTip( "Copy the selected lines (Ctrl+C; Shift / Ctrl + click selects more)" );
+			auto *copyAll = new QPushButton( "Copy all" );
+			m_problemList->setSelectionMode( QAbstractItemView::ExtendedSelection );
+			m_problemList->setContextMenuPolicy( Qt::CustomContextMenu );
+			const auto copyLines = [this]( bool all ){
+				QStringList lines;
+				for( int i = 0; i < m_problemList->count(); ++i )
+					if( all || m_problemList->item( i )->isSelected() )
+						lines << m_problemList->item( i )->text();
+				if( !lines.isEmpty() )
+					QGuiApplication::clipboard()->setText( lines.join( '\n' ) );
+			};
+			QObject::connect( copy, &QPushButton::clicked, [copyLines](){ copyLines( false ); } );
+			QObject::connect( copyAll, &QPushButton::clicked, [copyLines](){ copyLines( true ); } );
+			QObject::connect( m_problemList, &QWidget::customContextMenuRequested, [this, copyLines]( const QPoint& pos ){
+				QMenu menu;
+				menu.addAction( "Copy", [copyLines](){ copyLines( false ); } );
+				menu.addAction( "Copy all", [copyLines](){ copyLines( true ); } );
+				menu.exec( m_problemList->viewport()->mapToGlobal( pos ) );
+			} );
+			// Ctrl+C here copies the lines (not the editor's Copy of the selection)
+			class CopyKey : public QObject
+			{
+				std::function<void()> m_copy;
+			public:
+				CopyKey( QObject* parent, std::function<void()> copy ) : QObject( parent ), m_copy( std::move( copy ) ){}
+				bool eventFilter( QObject* obj, QEvent* event ) override {
+					if( event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress ){
+						auto *k = static_cast<QKeyEvent*>( event );
+						if( k->matches( QKeySequence::Copy ) ){
+							if( event->type() == QEvent::KeyPress )
+								m_copy();
+							event->accept();
+							return true;
+						}
+					}
+					return QObject::eventFilter( obj, event );
+				}
+			};
+			m_problemList->installEventFilter( new CopyKey( m_problemList, [copyLines](){ copyLines( false ); } ) );
+			for( auto *b : { prev, next, clear, copy, copyAll } ){
 				b->setAutoDefault( false );
 				row->addWidget( b );
 			}

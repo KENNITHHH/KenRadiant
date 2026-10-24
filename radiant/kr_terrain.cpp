@@ -19,6 +19,8 @@
 #include <cmath>
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
+#include <cstdint>
 
 #include <QDialog>
 #include <QVBoxLayout>
@@ -80,6 +82,11 @@ namespace
 {
 
 QString Terrain_baseDir();
+
+inline std::uint64_t Terrain_key( const Vector3& v ){
+	const auto q = []( float x ){ return std::uint64_t( std::int64_t( std::lround( x * 8 ) ) & 0x1fffff ); };
+	return q( v.x() ) | q( v.y() ) << 21 | q( v.z() ) << 42;
+}
 
 /* ---------------- .pcx (8 bit, RLE) ---------------- */
 
@@ -180,6 +187,7 @@ struct TerrainRecord : public Undoable
 	int boundsGeneration = -1;
 	std::vector<std::vector<Vector3>> topFaces; // upward faces of its brushes: painting hits these, selected or not
 	std::vector<Vector3> corners;               // their corners: where q3map2 reads the index map
+	std::unordered_map<std::uint64_t, Vector3> smooth; // corner -> sum of the normals of its _terrain faces
 	UndoObserver* undoObserver = nullptr;
 
 	TerrainRecord(){
@@ -267,6 +275,7 @@ struct TerrainRecord : public Undoable
 		AABB bounds;
 		topFaces.clear();
 		corners.clear();
+		smooth.clear();
 		if( scene::Traversable* traversable = Node_getTraversable( *node ) ){
 			class Walker : public scene::Traversable::Walker
 			{
@@ -278,6 +287,13 @@ struct TerrainRecord : public Undoable
 					if( Brush* brush = Node_getBrush( child ) ){
 						aabb_extend_by_aabb_safe( m_bounds, brush->localAABB() );
 						for( const auto& face : *brush ){
+							// the ground's faces (looking up): hidden sides between the brushes are not drawn in game either
+							if( string_equal_nocase( face->GetShader(), "textures/tools/_terrain" ) && face->getPlane().plane3().normal().z() > 0.05 ){
+								const Winding& w = face->getWinding();
+								const Vector3 n = face->getPlane().plane3().normal();
+								for( std::size_t i = 0; i < w.numpoints; ++i )
+									m_r.smooth[Terrain_key( Vector3( w[i].vertex ) )] += n;
+							}
 							if( face->getPlane().plane3().normal().z() < 0.05 )
 								continue;
 							const Winding& w = face->getWinding();
@@ -363,6 +379,32 @@ struct TerrainRecord : public Undoable
 };
 
 std::vector<std::unique_ptr<TerrainRecord>> g_records; // index = render state id
+
+/// smoothed normals of a q3map_terrain face's corners: the faces meeting there averaged (q3map2 smooths terrain with
+/// shadeAngle 179), so the live light shades the landscape like the compile instead of face by face
+bool Terrain_normals( const Winding& w, const Vector3& faceNormal, Vector3* out ){
+	if( faceNormal.z() <= 0.05f )
+		return false;
+	bool any = false;
+	for( std::size_t i = 0; i < w.numpoints; ++i ){
+		out[i] = faceNormal;
+		const std::uint64_t key = Terrain_key( Vector3( w[i].vertex ) );
+		for( const auto& r : g_records ){
+			if( !r )
+				continue;
+			const auto it = r->smooth.find( key );
+			if( it != r->smooth.end() && vector3_length_squared( it->second ) > 1e-6f ){
+				const Vector3 n = vector3_normalised( it->second );
+				if( vector3_dot( n, faceNormal ) > 0.17f ){ // the other side of a thin brush: keep its own
+					out[i] = n;
+					any = true;
+				}
+				break;
+			}
+		}
+	}
+	return any;
+}
 
 /// shader reloads (Flush & Reload, skybox toggle, map change ...) must not find our references to the layer shaders
 class TerrainShaderObserver : public ModuleObserver
@@ -1282,3 +1324,6 @@ void KrTerrain_shutdown(){
 		GlobalShaderSystem().detach( g_terrainShaderObserver );
 	}
 }
+
+/// (brush.h) smoothed normals for q3map_terrain faces
+bool ( *g_krTerrainNormals )( const Winding& winding, const Vector3& faceNormal, Vector3* out ) = Terrain_normals;

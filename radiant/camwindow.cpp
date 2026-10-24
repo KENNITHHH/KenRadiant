@@ -2113,6 +2113,7 @@ void ShowSize3dToggle(){
 
 #include "kr_lightpreview.h"
 #include "kr_terrain.h"
+#include "texturelib.h"
 #include "stringio.h"
 #include "ientity.h"
 #include "ishaders.h"
@@ -2124,6 +2125,7 @@ void KrSun_changed(); // calibrator window refresh
 static void KrSun_readMap(){
 	s_krSunDirty = false;
 	g_krSun.valid = false;
+	g_krSun.skyColour = Vector3( 1, 1, 1 );
 	g_krSun.shader = "";
 	for( const CopiedString& name : Scene_findSkyShaders() ){
 		IShader* shader = GlobalShaderSystem().getShaderForName( name.c_str() );
@@ -2139,6 +2141,15 @@ static void KrSun_readMap(){
 			g_krSun.elevation = elevation;
 			g_krSun.skyLight = sky;
 			shader->getSunExt( g_krSun.ext, g_krSun.deviance, g_krSun.samples, g_krSun.skyIterations );
+			// sky light colour like q3map2: q3map_lightRGB, else the average colour of the shader's image, brightest channel 1
+			float rgb[3];
+			Vector3 c( 1, 1, 1 );
+			if( shader->krLightRGB( rgb ) )
+				c = Vector3( rgb[0], rgb[1], rgb[2] );
+			else if( shader->getTexture() != nullptr && !shader->krNotFound() )
+				c = shader->getTexture()->color;
+			const float top = std::max( { c.x(), c.y(), c.z() } );
+			g_krSun.skyColour = top > 0.001f ? c / top : Vector3( 1, 1, 1 );
 			shader->DecRef();
 			break;
 		}
@@ -2455,7 +2466,8 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 1.f );
 	const Vector3 tint = vector3_length_squared( g_krSunColour ) > 0 ? vector3_normalised( g_krSun.colour ) * 1.732f : Vector3( 1, 1, 1 );
 	// an open floor gets about skyLight / 400 (lightmap units); walls, corners and rooms get less - the sky maps see the roofs
-	g_krSkyAmbient = ( Vector3( 1, 1, 1 ) * 0.7f + tint * 0.3f ) * std::clamp( skyLight / 400.f, 0.f, 1.5f );
+	g_krSkyAmbient = g_krSun.skyColour * std::clamp( skyLight / 400.f, 0.f, 1.5f ); // (q3map2: the sky shader's light colour)
+	(void)tint;
 	g_krMinLight = std::clamp( minlight / 255.f, 0.f, 1.f );
 	if( ambient <= 0 && minlight <= 0 ) // never fully black (q3map2's bounce light fills rooms a little)
 		g_krAmbient = Vector3( 1, 1, 1 ) * ( skyLight > 0 ? 0.035f : 0.06f );

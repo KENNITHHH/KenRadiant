@@ -62,6 +62,7 @@ struct KrSun
 	float intensity = 0, degrees = 0, elevation = 45, skyLight = 0, skyIterations = 3;
 	bool ext = false;        // q3map_sunExt
 	float deviance = 0, samples = 16;
+	Vector3 skyColour{ 1, 1, 1 }; // q3map2's sky light colour: q3map_lightRGB, else the shader image's colour (max 1)
 	bool overridden = false; // calibrator values in use
 };
 extern KrSun g_krSun;

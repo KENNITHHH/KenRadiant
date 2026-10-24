@@ -315,7 +315,9 @@ public:
 	bool m_krEmissive = false;
 	KrShaderEffects m_krFx;
 	std::vector<KrStage> m_krStages; // KenRadiant game look
-	float m_krSurfaceLight = 0;      // q3map_surfacelight (on a sky shader: light from the whole sky, like q3map_skyLight)
+	float m_krSurfaceLight = 0;
+	bool m_krHasLightRGB = false;
+	float m_krLightRGB[3] = { 1, 1, 1 };      // q3map_surfacelight (on a sky shader: light from the whole sky, like q3map_skyLight)
 	bool m_krLightPass = false, m_krAlphaShadow = false;
 
 	ShaderTemplate() :
@@ -947,6 +949,12 @@ public:
 	}
 	float krSurfaceLight() const override {
 		return m_template.m_krSurfaceLight;
+	}
+	bool krLightRGB( float colour[3] ) const override {
+		if( !m_template.m_krHasLightRGB )
+			return false;
+		std::copy( m_template.m_krLightRGB, m_template.m_krLightRGB + 3, colour );
+		return true;
 	}
 	const std::vector<KrStage>* getStages() const override {
 		return m_template.m_krStages.empty() ? nullptr : &m_template.m_krStages;
@@ -1603,6 +1611,9 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 						m_krFx.deform = 3;
 					}
 				}
+			}
+			else if ( string_equal_nocase( token, "q3map_lightRGB" ) ) {
+				m_krHasLightRGB = Tokeniser_getFloat( tokeniser, m_krLightRGB[0] ) && Tokeniser_getFloat( tokeniser, m_krLightRGB[1] ) && Tokeniser_getFloat( tokeniser, m_krLightRGB[2] );
 			}
 			else if ( string_equal_nocase( token, "q3map_surfacelight" ) ) {
 				m_krEmissive = true; // light emitting surface: fullbright in the light preview

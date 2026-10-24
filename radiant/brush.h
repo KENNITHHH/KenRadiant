@@ -81,7 +81,9 @@ inline void Winding_DrawWireframe( const Winding& winding ){
 	gl().glDrawArrays( GL_LINE_LOOP, 0, GLsizei( winding.numpoints ) );
 }
 
-inline void Winding_Draw( const Winding& winding, const Vector3& normal, RenderStateFlags state ){
+/// KenRadiant: smoothed vertex normals for q3map_terrain faces (like q3map2's shadeAngle 179), set by the terrain code
+extern bool ( *g_krTerrainNormals )( const Winding& winding, const Vector3& faceNormal, Vector3* out );
+inline void Winding_Draw( const Winding& winding, const Vector3& normal, RenderStateFlags state, bool krTerrain = false ){
 	gl().glVertexPointer( 3, GL_DOUBLE, sizeof( WindingVertex ), &winding.points.data()->vertex );
 
 	Vector3 normals[c_brush_maxFaces];
@@ -100,10 +102,12 @@ inline void Winding_Draw( const Winding& winding, const Vector3& normal, RenderS
 	else
 	{
 		if ( state & RENDER_LIGHTING ) {
-			typedef Vector3* Vector3Iter;
-			for ( Vector3Iter i = normals, last = normals + winding.numpoints; i != last; ++i )
-			{
-				*i = normal;
+			if ( !( krTerrain && g_krTerrainNormals != nullptr && g_krTerrainNormals( winding, normal, normals ) ) ) {
+				typedef Vector3* Vector3Iter;
+				for ( Vector3Iter i = normals, last = normals + winding.numpoints; i != last; ++i )
+				{
+					*i = normal;
+				}
 			}
 			gl().glNormalPointer( GL_FLOAT, sizeof( Vector3 ), normals );
 		}
@@ -1022,7 +1026,7 @@ public:
 	}
 
 	void render( RenderStateFlags state ) const override {
-		Winding_Draw( m_winding, m_planeTransformed.plane3().normal(), state );
+		Winding_Draw( m_winding, m_planeTransformed.plane3().normal(), state, g_krTerrainNormals != nullptr && string_equal_nocase( m_shader.getShader(), "textures/tools/_terrain" ) );
 	}
 
 	void updateFiltered() override {

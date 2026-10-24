@@ -144,6 +144,8 @@ public:
 	virtual const std::vector<struct KrStage>* getStages() const { return nullptr; }
 	/// KenRadiant: q3map_surfacelight value (0 = none)
 	virtual float krSurfaceLight() const { return 0; }
+	/// KenRadiant: q3map_lightRGB r g b (false = not given: q3map2 takes the light / editor image's colour)
+	virtual bool krLightRGB( float colour[3] ) const { return false; }
 };
 
 

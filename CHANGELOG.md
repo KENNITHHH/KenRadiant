@@ -3,6 +3,14 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (29)
+### Editor
+- **Compile window > Problems: Copy / Copy all** (buttons, right-click menu, Ctrl+C; Shift / Ctrl + click selects several lines).
+- **Play: Esc stops it** (same as Stop).
+- **Landscape shading in the live light like the compile**: q3map_terrain faces get smoothed normals (the faces meeting at a corner averaged, like q3map2's shadeAngle 179) instead of being lit face by face. Measured on mp_raven's snow: the live light gives the terrain 1.01x the light q3map2 stored (middle half 1.00 - 1.02). Without the live light (Ctrl+L) the 3D view uses the editor's plain head-light shading - turn it on for the game look without loading the .bsp.
+- **Sky light colour like q3map2**: `q3map_lightRGB` of the sky shader, else its image's colour (q3map2 never tints the sky light with the sun). dust2's warm `q3map_lightRGB 1 0.885 0.593` is used now (the live preview was ~12% too blue there); mp_raven's sky gets its blue_light colour.
+- **Show Compiled Lighting: `tcGen environment`** (the `_env` chrome / reflection stages) is drawn like the engine, moving with the camera, instead of as a flat texture.
+
 ## Build 2026-10-25 (28)
 ### Editor
 - **Play window**: the Play button (now right of the Compile hammer) opens a window with volume sliders - **All**, **Sounds**, **Music** (saved) - and **Start / Stop**. View > Play still starts it directly.

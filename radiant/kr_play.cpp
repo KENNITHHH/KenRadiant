@@ -46,6 +46,8 @@
 #include <QLabel>
 #include <QSlider>
 #include <QPushButton>
+#include <QApplication>
+#include <QKeyEvent>
 #include <QFileInfo>
 #include <QDateTime>
 
@@ -287,6 +289,24 @@ void toggleIf( const char* name, bool now, bool want ){
 }
 
 void Window_update();
+void Play_toggle();
+/// Esc stops Play mode (before the editor's own Esc - deselect - sees it)
+class EscFilter : public QObject
+{
+protected:
+	bool eventFilter( QObject* obj, QEvent* event ) override {
+		if( g_play && ( event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress )
+		    && static_cast<QKeyEvent*>( event )->key() == Qt::Key_Escape ){
+			if( event->type() == QEvent::KeyPress )
+				QTimer::singleShot( 0, [](){ if( g_play ) Play_toggle(); } );
+			event->accept();
+			return true;
+		}
+		return QObject::eventFilter( obj, event );
+	}
+};
+EscFilter* g_escFilter = nullptr;
+
 void Play_toggle(){
 	g_play = !g_play;
 	g_play_item.update();
@@ -302,7 +322,11 @@ void Play_toggle(){
 		toggleIf( "ToggleSkyboxPreview", g_skyboxPreview, true );
 		toggleIf( "ToggleCompiledLighting", KrBspPreview_shown(), compiled );
 		toggleIf( "ToggleLightPreview", g_krLightPreview, !compiled );
-		globalOutputStream() << "play mode: on - " << ( compiled ? "compiled lighting (.bsp)" : "live light (no up-to-date .bsp - compile for the real thing)" ) << '\n';
+		if( g_escFilter == nullptr ){
+			g_escFilter = new EscFilter;
+			qApp->installEventFilter( g_escFilter );
+		}
+		globalOutputStream() << "play mode: on (Esc stops) - " << ( compiled ? "compiled lighting (.bsp)" : "live light (no up-to-date .bsp - compile for the real thing)" ) << '\n';
 		Sounds_start();
 	}
 	else{
@@ -390,6 +414,11 @@ void KrPlay_registerCommands(){
 /// the editor closes: quiet
 void KrPlay_shutdown(){
 	Sounds_stop();
+	if( g_escFilter != nullptr ){
+		qApp->removeEventFilter( g_escFilter );
+		delete g_escFilter;
+		g_escFilter = nullptr;
+	}
 	if( g_engineOk ){
 		ma_engine_uninit( &g_engine );
 		g_engineOk = false;
