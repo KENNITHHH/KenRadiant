@@ -963,6 +963,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 	create_menu_item_with_mnemonic( menu, "Browse To Selected Texture", "BrowseToSelectedTexture" ); // KenRadiant
 	{ // KenRadiant
 		QMenu* submenu = menu->addMenu( "Light Preview" );
+		create_check_menu_item_with_mnemonic( submenu, "Play (as in game, with sounds)", "TogglePlayMode" );
 		create_check_menu_item_with_mnemonic( submenu, "Live Light Preview", "ToggleLightPreview" );
 		create_check_menu_item_with_mnemonic( submenu, "Sun Shadows", "ToggleSunShadows" );
 		create_check_menu_item_with_mnemonic( submenu, "Light Shadows (nearest lights, count in Light Preview Settings)", "ToggleLightShadows" );
@@ -1522,6 +1523,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_button( toolbar, "Bevel (Shift+B): chamfer selected edges / faces / brushes by the grid size", "kr_bevel.png", "BrushBevel" );
 	toolbar_append_separator( toolbar );
 	toolbar_append_toggle_button( toolbar, "Sky brushes show the real skybox (Game View turns it on too)", "kr_skybox.png", "ToggleSkyboxPreview" );
+	toolbar_append_toggle_button( toolbar, "Play: the map as in game - game view, game shaders, skybox, its light (the .bsp when compiled) and its sounds (target_speaker, music)", "kr_play.png", "TogglePlayMode" );
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
 	toolbar_append_toggle_button( toolbar, "Shaders like in game: every stage of a shader (glows, blends, rgbGen, animMap) - off = the editor image only", "kr_gameshaders.png", "ToggleGameShaders" );
 	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );

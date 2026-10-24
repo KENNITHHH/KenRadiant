@@ -3855,6 +3855,8 @@ void CamWnd_Construct(){
 	KrProbe_registerCommands();
 	extern void KrPerf_registerCommands();
 	KrPerf_registerCommands();
+	extern void KrPlay_registerCommands();
+	KrPlay_registerCommands();
 	extern void KrBspPreview_registerCommands();
 	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant

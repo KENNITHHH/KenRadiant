@@ -476,6 +476,8 @@ int main( int argc, char* argv[] ){
 		KrTerrain_shutdown();
 		extern void KrBspPreview_shutdown();
 		KrBspPreview_shutdown();
+		extern void KrPlay_shutdown();
+		KrPlay_shutdown();
 		extern void GameView_beforeShutdown();
 		GameView_beforeShutdown();
 	}

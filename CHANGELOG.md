@@ -3,6 +3,10 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (27)
+### Editor
+- **Play mode** (green play button next to Game View, or View > Play): the 3D view as in game - Game View, shaders like in game, the skybox and the light the game will have (the compiled .bsp when it is newer than the saved map, else the live light) - and the map's **sounds**: looping target_speakers play, timed ones (`wait` / `random`) repeat, global ones are heard everywhere, all attenuated like the engine (full within 80 units, then fading; `radius` when set) and panned left / right as you fly; the worldspawn `music` plays quietly. Speakers that only play when triggered, and `soundSet` speakers, stay quiet (the console counts them). Press again: everything back as it was. WAV and MP3 from the game folders and pk3s (miniaudio, public domain / MIT-0).
+
 ## Build 2026-10-24 (26)
 ### q3map2
 - **Decompile brings index-map terrain back as terrain.** The .bsp keeps the layer shaders (`<base>_0`, `_0to1` ...) on the brush sides and every vertex's layer in its alpha; the decompile now puts those brushes in a func_group with `alphamap` / `layers` / `shader` / `min` / `max`, gives their layer sides `tools/_terrain` again (same texture coordinates) and writes `<map>_terrainN.pcx` so q3map2 reads the same layer at every vertex. mp_raven's snow landscape (metashader/kam4): 780 of 780 matched vertices get the same layer after decompile + recompile (before: every face showed the top layer - the "way off" textures). Decompile again to get it.
