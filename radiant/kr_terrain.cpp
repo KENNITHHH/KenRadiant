@@ -178,6 +178,8 @@ struct TerrainRecord : public Undoable
 	CopiedString stateName;
 	Shader* state = nullptr;
 	int boundsGeneration = -1;
+	std::vector<std::vector<Vector3>> topFaces; // upward faces of its brushes: painting hits these, selected or not
+	std::vector<Vector3> corners;               // their corners: where q3map2 reads the index map
 	UndoObserver* undoObserver = nullptr;
 
 	TerrainRecord(){
@@ -263,21 +265,41 @@ struct TerrainRecord : public Undoable
 			return;
 		boundsGeneration = s_sceneGeneration;
 		AABB bounds;
+		topFaces.clear();
+		corners.clear();
 		if( scene::Traversable* traversable = Node_getTraversable( *node ) ){
 			class Walker : public scene::Traversable::Walker
 			{
 				AABB& m_bounds;
+				TerrainRecord& m_r;
 			public:
-				Walker( AABB& bounds ) : m_bounds( bounds ){}
+				Walker( AABB& bounds, TerrainRecord& r ) : m_bounds( bounds ), m_r( r ){}
 				bool pre( scene::Node& child ) const override {
-					if( Brush* brush = Node_getBrush( child ) )
+					if( Brush* brush = Node_getBrush( child ) ){
 						aabb_extend_by_aabb_safe( m_bounds, brush->localAABB() );
+						for( const auto& face : *brush ){
+							if( face->getPlane().plane3().normal().z() < 0.05 )
+								continue;
+							const Winding& w = face->getWinding();
+							if( w.numpoints < 3 )
+								continue;
+							std::vector<Vector3> poly;
+							for( std::size_t i = 0; i < w.numpoints; ++i ){
+								poly.emplace_back( w[i].vertex );
+								m_r.corners.emplace_back( w[i].vertex );
+							}
+							m_r.topFaces.push_back( std::move( poly ) );
+						}
+					}
 					else if( Patch* patch = Node_getPatch( child ) )
 						aabb_extend_by_aabb_safe( m_bounds, patch->localAABB() );
 					return false;
 				}
 			};
-			traversable->traverse( Walker( bounds ) );
+			traversable->traverse( Walker( bounds, *this ) );
+			std::sort( corners.begin(), corners.end(), []( const Vector3& a, const Vector3& b ){
+				return std::tie( a.x(), a.y(), a.z() ) < std::tie( b.x(), b.y(), b.z() ); } );
+			corners.erase( std::unique( corners.begin(), corners.end(), []( const Vector3& a, const Vector3& b ){ return vector3_equal_epsilon( a, b, 0.01f ); } ), corners.end() );
 		}
 		if( aabb_valid( bounds ) ){
 			tgl.mins = bounds.origin - bounds.extents;
@@ -610,6 +632,7 @@ namespace
 bool g_paint = false;
 int g_paintLayer = 1;
 float g_paintRadius = 64;
+int g_paintHardness = 100; // %: inside this part of the radius every pixel is painted, outside fewer and fewer (dithered)
 std::optional<Vector3> g_hover;
 TerrainRecord* g_stroke = nullptr;
 
@@ -642,7 +665,14 @@ void Terrain_paint( TerrainRecord& r, const Vector3& point ){
 	for( int y = std::max( 0, int( py - ry - 1 ) ); y <= std::min( r.h - 1, int( py + ry + 1 ) ); ++y )
 		for( int x = std::max( 0, int( px - rx - 1 ) ); x <= std::min( r.w - 1, int( px + rx + 1 ) ); ++x ){
 			const float dx = ( x + 0.5f - px ) / std::max( rx, 0.5f ), dy = ( y + 0.5f - py ) / std::max( ry, 0.5f );
-			if( dx * dx + dy * dy <= 1 ){
+			const float d = std::sqrt( dx * dx + dy * dy ), hard = g_paintHardness / 100.f;
+			bool paint = d <= 1;
+			if( paint && d > hard ){ // the soft edge: a fixed dither pattern, denser towards the middle
+				const unsigned hsh = ( unsigned( x ) * 73856093u ) ^ ( unsigned( y ) * 19349663u );
+				const float noise = float( ( hsh * 2654435761u ) >> 8 & 0xffff ) / 65535.f;
+				paint = noise < ( 1 - d ) / std::max( 1 - hard, 0.001f );
+			}
+			if( paint ){
 				unsigned char& p = r.pixels[std::size_t( y ) * r.w + x];
 				if( p != layer ){
 					p = layer;
@@ -700,6 +730,24 @@ public:
 			row->addWidget( m_radius );
 			row->addWidget( m_radiusSpin );
 			vbox->addLayout( row );
+		}
+		{
+			auto *row = new QHBoxLayout;
+			row->addWidget( new QLabel( "Hardness" ) );
+			auto *hard = new QSlider( Qt::Horizontal );
+			hard->setRange( 0, 100 );
+			hard->setValue( g_paintHardness );
+			hard->setToolTip( "100 = solid circle; lower = the edge is painted thinner and thinner (dithered: every pixel is one layer)" );
+			auto *hardLabel = new QLabel( QString( "%1%" ).arg( g_paintHardness ) );
+			QObject::connect( hard, &QSlider::valueChanged, [hardLabel]( int v ){ g_paintHardness = v; hardLabel->setText( QString( "%1%" ).arg( v ) ); } );
+			row->addWidget( hard, 1 );
+			row->addWidget( hardLabel );
+			vbox->addLayout( row );
+			auto *dotsNote = new QLabel( "Dots on the terrain: the brush corners and the layer each one gets when compiled - q3map2 reads the index map only there, "
+			                             "so paint across corners (smaller brushes = finer painting)." );
+			dotsNote->setWordWrap( true );
+			dotsNote->setStyleSheet( "color: gray;" );
+			vbox->addWidget( dotsNote );
 		}
 		{
 			auto *save = new QPushButton( "Save index maps now" );
@@ -1090,11 +1138,57 @@ bool KrTerrainPaint_active(){
 	return g_paint;
 }
 
+/// the nearest upward terrain face under the cursor (selected terrain too - the scene test skips selected brushes)
+std::optional<Vector3> Terrain_rayHit( const View& view, float deviceX, float deviceY, float& distance ){
+	const Matrix4 inv = matrix4_full_inverse( view.GetViewMatrix() );
+	const Vector3 a = vector4_projected( matrix4_transformed_vector4( inv, Vector4( deviceX, deviceY, -1, 1 ) ) );
+	const Vector3 b = vector4_projected( matrix4_transformed_vector4( inv, Vector4( deviceX, deviceY, 1, 1 ) ) );
+	const Vector3 dir = b - a;
+	std::optional<Vector3> best;
+	float bestT = 1e30f;
+	for( auto& r : g_records ){
+		if( !r )
+			continue;
+		r->updateBounds();
+		for( const auto& poly : r->topFaces ){
+			const Vector3 n = vector3_normalised( vector3_cross( poly[1] - poly[0], poly[2] - poly[0] ) );
+			const float den = vector3_dot( n, dir );
+			if( std::fabs( den ) < 1e-6f )
+				continue;
+			const float t = vector3_dot( n, poly[0] - a ) / den;
+			if( t <= 0 || t >= bestT )
+				continue;
+			const Vector3 p = a + dir * t;
+			bool inside = true;
+			for( std::size_t i = 0; i < poly.size() && inside; ++i ){
+				const Vector3& p0 = poly[i];
+				const Vector3& p1 = poly[( i + 1 ) % poly.size()];
+				inside = vector3_dot( vector3_cross( p1 - p0, p - p0 ), n ) >= -0.01f;
+			}
+			if( inside ){
+				bestT = t;
+				best = p;
+			}
+		}
+	}
+	distance = best ? bestT * vector3_length( dir ) : 1e30f;
+	return best;
+}
+
 void KrTerrainPaint_mouse( int phase, const View& view, float deviceX, float deviceY, float epsX, float epsY ){
 	const auto hit = testSelect_unselected_scene_point( view, DeviceVector( deviceX, deviceY ), DeviceVector( epsX, epsY ) );
 	g_hover.reset();
 	if( hit )
 		g_hover = Vector3( hit->point );
+	{
+		float terrainDistance;
+		if( const auto terrainHit = Terrain_rayHit( view, deviceX, deviceY, terrainDistance ) ){
+			const Matrix4 inv = matrix4_full_inverse( view.GetViewMatrix() );
+			const Vector3 eye = vector4_projected( matrix4_transformed_vector4( inv, Vector4( deviceX, deviceY, -1, 1 ) ) );
+			if( !g_hover || terrainDistance <= vector3_length( *g_hover - eye ) + 2 )
+				g_hover = terrainHit; // the terrain, unless something unselected is in front of it
+		}
+	}
 	TerrainRecord* r = g_hover ? Terrain_at( *g_hover ) : nullptr;
 	if( g_paintDialog != nullptr && ( r != nullptr || g_stroke == nullptr ) )
 		g_paintDialog->showTerrain( r );
@@ -1134,6 +1228,42 @@ void KrTerrainPaint_drawOverlay( const Matrix4& world2screen, int width, int hei
 	gl().glVertexPointer( 2, GL_FLOAT, sizeof( Vector2 ), points[0].data() );
 	gl().glDrawArrays( GL_LINE_STRIP, 0, GLsizei( points.size() ) );
 	gl().glLineWidth( 1 );
+	// the brush corners near the cursor, coloured by the layer q3map2 will give them (it only reads the index map there)
+	const TerrainRecord* r = Terrain_at( *g_hover );
+	if( r == nullptr || r->pixels.empty() )
+		return;
+	static const float colours[8][3] = { { 0.9f, 0.25f, 0.2f }, { 0.2f, 0.85f, 0.25f }, { 0.25f, 0.45f, 1 }, { 1, 0.9f, 0.2f },
+	                                     { 0.9f, 0.3f, 0.9f }, { 0.2f, 0.9f, 0.9f }, { 1, 0.6f, 0.2f }, { 1, 1, 1 } };
+	struct Dot { Vector2 p; int layer; };
+	std::vector<Dot> dots;
+	const float reach = std::max( g_paintRadius * 3, 256.f );
+	for( const Vector3& c : r->corners ){
+		if( std::fabs( c.x() - g_hover->x() ) > reach || std::fabs( c.y() - g_hover->y() ) > reach )
+			continue;
+		const Vector4 clip = matrix4_transformed_vector4( world2screen, Vector4( c, 1 ) );
+		if( clip.w() <= 0.01f )
+			continue;
+		float px, py;
+		if( !r->pixelFor( c.x(), c.y(), px, py ) )
+			continue;
+		const int x = std::clamp( int( px ), 0, r->w - 1 ), y = std::clamp( int( py ), 0, r->h - 1 ); // like q3map2: int( s * w )
+		dots.push_back( { Vector2( ( clip.x() / clip.w() + 1 ) * 0.5f * width, ( 1 - clip.y() / clip.w() ) * 0.5f * height ), r->pixels[std::size_t( y ) * r->w + x] } );
+		if( dots.size() > 4000 )
+			break;
+	}
+	for( int pass = 0; pass < 2; ++pass ){
+		gl().glPointSize( pass == 0 ? 8 : 5 );
+		for( const Dot& d : dots ){
+			const float* c = colours[d.layer & 7];
+			if( pass == 0 )
+				gl().glColor3f( 0, 0, 0 );
+			else
+				gl().glColor3f( c[0], c[1], c[2] );
+			gl().glVertexPointer( 2, GL_FLOAT, sizeof( Vector2 ), d.p.data() );
+			gl().glDrawArrays( GL_POINTS, 0, 1 );
+		}
+	}
+	gl().glPointSize( 1 );
 }
 
 void KrTerrain_registerCommands(){

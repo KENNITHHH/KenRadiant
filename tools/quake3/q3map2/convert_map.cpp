@@ -495,8 +495,172 @@ static void ExactPlanePoints( const side_t& side, const Vector3& origin, Vector3
 	for ( int i = 0; i < 3; ++i ) out[i] = use[i] + origin;
 }
 
+
+/* KenRadiant: index-map terrain comes back as a terrain. The bsp keeps the layer shaders (<base>_N, <base>_AtoB) on the
+   brush sides and the layer of every vertex in its alpha; the decompile groups those brushes into a func_group with
+   alphamap / layers / shader / min / max, gives their layer sides textures/tools/_terrain again and writes the .pcx so
+   that q3map2 reads the same layer at every vertex. */
+namespace terraindec
+{
+struct Family {
+	std::string base;                 // without textures/
+	int layers = 0;
+	bool blend = false;
+	std::vector<int> brushes;
+	MinMax bounds;
+	std::string alphamap;             // maps/<file>.pcx
+};
+std::vector<Family> g_families;
+std::map<std::string, std::pair<int, std::pair<int, int>>> g_shaderLayer; // shader name -> ( family, ( a, b ) )
+std::vector<int> g_brushFamily;       // bsp brush -> family or -1
+bool g_enabled = false;
+
+bool parseLayerShader( const char *name, std::string& base, int& a, int& b ){
+	if ( !striEqualPrefix( name, "textures/" ) )
+		return false;
+	const std::string n( name + 9 );
+	const std::size_t us = n.rfind( '_' );
+	if ( us == std::string::npos || us == 0 || us + 1 >= n.size() )
+		return false;
+	const std::string tail = n.substr( us + 1 );
+	const std::size_t to = tail.find( "to" );
+	const auto digits = []( const std::string& t ){ return !t.empty() && t.size() <= 3 && std::all_of( t.begin(), t.end(), []( char c ){ return c >= '0' && c <= '9'; } ); };
+	if ( to == std::string::npos ) {
+		if ( !digits( tail ) ) return false;
+		a = atoi( tail.c_str() ); b = -1;
+	}
+	else {
+		if ( !digits( tail.substr( 0, to ) ) || !digits( tail.substr( to + 2 ) ) ) return false;
+		a = atoi( tail.substr( 0, to ).c_str() ); b = atoi( tail.substr( to + 2 ).c_str() );
+		if ( b <= a ) return false;
+	}
+	base = n.substr( 0, us );
+	return true;
+}
+
+void setup( const char *bspName ){
+	g_families.clear(); g_shaderLayer.clear(); g_brushFamily.assign( bspBrushes.size(), -1 );
+	if ( bspModels.empty() )
+		return;
+	std::map<std::string, int> byBase;
+	for ( const bspShader_t& sh : bspShaders ) {
+		std::string base; int a, b;
+		if ( !parseLayerShader( sh.shader, base, a, b ) )
+			continue;
+		auto [it, added] = byBase.emplace( base, int( g_families.size() ) );
+		if ( added ) { g_families.emplace_back(); g_families.back().base = base; }
+		Family& f = g_families[ it->second ];
+		f.layers = std::max( f.layers, std::max( a, b ) + 1 );
+		f.blend = f.blend || b >= 0;
+		g_shaderLayer[ sh.shader ] = { it->second, { a, b } };
+	}
+	const bspModel_t& world = bspModels[ 0 ];
+	for ( int i = 0; i < world.numBSPBrushes; ++i ) {
+		const int bn = world.firstBSPBrush + i;
+		const bspBrush_t& brush = bspBrushes[ bn ];
+		for ( const bspBrushSide_t& side : Span( &bspBrushSides[ brush.firstSide ], brush.numSides ) ) {
+			if ( side.shaderNum < 0 || side.shaderNum >= int( bspShaders.size() ) )
+				continue;
+			const auto it = g_shaderLayer.find( bspShaders[ side.shaderNum ].shader );
+			if ( it != g_shaderLayer.end() && g_families[ it->second.first ].blend && g_families[ it->second.first ].layers >= 2 ) {
+				g_brushFamily[ bn ] = it->second.first;
+				break;
+			}
+		}
+		if ( g_brushFamily[ bn ] >= 0 )
+			g_families[ g_brushFamily[ bn ] ].brushes.push_back( bn );
+	}
+	// bounds (what q3map2 takes as the entity bounds), vertex layers -> index map
+	int terrainNum = 0;
+	for ( std::size_t fi = 0; fi < g_families.size(); ++fi ) {
+		Family& f = g_families[ fi ];
+		if ( f.brushes.empty() )
+			continue;
+		for ( int bn : f.brushes ) {
+			bspBrush_to_buildBrush( bspBrushes[ bn ] );
+			if ( CreateBrushWindings( buildBrush ) )
+				f.bounds.extend( buildBrush.minmax );
+		}
+		if ( !f.bounds.valid() )
+			continue;
+		struct V { float x, y; int layer; };
+		std::vector<V> verts;
+		for ( int si = 0; si < world.numBSPSurfaces; ++si ) {
+			const bspDrawSurface_t& ds = bspDrawSurfaces[ world.firstBSPSurface + si ];
+			if ( ds.shaderNum < 0 || ds.shaderNum >= int( bspShaders.size() ) )
+				continue;
+			const auto it = g_shaderLayer.find( bspShaders[ ds.shaderNum ].shader );
+			if ( it == g_shaderLayer.end() || it->second.first != int( fi ) )
+				continue;
+			const auto [a, b] = it->second.second;
+			for ( int v = ds.firstVert; v < ds.firstVert + ds.numVerts && v < int( bspDrawVerts.size() ); ++v ) {
+				const bspDrawVert_t& dv = bspDrawVerts[ v ];
+				verts.push_back( { dv.xyz[0], dv.xyz[1], b < 0 ? a : ( dv.color[0].alpha() >= 128 ? b : a ) } );
+			}
+		}
+		if ( verts.empty() )
+			continue;
+		const Vector3 size = f.bounds.maxs - f.bounds.mins;
+		if ( size[0] <= 0 || size[1] <= 0 )
+			continue;
+		// the smallest index map where no two vertices with different layers share a pixel
+		// (and fine enough to paint on: a pixel no bigger than 32 units)
+		int res = 64;
+		while ( res < 1024 && std::max( size[0], size[1] ) / res > 32 )
+			res *= 2;
+		std::vector<int> px;
+		for ( ; ; res *= 2 ) {
+			px.assign( std::size_t( res ) * res, -1 );
+			bool clash = false;
+			for ( const V& v : verts ) {
+				const int x = std::clamp( int( ( v.x - f.bounds.mins[0] ) / size[0] * res ), 0, res - 1 );
+				const int y = std::clamp( int( ( f.bounds.maxs[1] - v.y ) / size[1] * res ), 0, res - 1 );
+				int& p = px[ std::size_t( y ) * res + x ];
+				if ( p >= 0 && p != v.layer ) clash = true;
+				p = v.layer;
+			}
+			if ( !clash || res >= 1024 )
+				break;
+		}
+		// the rest of the map: the nearest painted pixel (nice to paint on later)
+		std::vector<int> queue;
+		for ( std::size_t i = 0; i < px.size(); ++i )
+			if ( px[i] >= 0 ) queue.push_back( int( i ) );
+		for ( std::size_t q = 0; q < queue.size(); ++q ) {
+			const int i = queue[q], x = i % res, y = i / res;
+			const int nb[4][2] = { { x - 1, y }, { x + 1, y }, { x, y - 1 }, { x, y + 1 } };
+			for ( const auto& n : nb )
+				if ( n[0] >= 0 && n[0] < res && n[1] >= 0 && n[1] < res && px[ std::size_t( n[1] ) * res + n[0] ] < 0 ) {
+					px[ std::size_t( n[1] ) * res + n[0] ] = px[i];
+					queue.push_back( n[1] * res + n[0] );
+				}
+		}
+		std::vector<byte> pixels( px.size() );
+		for ( std::size_t i = 0; i < px.size(); ++i )
+			pixels[i] = byte( std::max( px[i], 0 ) );
+		byte palette[768];
+		for ( int i = 0; i < 256; ++i )
+			palette[ i * 3 ] = palette[ i * 3 + 1 ] = palette[ i * 3 + 2 ] = byte( std::min( 255, i * 64 ) );
+		++terrainNum;
+		const auto file = StringStream( PathExtensionless( bspName ), "_terrain", terrainNum, ".pcx" );
+		WritePCXfile( file, pixels.data(), res, res, palette );
+		{
+			const std::string path( file.c_str() );
+			const std::size_t slash = path.find_last_of( "/\\" );
+			f.alphamap = "maps/" + ( slash == std::string::npos ? path : path.substr( slash + 1 ) );
+		}
+		Sys_Printf( "terrain: %s (%d layers, %zu brushes) -> func_group with index map %s (%d x %d)\n",
+		            f.base.c_str(), f.layers, f.brushes.size(), f.alphamap.c_str(), res, res );
+	}
+	for ( std::size_t i = 0; i < g_brushFamily.size(); ++i )
+		if ( g_brushFamily[i] >= 0 && g_families[ g_brushFamily[i] ].alphamap.empty() )
+			g_brushFamily[i] = -1; // no index map made: leave the brush as it was
+	g_enabled = true;
+}
+}
+
 static std::set<CopiedString> g_missingImages;
-static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, const ModelTriangles& mt, int contentFlag ){
+static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, const ModelTriangles& mt, int contentFlag, bool terrain = false ){
 	using namespace exactdec;
 	bspBrush_to_buildBrush( bspBrushes[ bspBrushNum ] );
 	if ( !CreateBrushWindings( buildBrush ) )
@@ -570,13 +734,22 @@ static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, 
 		ExactPlanePoints( *o.side, origin, pts );
 		const char *texture = striEqualPrefix( o.side->shaderInfo->shader, "textures/" )
 		                      ? o.side->shaderInfo->shader + 9 : o.side->shaderInfo->shader.c_str();
+		TexDef td = o.td;
+		if ( terrain && terraindec::g_shaderLayer.count( o.side->shaderInfo->shader.c_str() ) ) {
+			// a layer side: the terrain tool shader again, same texture coordinates (they come from its image size)
+			static const shaderInfo_t& tool = ShaderInfoForShader( "textures/tools/_terrain" );
+			const double kw = double( o.side->shaderInfo->shaderWidth ) / std::max( 1, tool.shaderWidth ), kh = double( o.side->shaderInfo->shaderHeight ) / std::max( 1, tool.shaderHeight );
+			td.scale[0] *= kw; td.scale[1] *= kh;
+			td.shift[0] /= kw; td.shift[1] /= kh;
+			texture = "tools/_terrain";
+		}
 		fprintf( f, "\t\t( %s %s %s ) ( %s %s %s ) ( %s %s %s ) ",
 		         Num( pts[0][0], b[0] ), Num( pts[0][1], b[1] ), Num( pts[0][2], b[2] ),
 		         Num( pts[1][0], b[3] ), Num( pts[1][1], b[4] ), Num( pts[1][2], b[5] ),
 		         Num( pts[2][0], b[6] ), Num( pts[2][1], b[7] ), Num( pts[2][2], b[8] ) );
 		fprintf( f, "%s %s %s %s %s %s %d 0 0\n", texture,
-		         Num( o.td.shift[0], b[0] ), Num( o.td.shift[1], b[1] ), Num( o.td.rotate, b[2] ),
-		         Num( o.td.scale[0], b[3] ), Num( o.td.scale[1], b[4] ), contentFlag );
+		         Num( td.shift[0], b[0] ), Num( td.shift[1], b[1] ), Num( td.rotate, b[2] ),
+		         Num( td.scale[0], b[3] ), Num( td.scale[1], b[4] ), contentFlag );
 	}
 	fprintf( f, "\t}\n\n" );
 }
@@ -1113,6 +1286,8 @@ static void ConvertModel( FILE *f, const bspModel_t& model, const Vector3& origi
 		const bool exact = brushType == EBrushType::Quake && !g_decompile_legacy;
 		ModelTriangles modelTriangles( model, exact && hasLinks ? &linkedSurfs : nullptr );
 		for ( int i = 0; i < model.numBSPBrushes; ++i ){
+			if ( &model == &bspModels[ 0 ] && terraindec::g_enabled && terraindec::g_brushFamily[ model.firstBSPBrush + i ] >= 0 )
+				continue; // written in its own terrain func_group
 			if ( exact )
 				ConvertBrushExact( f, model.firstBSPBrush + i, origin, modelTriangles, BrushDetailFlag( model.firstBSPBrush + i ) );
 			else
@@ -1199,6 +1374,10 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast )
 		ExactComputeDefaults();
 
+	terraindec::g_enabled = false;
+	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast )
+		terraindec::setup( bspName );
+
 	/* create map filename from the bsp name */
 	const auto name = StringStream( PathExtensionless( bspName ), "_converted.map" );
 	Sys_Printf( "writing %s\n", name.c_str() );
@@ -1247,6 +1426,26 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 
 		/* end entity */
 		fprintf( f, "}\n\n" );
+
+		/* KenRadiant: the world's index-map terrains, each in its func_group */
+		if ( i == 0 && terraindec::g_enabled ) {
+			std::vector<char> linked( bspDrawSurfaces.size(), 0 );
+			bool hasLinks = false;
+			for ( const bspBrushSide_t& bs : bspBrushSides )
+				if ( bs.surfaceNum >= 0 && bs.surfaceNum < int( linked.size() ) ) { linked[ bs.surfaceNum ] = 1; hasLinks = true; }
+			const ModelTriangles mt( bspModels[ 0 ], hasLinks ? &linked : nullptr );
+			for ( const terraindec::Family& fam : terraindec::g_families ) {
+				if ( fam.alphamap.empty() )
+					continue;
+				fprintf( f, "// terrain %s\n{\n\t\"classname\" \"func_group\"\n", fam.base.c_str() );
+				fprintf( f, "\t\"alphamap\" \"%s\"\n\t\"layers\" \"%d\"\n\t\"shader\" \"%s\"\n", fam.alphamap.c_str(), fam.layers, fam.base.c_str() );
+				fprintf( f, "\t\"min\" \"%g %g %g\"\n\t\"max\" \"%g %g %g\"\n\n", fam.bounds.mins[0], fam.bounds.mins[1], fam.bounds.mins[2],
+				         fam.bounds.maxs[0], fam.bounds.maxs[1], fam.bounds.maxs[2] );
+				for ( int bn : fam.brushes )
+					ConvertBrushExact( f, bn, g_vector3_identity, mt, BrushDetailFlag( bn ), true );
+				fprintf( f, "}\n\n" );
+			}
+		}
 	}
 
 	/* close the file and return */

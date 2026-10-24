@@ -3,6 +3,14 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-24 (26)
+### q3map2
+- **Decompile brings index-map terrain back as terrain.** The .bsp keeps the layer shaders (`<base>_0`, `_0to1` ...) on the brush sides and every vertex's layer in its alpha; the decompile now puts those brushes in a func_group with `alphamap` / `layers` / `shader` / `min` / `max`, gives their layer sides `tools/_terrain` again (same texture coordinates) and writes `<map>_terrainN.pcx` so q3map2 reads the same layer at every vertex. mp_raven's snow landscape (metashader/kam4): 780 of 780 matched vertices get the same layer after decompile + recompile (before: every face showed the top layer - the "way off" textures). Decompile again to get it.
+### Editor
+- **Terrain Paint paints where the cursor is, also on selected terrain.** The paint ray skipped selected brushes (they stay selected after Create terrain) and hit what was behind; it now hits the terrain's own faces (unless something unselected is in front).
+- **Dots show what the compiled map gets**: the brush corners near the cursor, coloured by the layer q3map2 will read there (it only reads the index map at the corners - paint across them; smaller brushes = finer painting).
+- **Hardness** slider: below 100% the edge of the brush is painted thinner and thinner (dithered).
+
 ## Build 2026-10-24 (25)
 ### Editor
 - **Terrain Paint writes into the game folder** (engine path + base), not next to the map: with a map kept elsewhere (your Extracted copy) the layer shaders and the .pcx were written where neither the editor nor q3map2 looks ("Texture load failed: textures/<map>/terrain1_0"). The new shaders are also loaded before the terrain asks for them.
