@@ -66,8 +66,12 @@ struct DSurface {
 };
 #pragma pack( pop )
 
-struct Surf { int shader; int tris; bool translucent; int passes; };
-struct ShaderInfo { CopiedString name; bool translucent = false; int passes = 1; };
+struct Surf {
+	int shader; int tris; bool translucent; int passes;
+	float mins[3], maxs[3];           // bounds: the engine culls each surface against the view
+	bool planar = false, twoSided = false; float normal[3], dist = 0; // planar faces: back-face culled (unless cull none)
+};
+struct ShaderInfo { CopiedString name; bool translucent = false; int passes = 1; bool twoSided = false; };
 
 struct Bsp {
 	bool loaded = false;
@@ -135,6 +139,9 @@ bool load(){
 	g_bsp.leafSurfaces = lump<int>( data, h, 5 );
 	g_bsp.models = lump<DModel>( data, h, 7 );
 	const auto surfaces = lump<DSurface>( data, h, 13 );
+	struct DVert { float xyz[3]; float rest[17]; };
+	static_assert( sizeof( DVert ) == 80, "RBSP vertex" );
+	const auto verts = lump<DVert>( data, h, 10 );
 	g_bsp.lightmaps = h.lumps[14].length / ( 128 * 128 * 3 );
 	const auto visData = lump<unsigned char>( data, h, 16 );
 	if( visData.size() >= 8 ){
@@ -156,6 +163,7 @@ bool load(){
 			si.passes = int( st->size() );
 			si.translucent = si.translucent || ( st->front().blend && !( st->front().src == BLEND_ONE && st->front().dst == BLEND_ZERO ) && st->front().special != 1 );
 		}
+		si.twoSided = ( shader->getFlags() & QER_CULL ) && shader->getCull() == IShader::eCullNone;
 		if( shader->getFlags() & ( QER_SKY | QER_NODRAW ) )
 			si.passes = 0; // sky is drawn apart, nodraw never
 		shader->DecRef();
@@ -170,6 +178,19 @@ bool load(){
 		o.passes = o.shader >= 0 ? g_bsp.shaders[o.shader].passes : 1;
 		if( o.passes == 0 )
 			o.tris = 0;
+		for( int k = 0; k < 3; ++k ){ o.mins[k] = 1e30f; o.maxs[k] = -1e30f; }
+		for( int v = s.firstVert; v >= 0 && v < s.firstVert + s.numVerts && v < int( verts.size() ); ++v )
+			for( int k = 0; k < 3; ++k ){
+				o.mins[k] = std::min( o.mins[k], verts[v].xyz[k] );
+				o.maxs[k] = std::max( o.maxs[k], verts[v].xyz[k] );
+			}
+		o.twoSided = o.shader >= 0 && g_bsp.shaders[o.shader].twoSided;
+		if( s.type == 1 && s.numVerts > 0 && s.firstVert >= 0 && s.firstVert < int( verts.size() ) ){
+			o.planar = true;
+			for( int k = 0; k < 3; ++k )
+				o.normal[k] = s.lmVecs[2][k];
+			o.dist = o.normal[0] * verts[s.firstVert].xyz[0] + o.normal[1] * verts[s.firstVert].xyz[1] + o.normal[2] * verts[s.firstVert].xyz[2];
+		}
 		g_bsp.surfs.push_back( o );
 	}
 	// surfaces per cluster (each once)
@@ -216,10 +237,11 @@ int leafAt( const Vector3& p ){
 	return leaf >= 0 && leaf < int( g_bsp.leafs.size() ) ? leaf : -1;
 }
 
-bool boxInView( const Matrix4& viewproj, const int mins[3], const int maxs[3] ){
+template<typename T>
+bool boxInView( const Matrix4& viewproj, const T mins[3], const T maxs[3] ){
 	int outside[6] = { 0, 0, 0, 0, 0, 0 };
 	for( int k = 0; k < 8; ++k ){
-		const Vector4 c = matrix4_transformed_vector4( viewproj, Vector4( ( k & 1 ) ? maxs[0] : mins[0], ( k & 2 ) ? maxs[1] : mins[1], ( k & 4 ) ? maxs[2] : mins[2], 1 ) );
+		const Vector4 c = matrix4_transformed_vector4( viewproj, Vector4( float( ( k & 1 ) ? maxs[0] : mins[0] ), float( ( k & 2 ) ? maxs[1] : mins[1] ), float( ( k & 4 ) ? maxs[2] : mins[2] ), 1 ) );
 		outside[0] += c.x() < -c.w(); outside[1] += c.x() > c.w();
 		outside[2] += c.y() < -c.w(); outside[3] += c.y() > c.w();
 		outside[4] += c.z() < -c.w(); outside[5] += c.z() > c.w();
@@ -230,8 +252,17 @@ bool boxInView( const Matrix4& viewproj, const int mins[3], const int maxs[3] ){
 	return true;
 }
 
+/// the engine's own per-surface culling (R_CullSurface): outside the view, or a one-sided face seen from behind
+bool surfaceInView( const Surf& s, const Matrix4& viewproj, const Vector3& eye ){
+	if( s.mins[0] > s.maxs[0] )
+		return false;
+	if( s.planar && !s.twoSided && s.normal[0] * eye.x() + s.normal[1] * eye.y() + s.normal[2] * eye.z() < s.dist - 8 )
+		return false;
+	return boxInView( viewproj, s.mins, s.maxs );
+}
+
 struct Counts {
-	int surfaces = 0, tris = 0, passes = 0, translucent = 0, shaders = 0;
+	int surfaces = 0, tris = 0, passes = 0, translucent = 0, shaders = 0, leafs = 0;
 	std::map<int, std::pair<int, int>> byShader; // shader -> ( tris, surfaces )
 	void add( const Surf& s, std::vector<char>& shaderSeen ){
 		if( s.passes == 0 )
@@ -266,6 +297,7 @@ Counts countFrom( const Vector3& eye, const Matrix4* viewproj, int* clusterOut =
 			continue;
 		if( viewproj != nullptr && !boxInView( *viewproj, l.mins, l.maxs ) )
 			continue;
+		++c.leafs;
 		for( int k = 0; k < l.numSurfaces; ++k ){
 			const int idx = l.firstSurface + k;
 			if( idx < 0 || idx >= int( g_bsp.leafSurfaces.size() ) )
@@ -274,6 +306,8 @@ Counts countFrom( const Vector3& eye, const Matrix4* viewproj, int* clusterOut =
 			if( s < 0 || s >= worldSurfaces || seen[s] )
 				continue;
 			seen[s] = 1;
+			if( viewproj != nullptr && !surfaceInView( g_bsp.surfs[s], *viewproj, eye ) )
+				continue;
 			c.add( g_bsp.surfs[s], shaderSeen );
 		}
 	}
@@ -292,6 +326,8 @@ Counts countFrom( const Vector3& eye, const Matrix4* viewproj, int* clusterOut =
 		for( int s = model.firstSurface; s < model.firstSurface + model.numSurfaces && s < int( g_bsp.surfs.size() ); ++s )
 			if( s >= 0 && !seen[s] ){
 				seen[s] = 1;
+				if( viewproj != nullptr && !surfaceInView( g_bsp.surfs[s], *viewproj, eye ) )
+					continue;
 				c.add( g_bsp.surfs[s], shaderSeen );
 			}
 	}
@@ -385,12 +421,13 @@ void updateHere( bool force ){
 	const Counts view = countFrom( eye, &viewproj, &cluster );
 	const Counts pvs = countFrom( eye, nullptr );
 	const bool stale = QFileInfo( Map_Name( g_map ) ).lastModified() > g_bsp.time;
-	g_here->setText( QString( "<b>Here</b> (cluster %1): in view <b>%2</b> triangles, <b>%3</b> surfaces, %4 passes, %5 shaders, %6 blended"
-	                          " &nbsp;&middot;&nbsp; whole PVS %7 triangles, %8 surfaces%9%10" )
+	g_here->setText( QString( "<b>Here</b> (cluster %1): in view <b>%2</b> triangles, <b>%3</b> surfaces, %4 passes, %5 shaders, %6 blended, %11 leafs"
+	                          " &nbsp;&middot;&nbsp; whole PVS %7 triangles, %8 surfaces%9%10<br><span style='color:gray'>In game: r_speeds 1 shows shaders/surfaces and leafs - compare with the setviewpos line of the Lighting Probe.</span>" )
 	                 .arg( cluster ).arg( view.tris ).arg( view.surfaces ).arg( view.passes ).arg( view.shaders ).arg( view.translucent )
 	                 .arg( pvs.tris ).arg( pvs.surfaces )
 	                 .arg( cluster < 0 ? "<br><span style='color:#c0392b'>The camera is outside the map (in the void): everything counts.</span>" : "" )
-	                 .arg( stale ? "<br><span style='color:#c89a2a'>The map was saved after this compile - numbers are from the last compile.</span>" : "" ) );
+	                 .arg( stale ? "<br><span style='color:#c89a2a'>The map was saved after this compile - numbers are from the last compile.</span>" : "" )
+	                 .arg( view.leafs ) );
 	setBar( g_bars[0], view.tris, c_trisGood, c_trisHeavy, "triangles" );
 	setBar( g_bars[1], view.surfaces, c_surfGood, c_surfHeavy, "surfaces (draw calls)" );
 	setBar( g_bars[2], view.passes, c_passGood, c_passHeavy, "passes (surfaces x shader stages)" );
