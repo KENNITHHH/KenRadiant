@@ -736,11 +736,8 @@ static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, 
 		                      ? o.side->shaderInfo->shader + 9 : o.side->shaderInfo->shader.c_str();
 		TexDef td = o.td;
 		if ( terrain && terraindec::g_shaderLayer.count( o.side->shaderInfo->shader.c_str() ) ) {
-			// a layer side: the terrain tool shader again, same texture coordinates (they come from its image size)
-			static const shaderInfo_t& tool = ShaderInfoForShader( "textures/tools/_terrain" );
-			const double kw = double( o.side->shaderInfo->shaderWidth ) / std::max( 1, tool.shaderWidth ), kh = double( o.side->shaderInfo->shaderHeight ) / std::max( 1, tool.shaderHeight );
-			td.scale[0] *= kw; td.scale[1] *= kh;
-			td.shift[0] /= kw; td.shift[1] /= kh;
+			// a layer side: the terrain tool shader again with the same texdef - q3map2 divides a terrain side's texture
+			// coordinates by the layer shader's image size, the one this texdef was solved with
 			texture = "tools/_terrain";
 		}
 		fprintf( f, "\t\t( %s %s %s ) ( %s %s %s ) ( %s %s %s ) ",

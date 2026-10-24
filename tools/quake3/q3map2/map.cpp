@@ -1046,7 +1046,9 @@ static void ParseRawBrush( bool onlyLights ){
 			scale[ 1 ] = atof( token );
 
 			/* ydnar: gs mods: bias texture shift */
-			if ( !si.globalTexture ) {
+			/* KenRadiant: not on terrain (q3map_terrain / indexed) sides - their coordinates are divided by the layer
+			   shader's image size, so wrapping by the tool shader's size would move the layer textures */
+			if ( !si.globalTexture && !si.indexed ) {
 				shift[ 0 ] -= ( floor( shift[ 0 ] / si.shaderWidth ) * si.shaderWidth );
 				shift[ 1 ] -= ( floor( shift[ 1 ] / si.shaderHeight ) * si.shaderHeight );
 			}

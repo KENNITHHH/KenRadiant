@@ -40,6 +40,12 @@
 #include <cmath>
 #include <cstring>
 #include <QTimer>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QGridLayout>
+#include <QLabel>
+#include <QSlider>
+#include <QPushButton>
 #include <QFileInfo>
 #include <QDateTime>
 
@@ -57,6 +63,8 @@
 #include "gtkutil/widget.h"
 #include "map.h"
 #include "qerplugin.h"
+#include "preferencesystem.h"
+#include "mainframe.h"
 
 void KrCamera_getView( Vector3& origin, Vector3& angles, float& fov );
 void KrLightPreview_redraw();
@@ -65,6 +73,7 @@ bool KrBspPreview_shown();
 extern bool g_krGameShaders;
 extern bool g_krLightPreview;
 extern bool g_skyboxPreview;
+void Play_info( const QString& text );
 
 namespace
 {
@@ -79,7 +88,10 @@ struct Sound {
 	float radius = 0;       // "radius" key: attenuation distance (else the engine default)
 	float wait = 0, random = 0, next = 0; // timed speakers
 	float volume = 1;
+	bool music = false;
 };
+// volumes in % (saved): all, sounds, music
+int g_volAll = 50, g_volSounds = 100, g_volMusic = 40;
 
 ma_engine g_engine;
 bool g_engineOk = false;
@@ -143,7 +155,7 @@ void Sound_place( Sound& s, const Vector3& eye, const Vector3& right ){
 		if( vector3_length( d ) > 1 )
 			pan = std::clamp( float( vector3_dot( vector3_normalised( d ), right ) ), -1.f, 1.f ) * 0.8f;
 	}
-	ma_sound_set_volume( &s.sound, gain * s.volume );
+	ma_sound_set_volume( &s.sound, gain * s.volume * ( s.music ? g_volMusic : g_volSounds ) / 100.f );
 	ma_sound_set_pan( &s.sound, pan );
 }
 
@@ -245,7 +257,7 @@ void Sounds_start(){
 		auto s = std::make_unique<Sound>();
 		s->loop = true;
 		s->global = true;
-		s->volume = 0.35f;
+		s->music = true;
 		s->data = File_load( music.c_str() );
 		if( s->data && Sound_init( *s ) ){
 			ma_sound_start( &s->sound );
@@ -253,6 +265,9 @@ void Sounds_start(){
 			musicOk = true;
 		}
 	}
+	Play_info( QString( "%1 looping and %2 timed speakers%3%4" ).arg( looping ).arg( timed )
+	           .arg( music.empty() ? QString() : musicOk ? QString( ", music %1" ).arg( music.c_str() ) : QString( ", music not found (%1)" ).arg( music.c_str() ) )
+	           .arg( skipped ? QString( "; %1 only when triggered / soundSet" ).arg( skipped ) : QString() ) );
 	globalOutputStream() << "play mode: " << looping << " looping and " << timed << " timed speakers"
 	                     << ( music.empty() ? "" : musicOk ? ", music " : ", music not found: " ) << music.c_str()
 	                     << ( skipped ? StringStream<64>( " (", skipped, " only when triggered / soundSet)" ).c_str() : "" ) << '\n';
@@ -261,6 +276,7 @@ void Sounds_start(){
 		QObject::connect( g_timer, &QTimer::timeout, [](){ Sounds_tick(); } );
 	}
 	g_clock = 0;
+	ma_engine_set_volume( &g_engine, g_volAll / 100.f );
 	Sounds_tick();
 	g_timer->start( 30 );
 }
@@ -270,9 +286,11 @@ void toggleIf( const char* name, bool now, bool want ){
 		GlobalToggles_find( name ).m_command.m_callback();
 }
 
+void Window_update();
 void Play_toggle(){
 	g_play = !g_play;
 	g_play_item.update();
+	Window_update();
 	if( g_play ){
 		g_saved = { GameView_on(), g_krGameShaders, g_skyboxPreview, g_krLightPreview, KrBspPreview_shown() };
 		// the light the game will have: the compile when it is up to date, else the live preview
@@ -299,10 +317,74 @@ void Play_toggle(){
 	KrLightPreview_redraw();
 }
 
+QDialog* g_window = nullptr;
+QPushButton* g_start = nullptr;
+QLabel* g_info = nullptr;
+
+void Window_update(){
+	if( g_start != nullptr )
+		g_start->setText( g_play ? "Stop" : "Start" );
+}
+
+void Play_show(){
+	if( g_window == nullptr ){
+		g_window = new QDialog( MainFrame_getWindow(), Qt::Tool | Qt::WindowTitleHint | Qt::WindowCloseButtonHint );
+		g_window->setWindowTitle( "Play" );
+		auto *v = new QVBoxLayout( g_window );
+		auto *about = new QLabel( "The map as in game: Game View, game shaders, the skybox, its light (the compiled .bsp when it is newer than the map, "
+		                          "else the live light) and its sounds around the camera." );
+		about->setWordWrap( true );
+		v->addWidget( about );
+		auto *grid = new QGridLayout;
+		const auto slider = [grid]( int row, const char* name, int& value, auto changed ){
+			grid->addWidget( new QLabel( name ), row, 0 );
+			auto *s = new QSlider( Qt::Horizontal );
+			s->setRange( 0, 100 );
+			s->setValue( value );
+			auto *label = new QLabel( QString( "%1%" ).arg( value ) );
+			label->setMinimumWidth( 40 );
+			QObject::connect( s, &QSlider::valueChanged, [&value, label, changed]( int x ){
+				value = x;
+				label->setText( QString( "%1%" ).arg( x ) );
+				changed();
+			} );
+			grid->addWidget( s, row, 1 );
+			grid->addWidget( label, row, 2 );
+		};
+		slider( 0, "All", g_volAll, [](){ if( g_engineOk ) ma_engine_set_volume( &g_engine, g_volAll / 100.f ); } );
+		slider( 1, "Sounds", g_volSounds, [](){} ); // (applied by the next tick)
+		slider( 2, "Music", g_volMusic, [](){} );
+		grid->setColumnStretch( 1, 1 );
+		v->addLayout( grid );
+		g_start = new QPushButton;
+		g_start->setMinimumHeight( 36 );
+		QObject::connect( g_start, &QPushButton::clicked, [](){ Play_toggle(); } );
+		v->addWidget( g_start );
+		g_info = new QLabel;
+		g_info->setWordWrap( true );
+		g_info->setStyleSheet( "color: gray;" );
+		v->addWidget( g_info );
+		g_window->setMinimumWidth( 460 );
+		g_window->adjustSize();
+	}
+	Window_update();
+	g_window->show();
+	g_window->raise();
+}
+
 } // namespace
+
+void Play_info( const QString& text ){
+	if( g_info != nullptr )
+		g_info->setText( text );
+}
 
 void KrPlay_registerCommands(){
 	GlobalToggles_insert( "TogglePlayMode", makeCallbackF( Play_toggle ), ToggleItem::AddCallbackCaller( g_play_item ) );
+	GlobalCommands_insert( "PlayWindow", makeCallbackF( Play_show ) );
+	GlobalPreferenceSystem().registerPreference( "KrPlayVolumeAll", IntImportStringCaller( g_volAll ), IntExportStringCaller( g_volAll ) );
+	GlobalPreferenceSystem().registerPreference( "KrPlayVolumeSounds", IntImportStringCaller( g_volSounds ), IntExportStringCaller( g_volSounds ) );
+	GlobalPreferenceSystem().registerPreference( "KrPlayVolumeMusic", IntImportStringCaller( g_volMusic ), IntExportStringCaller( g_volMusic ) );
 }
 
 /// the editor closes: quiet

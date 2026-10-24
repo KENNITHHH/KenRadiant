@@ -3,6 +3,12 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (28)
+### Editor
+- **Play window**: the Play button (now right of the Compile hammer) opens a window with volume sliders - **All**, **Sounds**, **Music** (saved) - and **Start / Stop**. View > Play still starts it directly.
+### q3map2
+- **Fixed: decompiled terrain stretched / shifted** (mp_raven's snow). The decompile changed the texture scale of the terrain sides by the image size of `tools/_terrain`, but q3map2 divides a terrain side's texture coordinates by the *layer* shader's image size: the texdef now stays as solved. And q3map2 no longer wraps a terrain side's texture shift by the tool shader's size (it moved the layer textures when the sizes differ). Decompile again.
+
 ## Build 2026-10-24 (27)
 ### Editor
 - **Play mode** (green play button next to Game View, or View > Play): the 3D view as in game - Game View, shaders like in game, the skybox and the light the game will have (the compiled .bsp when it is newer than the saved map, else the live light) - and the map's **sounds**: looping target_speakers play, timed ones (`wait` / `random`) repeat, global ones are heard everywhere, all attenuated like the engine (full within 80 units, then fading; `radius` when set) and panned left / right as you fly; the worldspawn `music` plays quietly. Speakers that only play when triggered, and `soundSet` speakers, stay quiet (the console counts them). Press again: everything back as it was. WAV and MP3 from the game folders and pk3s (miniaudio, public domain / MIT-0).
