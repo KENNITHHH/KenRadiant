@@ -345,6 +345,12 @@ public:
 	}
 	void setName( const char* name ){
 		m_Name = name;
+		/* KenRadiant: SOF2's sof2map has textures/tools/_terrain built in; the stock tools.shader (Raven, 2002) does
+		   not say q3map_terrain, so the terrain layers would only show with an edited shader file */
+		if ( string_equal_nocase( name, "textures/tools/_terrain" )
+		  && string_equal_nocase( GlobalRadiant().getGameDescriptionKeyValue( "q3map2_type" ), "sof2" ) ) {
+			m_nFlags |= QER_KR_TERRAIN;
+		}
 	}
 
 // -----------------------------------------

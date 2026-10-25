@@ -591,6 +591,18 @@ static void FinishShader( shaderInfo_t& si ){
 		return;
 	}
 
+	/* KenRadiant: SOF2's sof2map has textures/tools/_terrain built in - the stock tools.shader (Raven, 2002) does not
+	   say q3map_terrain, so terrain only worked with an edited shader file. Treat the name as the keyword. */
+	if ( !si.legacyTerrain && striEqual( g_game->arg, "sof2" ) && striEqual( si.shader, "textures/tools/_terrain" ) ) {
+		si.legacyTerrain = true;
+		si.noClip = true;
+		si.notjunc = true;
+		si.indexed = true;
+		si.nonplanar = true;
+		si.forceMeta = true;
+		si.shadeAngleDegrees = 179.0f;
+	}
+
 	/* if they're explicitly set, copy from image size */
 	if ( si.shaderWidth == 0 && si.shaderHeight == 0 ) {
 		si.shaderWidth = si.shaderImage->width;

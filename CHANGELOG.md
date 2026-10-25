@@ -3,6 +3,16 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (34)
+### Terrain works with the stock SOF2 shaders
+- **`textures/tools/_terrain` is terrain by name now** (SOF2), in both q3map2 and the editor. Raven's own
+  `tools.shader` (16.04.2002, the one in the retail game) does **not** say `q3map_terrain` - sof2map has the name
+  built in instead - so with the stock shaders the layers showed as the plain translucent tool texture in the 3D view
+  and compiled as nodraw faces with no layers at all. Only mappers whose `tools.shader` had been edited saw terrain
+  work. Checked against Raven's mp_col2 with the stock shader file: the compile now matches the original exactly
+  (texture coordinates 0.00 off, same coverage, 0.8% of cells on a different layer - the same as sof2map).
+- Adding `q3map_terrain` to your own `tools.shader` still works and changes nothing.
+
 ## Build 2026-10-25 (33)
 ### q3map2: terrain textures were mirrored along y
 - **Fixed: every q3map_terrain cell had its texture mirrored on the y axis.** q3map2 projects terrain textures with
