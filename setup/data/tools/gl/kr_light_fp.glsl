@@ -86,6 +86,7 @@ vec4 terrainColour(){
 	return vec4( c.rgb / max( w.r + w.g + w.b + w.a, 0.001 ), 1.0 );
 }
 
+vec3 g_offw = vec3( 0.0 ); // terrain: world-space offset off the face itself (see main)
 vec4 lightTexel( float t ){
 	float y = floor( t / KR_TW );
 	return texture2D( u_lights, vec2( ( t - y * KR_TW + 0.5 ) / KR_TW, ( y + 0.5 ) / KR_TH ) );
@@ -144,7 +145,7 @@ vec3 pointLight( float id, vec3 nw ){
 			c *= ( radiusAtDist - sampleRadius ) / 32.0;
 	}
 	if( c > 0.0 && id < 7.5 ){
-		vec3 L = -d + nw * ( 3.0 + dist * ( 0.02 + 0.04 * ( 1.0 - ndl ) ) ); // (normal offset against acne, more at grazing angles)
+		vec3 L = -d + nw * ( 3.0 + dist * ( 0.02 + 0.04 * ( 1.0 - ndl ) ) ) + g_offw * ( 1.0 + dist * 0.01 ); // (normal offset against acne, more at grazing angles; terrain: off the face too)
 		int i = int( id + 0.5 );
 		if( i == 0 && u_cube_far.x > 0.0 ) c *= cubeShadow( u_cube0, L, u_cube_far.x, ndl );
 		else if( i == 1 && u_cube_far.y > 0.0 ) c *= cubeShadow( u_cube1, L, u_cube_far.y, ndl );
@@ -186,10 +187,13 @@ void main()
 	// look the shadows up off the face too, or the face shadows itself (dark rims)
 	vec3 g_off = vec3( 0.0 );
 	if( u_terrain > 0 ){
-		vec3 gn = normalize( cross( dFdx( v_pos ), dFdy( v_pos ) ) );
+		vec3 cr = cross( dFdx( v_pos ), dFdy( v_pos ) );
+		float len = length( cr );
+		vec3 gn = len > 1e-6 ? cr / len : n; // (tiny / far pixels: no derivative to trust - normalize( 0 ) would be NaN, black)
 		if( dot( gn, n ) < 0.0 )
 			gn = -gn;
 		g_off = gn * ( 4.0 + 0.004 * length( v_pos ) );
+		g_offw = u_eye2world * gn * 4.0;
 	}
 
 	float ndl = max( dot( n, u_sun_dir ), 0.0 );
