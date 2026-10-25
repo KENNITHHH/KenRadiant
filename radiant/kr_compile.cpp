@@ -88,6 +88,9 @@ struct CompileOptions
 	int decompFormat = 0; // map, map_bp
 	bool decompFast = false, decompModelclip = false, decompWtf = false, decompLegacy = false;
 	bool runGame = false;
+	int compiler = 0; // 0 KenRadiant's q3map2, 1 Raven's sof2map.exe (run through q3map2 -runtool)
+	CopiedString sof2map; // path of sof2map.exe ("" = look for it)
+	bool ravenRename = true, ravenExtra = true;
 	CopiedString gameExe = "SoF2MP.exe";
 	CopiedString gameArgs = "+set sv_pure 0 +set developer 1 +devmap %mapname%";
 };
@@ -125,6 +128,18 @@ QString Compile_advanced( const CopiedString& adv ){
 	return out;
 }
 
+/// Raven's sof2map.exe: the chosen one, else next to KenRadiant, in the game's bin folder or the game folder
+QString Sof2map_find( const CompileOptions& o ){
+	if( !o.sof2map.empty() )
+		return QFileInfo::exists( o.sof2map.c_str() ) ? QString( o.sof2map.c_str() ) : QString();
+	const QString engine = QString( EnginePath_get() );
+	for( const QString& c : { QString( AppPath_get() ) + "sof2map.exe", engine + "bin/sof2map.exe", engine + "sof2map.exe",
+	                          engine + "../bin/sof2map.exe", QString( AppPath_get() ) + "bin/sof2map.exe" } )
+		if( QFileInfo::exists( c ) )
+			return QFileInfo( c ).absoluteFilePath();
+	return QString();
+}
+
 QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>* commands ){
 	QStringList lines;
 	auto add = [&]( QString line, const CopiedString& extra ){
@@ -134,6 +149,19 @@ QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>
 			commands->emplace_back( line.toLatin1().constData() );
 	};
 	const bool onlyents = o.bsp && o.onlyents;
+	if( o.compiler == 1 ){ // Raven's sof2map: how the original maps were built (-bsp -rename, -vis, -light -extra)
+		QString exe = Sof2map_find( o );
+		if( exe.isEmpty() )
+			exe = o.sof2map.empty() ? "sof2map.exe" : o.sof2map.c_str();
+		const QString tool = "[q3map2] -runtool \"" + exe + "\"";
+		if( o.bsp )
+			add( tool + " -bsp" + ( onlyents ? " -onlyents" : "" ) + ( o.ravenRename ? " -rename" : "" ), CopiedString() );
+		if( o.vis && !onlyents )
+			add( tool + " -vis" + ( o.visFast ? " -fast" : "" ), CopiedString() );
+		if( o.light )
+			add( tool + " -light" + ( o.ravenExtra ? " -extra" : "" ), CopiedString() );
+		return lines.join( '\n' );
+	}
 	if( o.bsp ){
 		QString c = "[q3map2]";
 		if( onlyents )
@@ -271,6 +299,7 @@ protected:
 CompileOptions Options_fromCommands( const CompileOptions& o, const std::vector<CopiedString>& commands ){
 	CompileOptions p;
 	p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
+	p.sof2map = o.sof2map; p.ravenRename = o.ravenRename; p.ravenExtra = o.ravenExtra;
 	p.decompBsp = o.decompBsp; p.decompFormat = o.decompFormat; p.decompFast = o.decompFast;
 	p.decompModelclip = o.decompModelclip; p.decompWtf = o.decompWtf; p.decompLegacy = o.decompLegacy;
 	p.bsp = p.vis = p.light = false;
@@ -282,6 +311,15 @@ CompileOptions Options_fromCommands( const CompileOptions& o, const std::vector<
 	};
 	for( const CopiedString& command : commands ){
 		QStringList t = QProcess::splitCommand( QString( command.c_str() ) );
+		if( const int rt = t.indexOf( "-runtool" ); rt >= 0 ){ // Raven's sof2map
+			p.compiler = 1;
+			if( rt + 1 < t.size() && QFileInfo( t[rt + 1] ).isAbsolute() && p.sof2map.empty() && QFileInfo::exists( t[rt + 1] ) )
+				p.sof2map = t[rt + 1].toLatin1().constData();
+			if( t.contains( "-vis" ) ) { p.vis = true; p.visFast = t.contains( "-fast" ); }
+			else if( t.contains( "-light" ) ) { p.light = true; p.ravenExtra = t.contains( "-extra" ); }
+			else { p.bsp = true; p.onlyents = t.contains( "-onlyents" ); p.ravenRename = t.contains( "-rename" ); }
+			continue;
+		}
 		t.erase( std::remove_if( t.begin(), t.end(), []( const QString& x ){ return x.contains( "[q3map2]" ) || x.contains( "[MapFile]" ) || x.contains( "[ExtraResourcePaths]" ); } ), t.end() );
 		const int stage = t.contains( "-vis" ) ? 1 : t.contains( "-light" ) ? 2 : t.contains( "-convert" ) ? 3 : 0;
 		if( stage == 3 )
@@ -431,7 +469,7 @@ class CompileDialog : public QDialog
 		m_preview->setPlainText( Compile_commandsText( o, nullptr ) );
 		m_visBox->setEnabled( !( o.bsp && o.onlyents ) );
 		for( int i = 0; i < 3; ++i )
-			m_tabs->widget( i )->setEnabled( i == 0 ? o.bsp : i == 1 ? o.vis && !( o.bsp && o.onlyents ) : o.light );
+			m_tabs->widget( i )->setEnabled( o.compiler == 0 && ( i == 0 ? o.bsp : i == 1 ? o.vis && !( o.bsp && o.onlyents ) : o.light ) );
 	}
 	QCheckBox* check( QGridLayout* grid, int row, int col, const char* text, bool& value, const QString& help ){
 		auto *box = new QCheckBox( text );
@@ -626,6 +664,7 @@ public:
 		p.extraBsp = o.extraBsp; p.extraVis = o.extraVis; p.extraLight = o.extraLight;
 		p.advBsp = o.advBsp; p.advVis = o.advVis; p.advLight = o.advLight;
 		p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
+		p.compiler = o.compiler; p.sof2map = o.sof2map; p.ravenRename = o.ravenRename; p.ravenExtra = o.ravenExtra;
 		switch( which ){
 		case 0: p.visFast = true; p.quality = 0; p.super = 1; p.filter = false; p.bounce = 0; break;  // quick test
 		case 1: break;                                                                                   // final
@@ -679,6 +718,15 @@ public:
 			} );
 			row->addWidget( fromMenu );
 			row->addSpacing( 12 );
+			{
+				auto *compiler = new QComboBox;
+				compiler->addItems( { "q3map2 (KenRadiant)", "sof2map (Raven, original)" } );
+				QObject::connect( compiler, QOverload<int>::of( &QComboBox::currentIndexChanged ), [this]( int i ){ if( i >= 0 ){ o.compiler = i; changed(); } } );
+				m_loaders.push_back( [compiler, this](){ const QSignalBlocker b( compiler ); compiler->setCurrentIndex( o.compiler ); } );
+				hint( compiler, "q3map2: KenRadiant's compiler, all the options in the tabs. sof2map: Raven's own compiler (sof2map.exe from the SOF2 SDK), "
+				                "what the original maps were built with - a decompiled map compiles back to the original's lighting with it. Settings in the sof2map tab." );
+				row->addWidget( compiler );
+			}
 			m_bspBox = stageBox( "BSP", o.bsp, "Builds the geometry (.bsp) from the brushes, patches and models. Needed after any brush change." );
 			m_visBox = stageBox( "VIS", o.vis, "Works out what can be seen from where, so the game skips what's behind walls. The frame rate depends on it." );
 			m_lightBox = stageBox( "LIGHT", o.light, "Bakes the lightmaps: lights, sun, sky light, glowing shaders. The slowest stage." );
@@ -760,6 +808,38 @@ public:
 			QObject::connect( now, &QPushButton::clicked, [](){ Game_start(); } );
 			g->addWidget( now, 2, 0 );
 			g->setRowStretch( 3, 1 );
+		}
+		{
+			QGridLayout* g = page( "sof2map" );
+			auto *file = text( g, 0, "sof2map.exe", o.sof2map, "Raven's compiler from the SOF2 SDK (the bin folder). Empty: KenRadiant looks next to itself, "
+			                   "in <game>/bin and in the game folder. It runs through q3map2 -runtool, so its output still reaches the console and the Problems tab." );
+			auto *browse = new QPushButton( "Browse..." );
+			browse->setAutoDefault( false );
+			QObject::connect( browse, &QPushButton::clicked, [this, file](){
+				const QString f = QFileDialog::getOpenFileName( this, "Raven's sof2map.exe", QString( EnginePath_get() ), "sof2map.exe (sof2map.exe);;Programs (*.exe);;All files (*)" );
+				if( f.isEmpty() )
+					return;
+				file->setText( f );
+				o.sof2map = f.toLatin1().constData();
+				changed();
+			} );
+			g->addWidget( browse, 1, 1, Qt::AlignLeft );
+			auto *found = new QLabel;
+			found->setWordWrap( true );
+			m_loaders.push_back( [found, this](){
+				const QString f = Sof2map_find( o );
+				found->setText( f.isEmpty() ? "<b>sof2map.exe not found</b> - choose it with Browse..." : "Uses: " + f );
+			} );
+			g->addWidget( found, 2, 0, 1, 3 );
+			check( g, 3, 0, "-rename  (misc_model _bsp shaders)", o.ravenRename, "BSP stage: misc_model surfaces get their shader's _bsp version, as in Raven's maps (the models then light like the world). Keep it on." );
+			check( g, 3, 1, "-extra  (light, 2x2 samples)", o.ravenExtra, "LIGHT stage: four samples per lightmap pixel - what Raven's original maps were lit with (measured: mp_col2 matches to 0.3%). Off is faster and rougher." );
+			check( g, 3, 2, "-vis -fast  (rough vis)", o.visFast, "VIS stage: rough visibility in a fraction of the time, for testing (the same setting as the VIS tab's -fast)." );
+			auto *note = new QLabel( "The map has to be inside a folder called <i>base</i> (e.g. ...\\base\\maps\\), "
+			                         "sof2map finds the game files from there (and reads the .pk3 files in it). Terrain index maps must be .tga "
+			                         "(KenRadiant's decompiler and Terrain Paint write .tga)." );
+			note->setWordWrap( true );
+			g->addWidget( note, 4, 0, 1, 3 );
+			g->setRowStretch( 5, 1 );
 		}
 		{
 			QGridLayout* g = page( "Decompile" );
@@ -982,6 +1062,21 @@ public:
 			QMessageBox::information( this, "Compile", "Save the map first (File > Save As): q3map2 compiles the .map file." );
 			return;
 		}
+		if( o.compiler == 1 ){
+			if( Sof2map_find( o ).isEmpty() ){
+				QMessageBox::information( this, "Compile", "Raven's sof2map.exe was not found - choose it in the sof2map tab, or switch the compiler to q3map2." );
+				for( int i = 0; i < m_tabs->count(); ++i )
+					if( m_tabs->tabText( i ) == "sof2map" )
+						m_tabs->setCurrentIndex( i );
+				return;
+			}
+			const QString path = QFileInfo( Map_Name( g_map ) ).absoluteFilePath().replace( '\\', '/' );
+			if( !path.contains( "/base/", Qt::CaseInsensitive ) ){
+				QMessageBox::information( this, "Compile", "sof2map needs the map inside a folder called 'base' (it finds the game files from there):\n" + path
+				                          + "\n\nSave the map under your SOF2 base\\maps folder, or switch the compiler to q3map2." );
+				return;
+			}
+		}
 		Build_setPreset( c_presetName, commands );
 		g_gamePending = o.runGame;
 		if( !Build_runPreset( c_presetName ) ){
@@ -1098,6 +1193,8 @@ void KrCompile_registerCommands(){
 	prefS( "KrCompileExtraBsp", o.extraBsp ); prefS( "KrCompileExtraVis", o.extraVis ); prefS( "KrCompileExtraLight", o.extraLight );
 	prefS( "KrDecompileBsp", o.decompBsp ); prefI( "KrDecompileFormat", o.decompFormat ); prefB( "KrDecompileFast", o.decompFast );
 	prefB( "KrDecompileModelclip", o.decompModelclip ); prefB( "KrDecompileWtf", o.decompWtf ); prefB( "KrDecompileLegacy", o.decompLegacy );
+	prefI( "KrCompileCompiler", o.compiler ); prefS( "KrSof2mapPath", o.sof2map );
+	prefB( "KrRavenRename", o.ravenRename ); prefB( "KrRavenExtra", o.ravenExtra );
 	prefB( "KrCompileRunGame", o.runGame ); prefS( "KrCompileGameExe", o.gameExe ); prefS( "KrCompileGameArgs", o.gameArgs );
 }
 

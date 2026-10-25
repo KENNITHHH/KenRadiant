@@ -592,7 +592,7 @@ void setup( const char *bspName ){
 		}
 		if ( !f.bounds.valid() )
 			continue;
-		struct V { float x, y; int layer; };
+		struct V { float x, y; int layer; bool sure; };
 		std::vector<V> verts;
 		for ( int si = 0; si < world.numBSPSurfaces; ++si ) {
 			const bspDrawSurface_t& ds = bspDrawSurfaces[ world.firstBSPSurface + si ];
@@ -604,7 +604,9 @@ void setup( const char *bspName ){
 			const auto [a, b] = it->second.second;
 			for ( int v = ds.firstVert; v < ds.firstVert + ds.numVerts && v < int( bspDrawVerts.size() ); ++v ) {
 				const bspDrawVert_t& dv = bspDrawVerts[ v ];
-				verts.push_back( { dv.xyz[0], dv.xyz[1], b < 0 ? a : ( dv.color[0].alpha() >= 128 ? b : a ) } );
+				// a blend vertex with low alpha only says "below b" (q3map's terrain sets alpha 0 for any index under the max)
+				const bool high = b >= 0 && dv.color[0].alpha() >= 128;
+				verts.push_back( { dv.xyz[0], dv.xyz[1], b < 0 ? a : ( high ? b : a ), b < 0 || high } );
 			}
 		}
 		if ( verts.empty() )
@@ -612,25 +614,51 @@ void setup( const char *bspName ){
 		const Vector3 size = f.bounds.maxs - f.bounds.mins;
 		if ( size[0] <= 0 || size[1] <= 0 )
 			continue;
-		// the smallest index map where no two vertices with different layers share a pixel
-		// (and fine enough to paint on: a pixel no bigger than 32 units)
-		int res = 64;
-		while ( res < 1024 && std::max( size[0], size[1] ) / res > 32 )
-			res *= 2;
+		// index map size: Raven's sof2map only reads 32 bit .tga index maps with power of two sizes (the layer in the
+		// alpha channel), so prefer that: the finest power of two size per axis (up to 1024) that keeps every vertex
+		// layer apart; bigger maps fall back to the finest clash-free size up to 4096 pixels (KenRadiant's q3map2 only)
+		int resX = 0, resY = 0;
 		std::vector<int> px;
-		for ( ; ; res *= 2 ) {
-			px.assign( std::size_t( res ) * res, -1 );
-			bool clash = false;
-			for ( const V& v : verts ) {
-				const int x = std::clamp( int( ( v.x - f.bounds.mins[0] ) / size[0] * res ), 0, res - 1 );
-				const int y = std::clamp( int( ( f.bounds.maxs[1] - v.y ) / size[1] * res ), 0, res - 1 );
-				int& p = px[ std::size_t( y ) * res + x ];
-				if ( p >= 0 && p != v.layer ) clash = true;
-				p = v.layer;
-			}
-			if ( !clash || res >= 1024 )
-				break;
+		const auto tryRes = [&]( int rx, int ry ){
+			px.assign( std::size_t( rx ) * ry, -1 );
+			std::vector<char> sure( px.size(), 0 );
+			bool ok = true;
+			for ( int pass = 1; pass >= 0; --pass ) // sure layers first, then the "below b" ones fill the gaps
+				for ( const V& v : verts ) {
+					if ( v.sure != bool( pass ) )
+						continue;
+					const int x = std::clamp( int( ( v.x - f.bounds.mins[0] ) / size[0] * rx ), 0, rx - 1 );
+					const int y = std::clamp( int( ( f.bounds.maxs[1] - v.y ) / size[1] * ry ), 0, ry - 1 );
+					const std::size_t i = std::size_t( y ) * rx + x;
+					if ( pass ) {
+						if ( px[i] >= 0 && px[i] != v.layer ) ok = false;
+						px[i] = v.layer; sure[i] = 1;
+					}
+					else if ( !sure[i] && ( px[i] < 0 || v.layer < px[i] ) )
+						px[i] = v.layer;
+				}
+			return ok;
+		};
+		const auto pow2 = []( double n ){ int p = 2; while ( p < n - 0.001 ) p *= 2; return p; };
+		bool ravenOk = false;
+		for ( double unit = 32; unit <= 1024 && !resX; unit *= 2 ) { // a pixel no bigger than 32 units is enough to paint on
+			const int rx = pow2( size[0] / unit ), ry = pow2( size[1] / unit );
+			if ( rx <= 1024 && ry <= 1024 && tryRes( rx, ry ) ) { resX = rx; resY = ry; ravenOk = true; }
 		}
+		for ( double unit = 16; unit >= 1 && !resX; unit /= 2 ) { // finer than 32 units: still power of two while it fits
+			const int rx = pow2( size[0] / unit ), ry = pow2( size[1] / unit );
+			if ( rx > 4096 || ry > 4096 )
+				break;
+			if ( tryRes( rx, ry ) ) { resX = rx; resY = ry; ravenOk = rx <= 1024 && ry <= 1024; }
+		}
+		if ( !resX ) { // nothing clash free: the finest allowed, the layer of the last vertex wins
+			resX = std::min( 4096, pow2( size[0] / 8 ) ); resY = std::min( 4096, pow2( size[1] / 8 ) );
+			tryRes( resX, resY );
+			Sys_Warning( "terrain %s: vertices too close for one index map pixel each, some blends may differ\n", f.base.c_str() );
+		}
+		if ( !ravenOk )
+			Sys_Warning( "terrain %s: index map %d x %d is too big for Raven's sof2map (KenRadiant's q3map2 is fine)\n", f.base.c_str(), resX, resY );
+		const int res = resX;
 		// the rest of the map: the nearest painted pixel (nice to paint on later)
 		std::vector<int> queue;
 		for ( std::size_t i = 0; i < px.size(); ++i )
@@ -639,27 +667,30 @@ void setup( const char *bspName ){
 			const int i = queue[q], x = i % res, y = i / res;
 			const int nb[4][2] = { { x - 1, y }, { x + 1, y }, { x, y - 1 }, { x, y + 1 } };
 			for ( const auto& n : nb )
-				if ( n[0] >= 0 && n[0] < res && n[1] >= 0 && n[1] < res && px[ std::size_t( n[1] ) * res + n[0] ] < 0 ) {
+				if ( n[0] >= 0 && n[0] < resX && n[1] >= 0 && n[1] < resY && px[ std::size_t( n[1] ) * res + n[0] ] < 0 ) {
 					px[ std::size_t( n[1] ) * res + n[0] ] = px[i];
 					queue.push_back( n[1] * res + n[0] );
 				}
 		}
-		std::vector<byte> pixels( px.size() );
-		for ( std::size_t i = 0; i < px.size(); ++i )
-			pixels[i] = byte( std::max( px[i], 0 ) );
-		byte palette[768];
-		for ( int i = 0; i < 256; ++i )
-			palette[ i * 3 ] = palette[ i * 3 + 1 ] = palette[ i * 3 + 2 ] = byte( std::min( 255, i * 64 ) );
+		// 32 bit .tga: the layer (as layer / layers of 256, the middle of its range) in all four channels, stored from
+		// the high y side down with the bottom-left origin flag - how Raven's sof2map and SOF2's q3map2 both read it
+		std::vector<byte> tga( 18, 0 );
+		tga[2] = 2; tga[12] = resX & 255; tga[13] = resX >> 8; tga[14] = resY & 255; tga[15] = resY >> 8; tga[16] = 32; tga[17] = 8;
+		tga.reserve( 18 + px.size() * 4 );
+		for ( const int l : px ) {
+			const byte v = byte( std::min( 255, ( std::max( l, 0 ) * 256 + 128 ) / f.layers ) );
+			tga.insert( tga.end(), { v, v, v, v } );
+		}
 		++terrainNum;
-		const auto file = StringStream( PathExtensionless( bspName ), "_terrain", terrainNum, ".pcx" );
-		WritePCXfile( file, pixels.data(), res, res, palette );
+		const auto file = StringStream( PathExtensionless( bspName ), "_terrain", terrainNum, ".tga" );
+		SaveFile( file, tga.data(), tga.size() );
 		{
 			const std::string path( file.c_str() );
 			const std::size_t slash = path.find_last_of( "/\\" );
 			f.alphamap = "maps/" + ( slash == std::string::npos ? path : path.substr( slash + 1 ) );
 		}
 		Sys_Printf( "terrain: %s (%d layers, %zu brushes) -> func_group with index map %s (%d x %d)\n",
-		            f.base.c_str(), f.layers, f.brushes.size(), f.alphamap.c_str(), res, res );
+		            f.base.c_str(), f.layers, f.brushes.size(), f.alphamap.c_str(), resX, resY );
 	}
 	for ( std::size_t i = 0; i < g_brushFamily.size(); ++i )
 		if ( g_brushFamily[i] >= 0 && g_families[ g_brushFamily[i] ].alphamap.empty() )
@@ -1444,7 +1475,8 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 				if ( fam.alphamap.empty() )
 					continue;
 				fprintf( f, "// terrain %s\n{\n\t\"classname\" \"func_group\"\n", fam.base.c_str() );
-				fprintf( f, "\t\"alphamap\" \"%s\"\n\t\"layers\" \"%d\"\n\t\"shader\" \"%s\"\n", fam.alphamap.c_str(), fam.layers, fam.base.c_str() );
+				// "terrain" "1" is what Raven's sof2map (q3map 1.x Team Arena terrain) looks for; q3map2 ignores it
+				fprintf( f, "\t\"terrain\" \"1\"\n\t\"alphamap\" \"%s\"\n\t\"layers\" \"%d\"\n\t\"shader\" \"%s\"\n", fam.alphamap.c_str(), fam.layers, fam.base.c_str() );
 				fprintf( f, "\t\"min\" \"%g %g %g\"\n\t\"max\" \"%g %g %g\"\n\n", fam.bounds.mins[0], fam.bounds.mins[1], fam.bounds.mins[2],
 				         fam.bounds.maxs[0], fam.bounds.maxs[1], fam.bounds.maxs[2] );
 				for ( int bn : fam.brushes )

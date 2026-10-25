@@ -1371,9 +1371,20 @@ static void LoadEntityIndexMap( entity_t& e ){
 		/* convert to bytes */
 		const int size = w * h;
 		pixels = safe_malloc( size );
+		/* KenRadiant: SOF2 reads it like Raven's sof2map, so a map compiles the same with both:
+		   the layer is in the alpha channel and the rows run the other way round (row 0 = the low y side) */
+		const bool raven = strEqual( g_game->arg, "sof2" );
+		bool alpha = raven;
+		if ( raven && std::all_of( pixels32, pixels32 + size, []( unsigned int p ){ return ( p >> 24 ) == 0xFF; } ) ) {
+			alpha = false;
+			Sys_Warning( "Index map \"%s\" has no alpha channel: using its red channel (Raven's sof2map reads the layers from the alpha "
+			             "channel and would use the last layer everywhere)\n", indexMapFilename );
+		}
 		for ( int i = 0; i < size; ++i )
 		{
-			pixels[ i ] = ( ( pixels32[ i ] & 0xFF ) * numLayers ) / 256;
+			const int src = raven ? ( ( h - 1 - i / w ) * w + i % w ) : i;
+			const unsigned int value = alpha ? ( pixels32[ src ] >> 24 ) & 0xFF : pixels32[ src ] & 0xFF;
+			pixels[ i ] = ( value * numLayers ) / 256;
 			if ( pixels[ i ] >= numLayers ) {
 				pixels[ i ] = numLayers - 1;
 			}

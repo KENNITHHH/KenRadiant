@@ -581,6 +581,13 @@ static shaderInfo_t& GetIndexedShader( const shaderInfo_t& parent, const indexMa
 	if ( parent.nonplanar ) {
 		si.nonplanar = true;
 	}
+	/* KenRadiant: keep terrain cells whole like Raven's sof2map (no clipping, no t-junction splits) */
+	if ( parent.noClip ) {
+		si.noClip = true;
+	}
+	if ( parent.notjunc ) {
+		si.notjunc = true;
+	}
 	if ( si.shadeAngleDegrees == 0 ) {
 		si.shadeAngleDegrees = parent.shadeAngleDegrees;
 	}
@@ -1395,14 +1402,16 @@ void ClipSidesIntoTree( entity_t& e, const tree_t& tree ){
 			side.visibleHull.clear();
 			ClipSideIntoTree_r( side.winding, side, tree.headnode );
 
-			/* anything left? */
-			if ( side.visibleHull.empty() ) {
-				continue;
-			}
-
 			/* shader? */
 			const shaderInfo_t *si = side.shaderInfo;
 			if ( si == nullptr ) {
+				continue;
+			}
+
+			/* anything left? */
+			/* KenRadiant: terrain (indexed + noclip) sides are kept even when hidden, like Raven's sof2map
+			   which writes every terrain cell triangle */
+			if ( side.visibleHull.empty() && !( si->indexed && si->noClip && b.im != nullptr ) ) {
 				continue;
 			}
 

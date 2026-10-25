@@ -44,7 +44,7 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 | **Lighting Probe** | Build → Lighting Probe: measures the lighting as numbers. Record reads, at a grid of points in the 3D view, the compiled .bsp's texture colour and stored light (lightmap / vertex colour bytes), what the editor shows and what the live preview would store; Compare matches a game screenshot taken with the copied `setviewpos` line and reports the game's own formula per kind of surface next to the editor's. Writes `<map>_lightprobe.txt` / `_compare.txt`. |
 | **Play mode** | Play button: the map as in game (Game View, game shaders, skybox, compiled or live light) with its target_speaker sounds (looping, timed, global; engine attenuation and left/right) and worldspawn music. |
 | **Performance** | Build → Performance: what the game draws from the camera, read from the compiled .bsp the way the engine decides it (vis cluster → PVS → leafs in view): triangles, surfaces (draw calls), shader passes, colour-coded against rough SOF2 budgets, live as you fly, plus the heaviest shaders in view. *Find worst spots* ranks every vis cluster with Go buttons; suggestions with fix buttons (make small structural brushes detail - undoable, run VIS, lightmap count, heavy multi-stage shaders, share of baked models). |
-| **Terrain** | q3map2 index-map terrain (alphamap .pcx) shows its layers blended in the 3D view; **Terrain Paint** paints layers into the .pcx (saved with the map), and makes new terrains from selected brushes with your own layer textures (writes the layer shaders and the .pcx; add / remove / reorder layers later). |
+| **Terrain** | q3map2 / Raven index-map terrain (alphamap .tga or .pcx) shows its layers blended in the 3D view; **Terrain Paint** paints layers into the index map (saved with the map), and makes new terrains from selected brushes with your own layer textures (writes the layer shaders and a .tga that both q3map2 and Raven's sof2map read; add / remove / reorder layers later). |
 | **Brush Shapes** | Box, cone, cylinder, curved / linear / spiral stairs, sphere with sliders that update the shape live (like Unreal's geometry brushes). |
 | **Check for Problems** | Misc menu / Ctrl+Alt+P: broken targets, missing models / textures, bad brushes ... click to select, double-click to fly there. |
 | **Measure tool** | Ruler button: click two points in the 3D view to see the distance (Shift snaps to the grid). |
@@ -73,7 +73,8 @@ Made by **KENNITHH**. See [CHANGELOG.md](CHANGELOG.md) for what changed in each 
 
 ### Bundled q3map2 (SOF2 edition)
 Details in [README_SOF2.md](README_SOF2.md). Highlights:
-- **Decompile** (`-convert -format map`) with exact texture alignment recovery — Raven's kam6: 99.4 % of visible faces identical to the original .map.
+- **Decompile** (`-convert -format map`) with exact texture alignment recovery — Raven's kam6: 99.4 % of visible faces identical to the original .map. Terrain comes back as terrain (index map + layers).
+- **Compile with Raven's own sof2map.exe** (Compile window → compiler *sof2map*): the way the original maps were built (`-bsp -rename`, `-vis`, `-light -extra`). A decompiled mp_col2 compiled this way has the original's lighting (lightmaps 0.3 % off, vertex light 1.000x). Bring your own sof2map.exe from the SOF2 SDK.
 - **Lightmap packing per shader** so maps stay under SOF2's `MAX_SHADERS` (mp_strike: 1938 → 409 shader/lightmap pairs).
 - **Automatic surface merge** after `-light`: far fewer draw surfaces per frame (mp_strike busy view: ~27k → ~10k surfaces, 67 fps → 140+ fps).
 - SOF2 defaults that match Raven's compiler (misc_models kept, `_bsp` model shaders), crash fixes for CoD4-converted `.lwo` models.

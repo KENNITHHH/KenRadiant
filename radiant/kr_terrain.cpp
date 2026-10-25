@@ -1,12 +1,12 @@
 /*
    KenRadiant: q3map2 index-map terrain in the editor.
 
-   A func_group (or any brush entity) with "alphamap" / "_indexmap" (a 256 colour .pcx), "layers" / "_layers" and
+   A func_group (or any brush entity) with "alphamap" / "_indexmap" (a 256 colour .pcx, or a 32 bit .tga like Raven's sof2map reads), "layers" / "_layers" and
    "shader" / "_shader" is terrain for q3map2: every vertex of its q3map_terrain faces (textures/tools/_terrain) gets the
    layer the index map has at that point, and the face uses textures/<shader>_<n> or _<a>to<b> with vertex alpha.
 
    Here the 3D view draws those faces with the layer textures blended from the index map, and the Terrain Paint tool
-   paints layers into the index map (undo-able, saved as .pcx when the map is saved).
+   paints layers into the index map (undo-able, saved when the map is saved).
 
    This file is part of KenRadiant (GPL, see LICENSE).
  */
@@ -157,6 +157,79 @@ void Palette_default( unsigned char palette[768] ){
 			palette[i * 3 + c] = i < 8 ? colours[i][c] : 0;
 }
 
+/* ---------------- .tga (Raven's sof2map index maps) ----------------
+   Raven's sof2map reads 32 bit .tga index maps: the layer is in the alpha channel (layer = alpha * layers / 256) and,
+   once loaded the normal way (origin flag honoured), row 0 is the low y side. KenRadiant's q3map2 reads them the same
+   way for SOF2; without an alpha channel it takes red. Here the pixels are kept like the .pcx ones: row 0 = high y. */
+
+bool Tga_read( const unsigned char* data, std::size_t size, int layers, int& w, int& h, std::vector<unsigned char>& pixels ){
+	if( size < 18 || layers < 1 )
+		return false;
+	const int idLength = data[0], cmapType = data[1], type = data[2];
+	const int cmapLength = data[5] | ( data[6] << 8 ), cmapBits = data[7];
+	w = data[12] | ( data[13] << 8 );
+	h = data[14] | ( data[15] << 8 );
+	const int bpp = data[16], desc = data[17];
+	if( w < 1 || h < 1 || w > 8192 || h > 8192 || ( type != 2 && type != 3 && type != 10 && type != 11 ) || ( bpp != 8 && bpp != 24 && bpp != 32 ) )
+		return false;
+	std::size_t at = 18 + idLength + ( cmapType ? std::size_t( cmapLength ) * ( ( cmapBits + 7 ) / 8 ) : 0 );
+	const int bytes = bpp / 8;
+	std::vector<unsigned char> raw( std::size_t( w ) * h * bytes );
+	if( type == 10 || type == 11 ){
+		std::size_t o = 0;
+		while( o < raw.size() && at < size ){
+			const unsigned char c = data[at++];
+			const int count = ( c & 0x7F ) + 1;
+			if( c & 0x80 ){
+				if( at + bytes > size ) return false;
+				for( int k = 0; k < count && o < raw.size(); ++k, o += bytes )
+					std::memcpy( &raw[o], data + at, bytes );
+				at += bytes;
+			}
+			else{
+				const std::size_t n = std::min( std::size_t( count ) * bytes, raw.size() - o );
+				if( at + n > size ) return false;
+				std::memcpy( &raw[o], data + at, n );
+				at += n; o += n;
+			}
+		}
+	}
+	else{
+		if( at + raw.size() > size ) return false;
+		std::memcpy( raw.data(), data + at, raw.size() );
+	}
+	bool hasAlpha = false;
+	if( bytes == 4 )
+		for( std::size_t i = 3; i < raw.size(); i += 4 )
+			if( raw[i] != 255 ) { hasAlpha = true; break; }
+	const bool topOrigin = ( desc & 0x20 ) != 0;
+	pixels.assign( std::size_t( w ) * h, 0 );
+	for( int y = 0; y < h; ++y ){
+		const int stored = topOrigin ? h - 1 - y : y; // our row y (high y first) = the stored row
+		for( int x = 0; x < w; ++x ){
+			const unsigned char* p = &raw[( std::size_t( stored ) * w + x ) * bytes];
+			const int value = bytes == 1 ? p[0] : hasAlpha ? p[3] : p[2]; // bgr(a): red is p[2]
+			pixels[std::size_t( y ) * w + x] = std::min( layers - 1, value * layers / 256 );
+		}
+	}
+	return true;
+}
+
+std::vector<unsigned char> Tga_write( int w, int h, const std::vector<unsigned char>& pixels, int layers ){
+	std::vector<unsigned char> out( 18, 0 );
+	out[2] = 2; out[12] = w & 255; out[13] = w >> 8; out[14] = h & 255; out[15] = h >> 8; out[16] = 32; out[17] = 8;
+	out.reserve( 18 + pixels.size() * 4 );
+	for( const unsigned char l : pixels ){
+		const unsigned char v = std::min( 255, ( int( l ) * 256 + 128 ) / std::max( layers, 1 ) );
+		out.insert( out.end(), { v, v, v, v } );
+	}
+	return out;
+}
+
+std::vector<unsigned char> IndexMap_write( const QString& name, int w, int h, const std::vector<unsigned char>& pixels, const unsigned char palette[768], int layers ){
+	return name.endsWith( ".tga", Qt::CaseInsensitive ) ? Tga_write( w, h, pixels, layers ) : Pcx_write( w, h, pixels, palette );
+}
+
 /* ---------------- terrain records ---------------- */
 
 int s_sceneGeneration = 0;
@@ -221,12 +294,15 @@ struct TerrainRecord : public Undoable
 		const std::size_t size = GlobalFileSystem().loadFile( indexMap.c_str(), &buffer );
 		bool ok = false;
 		if( size != 0 && buffer != nullptr ){
-			ok = Pcx_read( static_cast<const unsigned char*>( buffer ), size, w, h, pixels, palette );
+			const auto* d = static_cast<const unsigned char*>( buffer );
+			ok = QString( indexMap.c_str() ).endsWith( ".tga", Qt::CaseInsensitive )
+			     ? Tga_read( d, size, layers, w, h, pixels )
+			     : Pcx_read( d, size, w, h, pixels, palette );
 			GlobalFileSystem().freeFile( buffer );
 		}
 		if( !ok ){
 			if( size != 0 )
-				globalWarningStream() << "terrain: " << indexMap.c_str() << " is not an 8 bit .pcx, a new one replaces it when you paint and save\n";
+				globalWarningStream() << "terrain: " << indexMap.c_str() << " can't be read (8 bit .pcx or 8/24/32 bit .tga), a new one replaces it when you paint and save\n";
 			else
 				globalOutputStream() << "terrain: " << indexMap.c_str() << " not found, starting a new 256 x 256 index map (layer 0)\n";
 			w = h = 256;
@@ -361,7 +437,7 @@ struct TerrainRecord : public Undoable
 			globalErrorStream() << "terrain: can't write " << path.toLatin1().constData() << '\n';
 			return false;
 		}
-		const auto data = Pcx_write( w, h, pixels, palette );
+		const auto data = IndexMap_write( indexMap.c_str(), w, h, pixels, palette, layers );
 		file.write( reinterpret_cast<const char*>( data.data() ), qint64( data.size() ) );
 		unsaved = false;
 		globalOutputStream() << "terrain: saved " << path.toLatin1().constData() << '\n';
@@ -827,13 +903,13 @@ public:
 			m_size = new QComboBox;
 			m_size->addItems( { "64", "128", "256", "512" } );
 			m_size->setCurrentIndex( 2 );
-			m_size->setToolTip( "Pixels of the .pcx (new terrains). q3map2 reads it at the brush vertices, so small brushes give finer painting" );
+			m_size->setToolTip( "Pixels of the .tga index map (new terrains; powers of two, as Raven's sof2map needs). q3map2 reads it at the brush vertices, so small brushes give finer painting" );
 			scaleRow->addWidget( m_size );
 			scaleRow->addStretch( 1 );
 			grid->addLayout( scaleRow, 4, 0, 1, 2 );
 			auto *create = new QPushButton( "Create terrain from the selected brushes" );
 			create->setToolTip( "Groups the brushes in a func_group (if they are not), writes the layer shaders to shaders/<map>_terrain.shader, "
-			                    "makes the .pcx index map and gives the upward faces the q3map_terrain shader. Then paint." );
+			                    "makes the .tga index map and gives the upward faces the q3map_terrain shader. Then paint." );
 			grid->addWidget( create, 5, 0, 1, 2 );
 			m_apply = new QPushButton( "Apply these layers to the terrain" );
 			m_apply->setToolTip( "Rewrites its layer shaders; removed / moved layers are remapped in the index map (saved right away, not undoable)" );
@@ -885,7 +961,7 @@ public:
 			vbox->addWidget( group );
 		}
 		auto *help = new QLabel( "Left-drag on the terrain in the 3D view paints the layer. Ctrl+Z undoes a stroke. "
-		                         "The index maps are saved as .pcx when you save the map." );
+		                         "The index maps are saved (.tga, or .pcx for older ones) when you save the map." );
 		help->setWordWrap( true );
 		vbox->addWidget( help );
 	}
@@ -956,7 +1032,7 @@ public:
 		for( ; n < 100; ++n ){
 			GenTerrain existing;
 			t.key = QString( "%1/terrain%2" ).arg( mapName ).arg( n );
-			const QString index = QString( "maps/%1_terrain%2.pcx" ).arg( mapName ).arg( n );
+			const QString index = QString( "maps/%1_terrain%2.tga" ).arg( mapName ).arg( n );
 			if( !GenTerrain_read( t.key, existing ) && string_empty( GlobalFileSystem().findFile( index.toLatin1().constData() ) ) )
 				break;
 		}
@@ -966,9 +1042,10 @@ public:
 		if( !GenTerrain_write( t ) )
 			return;
 		RefreshShaders(); // load the new layer shaders before anything asks for them
-		const QString index = QString( "maps/%1_terrain%2.pcx" ).arg( mapName ).arg( n );
+		const QString index = QString( "maps/%1_terrain%2.tga" ).arg( mapName ).arg( n );
 		{
 			UndoableCommand undo( "makeTerrain" );
+			entity->setKeyValue( "terrain", "1" ); // Raven's sof2map (q3map 1.x terrain) looks for it, q3map2 doesn't mind
 			entity->setKeyValue( "alphamap", index.toLatin1().constData() );
 			entity->setKeyValue( "layers", QByteArray::number( int( t.images.size() ) ).constData() );
 			entity->setKeyValue( "shader", t.key.toLatin1().constData() );
@@ -983,7 +1060,7 @@ public:
 			const int size = m_size->currentText().toInt();
 			unsigned char palette[768];
 			Palette_default( palette );
-			const auto data = Pcx_write( size, size, std::vector<unsigned char>( std::size_t( size ) * size, 0 ), palette );
+			const auto data = IndexMap_write( index, size, size, std::vector<unsigned char>( std::size_t( size ) * size, 0 ), palette, int( t.images.size() ) );
 			const QString file = Terrain_baseDir() + index;
 			QDir().mkpath( QFileInfo( file ).path() );
 			QFile f( file );
@@ -1076,10 +1153,11 @@ public:
 		int n = 1;
 		QString index;
 		do{
-			index = QString( "maps/%1_terrain%2.pcx" ).arg( mapName ).arg( n++ );
+			index = QString( "maps/%1_terrain%2.tga" ).arg( mapName ).arg( n++ );
 		} while( !string_empty( GlobalFileSystem().findFile( index.toLatin1().constData() ) ) && n < 100 );
 		{
 			UndoableCommand undo( "makeTerrain" );
+			entity->setKeyValue( "terrain", "1" ); // Raven's sof2map (q3map 1.x terrain) looks for it, q3map2 doesn't mind
 			entity->setKeyValue( "alphamap", index.toLatin1().constData() );
 			entity->setKeyValue( "layers", data[1].toLatin1().constData() );
 			entity->setKeyValue( "shader", data[0].toLatin1().constData() );

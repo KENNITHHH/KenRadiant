@@ -32,6 +32,9 @@
 #include "q3map2.h"
 #include "autopk3.h"
 #include "timer.h"
+#ifndef WIN32
+#include <sys/wait.h>
+#endif
 
 
 
@@ -56,6 +59,86 @@ static void ExitQ3Map(){
    main()
    q3map mojo...
  */
+
+/*
+   RunTool() - KenRadiant
+   -runtool <program> [arguments]: runs another compiler (Raven's sof2map.exe, the tool the original SOF2 maps were
+   built with) and passes its output on (to the editor's build monitor when -connect is used)
+ */
+static int RunTool( Args& args ){
+	if ( args.empty() ) {
+		Error( "-runtool: no program given" );
+	}
+	std::string cmd;
+	const auto quoted = []( const char *a ){
+		std::string s( a );
+#ifdef WIN32
+		return ( s.find_first_of( " \t" ) != std::string::npos || s.empty() ) ? '"' + s + '"' : s;
+#else // the shell: single quotes keep backslashes
+		std::string q = "'";
+		for ( const char c : s )
+			q += ( c == '\'' ) ? std::string( "'\\''" ) : std::string( 1, c );
+		return q + "'";
+#endif
+	};
+	const char *program = args.takeFront();
+#ifndef WIN32
+	if ( path_extension_is( program, "exe" ) ) {
+		cmd = "wine "; // the Windows tool on Linux / macOS
+	}
+#endif
+	cmd += quoted( program );
+	while ( !args.empty() ) {
+		std::string a( args.takeFront() );
+#ifndef WIN32
+		if ( !cmd.empty() && a[0] == '/' ) { // wine: unix paths as Z:\...
+			std::replace( a.begin(), a.end(), '/', '\\' );
+			a = "Z:" + a;
+		}
+#endif
+		cmd += ' ' + quoted( a.c_str() );
+	}
+	cmd += " 2>&1";
+	Sys_Printf( "--- RunTool ---\n%s\n", cmd.c_str() );
+#ifdef WIN32
+	FILE *pipe = _popen( ( '"' + cmd + '"' ).c_str(), "r" ); // cmd /c drops the outer quotes
+#else
+	FILE *pipe = popen( cmd.c_str(), "r" );
+#endif
+	if ( pipe == nullptr ) {
+		Error( "-runtool: can't run %s", program );
+	}
+	char line[4096];
+	while ( fgets( line, sizeof( line ), pipe ) != nullptr ) {
+		for ( char *c = line; *c; ++c )
+			if ( *c == '\r' )
+				*c = ' ';
+		if ( strncmp( line, "entering ", 9 ) == 0 ) { // sof2map lists every shader file it reads
+			Sys_FPrintf( SYS_VRB, "%s", line );
+			continue;
+		}
+		Sys_Printf( "%s", line );
+	}
+#ifdef WIN32
+	const int status = _pclose( pipe );
+#else
+	const int status = pclose( pipe );
+	const int code = WIFEXITED( status ) ? WEXITSTATUS( status ) : 1;
+#endif
+#ifdef WIN32
+	const int code = status;
+#endif
+	if ( code != 0 ) { // stop the build here, like a q3map2 error does
+		Error( "%s failed (exit code %d)%s", program, code,
+#ifdef WIN32
+		       ""
+#else
+		       code == 53 || code == 127 ? " - is wine installed and set up for 32 bit programs?" : ""
+#endif
+		     );
+	}
+	return code;
+}
 
 int main( int argc, char **argv ){
 	int r;
@@ -162,8 +245,13 @@ int main( int argc, char **argv ){
 		return 0;
 	}
 
+	/* KenRadiant: run Raven's sof2map (or another tool) */
+	if ( args.takeFront( "-runtool" ) ) {
+		r = RunTool( args );
+	}
+
 	/* fixaas */
-	if ( args.takeFront( "-fixaas" ) ) {
+	else if ( args.takeFront( "-fixaas" ) ) {
 		r = FixAAS( args );
 	}
 

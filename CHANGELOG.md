@@ -3,6 +3,36 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (31)
+### How Raven built the original maps - and doing the same
+- **Found with Raven's own sof2map.exe** (SOF2 SDK bin folder, v1.0c): the original mp_col2 was compiled with
+  `sof2map -bsp -rename`, `sof2map -vis`, `sof2map -light -extra`. Decompiled with KenRadiant and compiled that way,
+  mp_col2 comes back with **the original's lighting: lightmaps 0.3% off on average, every vertex light (terrain,
+  models) 1.000x**. With q3map2 the same map is 12% off and its shadows are darker (Raven's light fills shadows
+  differently from q3map2).
+- **Compile window: compiler "sof2map (Raven, original)"** next to the stage boxes, settings in the new **sof2map** tab
+  (path to sof2map.exe - found by itself next to KenRadiant, in `<game>\bin` or the game folder; `-rename`, `-extra`,
+  `-vis -fast`). It runs through `q3map2 -runtool`, so its output still goes to the console and the Problems tab, the
+  build stops when it fails and the BSP preview reloads. The map has to be in a folder called `base`.
+- **q3map2 -runtool <program> [args]**: runs another compiler and passes its output on (on Linux `.exe` runs in wine).
+
+### q3map2
+- **Terrain comes out like Raven's: every cell whole.** Terrain triangles are no longer cut where other brushes
+  touch them or split at T-junctions (the layer shaders now keep `q3map_terrain`'s noclip / notjunc): mp_col2's
+  terrain has the original's triangles (1458 of 1483 the same, before 1417 of 1536 plus 117 small pieces), so the
+  blends and vertex light sit where they did.
+- **Decompile writes terrain for both compilers**: `"terrain" "1"` (what Raven's sof2map looks for) and a 32 bit
+  `.tga` index map (power of two size, layer in the alpha channel) - sof2map only reads that; the .pcx it can't.
+  The layer at each vertex is worked out better too (a blend vertex with low alpha only says "below the top layer"):
+  **mp_col2: every terrain vertex gets the original's layer** (0.0 alpha difference, before 0.76).
+- SOF2: `.tga` index maps are read the way Raven's sof2map reads them (alpha channel, row order), so one file gives
+  the same terrain with both compilers.
+### Editor
+- **Terrain Paint reads and writes `.tga` index maps** (8 / 24 / 32 bit, RLE too); new terrains get a `.tga` and
+  `"terrain" "1"`, so they compile with Raven's sof2map as well. `.pcx` terrains keep working.
+- **Fixed: black patches on the terrain while flying around** (live light, no .bsp loaded): point-light shadows are
+  looked up off the face, and tiny far-away pixels no longer turn black.
+
 ## Build 2026-10-25 (30)
 ### Editor
 - **Fixed: "assertion failure: path contains invalid separator '\\'"** (plugins/vfspk3/vfs.cpp:332) with shaders that write their image paths the Windows way (`map textures\logo\logo.jpg`). The game accepts those; the editor now does too instead of stopping.
