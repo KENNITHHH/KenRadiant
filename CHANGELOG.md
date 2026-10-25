@@ -3,6 +3,10 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (30)
+### Editor
+- **Fixed: "assertion failure: path contains invalid separator '\\'"** (plugins/vfspk3/vfs.cpp:332) with shaders that write their image paths the Windows way (`map textures\logo\logo.jpg`). The game accepts those; the editor now does too instead of stopping.
+
 ## Build 2026-10-25 (29)
 ### Editor
 - **Compile window > Problems: Copy / Copy all** (buttons, right-click menu, Ctrl+C; Shift / Ctrl + click selects several lines).

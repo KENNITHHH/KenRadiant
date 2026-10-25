@@ -329,7 +329,9 @@ int GetFileCount( const char *filename, int flag ){
 }
 
 ArchiveFile* OpenFile( const char* filename ){
-	ASSERT_MESSAGE( strchr( filename, '\\' ) == 0, "path contains invalid separator '\\': " << Quoted( filename ) );
+	// KenRadiant: shaders written with Windows paths (map textures\logo\logo.jpg) load like in game instead of asserting
+	const auto cleaned = StringStream( PathCleaned( filename ) );
+	filename = cleaned.c_str();
 	for ( archive_entry_t& arch : g_archives )
 	{
 		ArchiveFile* file = arch.archive->openFile( filename );
@@ -342,7 +344,9 @@ ArchiveFile* OpenFile( const char* filename ){
 }
 
 ArchiveTextFile* OpenTextFile( const char* filename ){
-	ASSERT_MESSAGE( strchr( filename, '\\' ) == 0, "path contains invalid separator '\\': " << Quoted( filename ) );
+	// KenRadiant: shaders written with Windows paths (map textures\logo\logo.jpg) load like in game instead of asserting
+	const auto cleaned = StringStream( PathCleaned( filename ) );
+	filename = cleaned.c_str();
 	for ( archive_entry_t& arch : g_archives )
 	{
 		ArchiveTextFile* file = arch.archive->openTextFile( filename );
