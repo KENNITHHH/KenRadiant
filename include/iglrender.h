@@ -98,6 +98,7 @@ public:
 	const struct KrShaderEffects* m_krFx = nullptr;
 	const struct KrStageGL* m_krStage = nullptr; // game look: this pass is one stage of the shader
 	bool m_krEmissive = false;
+	bool m_krSky = false;          // sky surface: not lit by the preview, drawn flat in the fog colour when fog is on
 	bool m_krOffsetFill = false;   // polygon offset fill (selection tint)
 	int m_krTerrain = -1;          // index-map terrain (KrTerrain_gl id)
 	bool m_krMatrix = false;       // (current state only) texture matrix of unit 0 is not identity

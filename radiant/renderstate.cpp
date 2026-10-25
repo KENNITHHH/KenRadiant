@@ -411,6 +411,7 @@ class GLSLSkyboxProgram : public GLProgram
 public:
 	GLuint m_program;
 	GLint u_view_origin;
+	GLint u_fog_on, u_fog_col; // KenRadiant: the game draws the sky as the flat fog colour
 
 	GLSLSkyboxProgram() : m_program( 0 ){
 	}
@@ -432,6 +433,8 @@ public:
 		gl().glUseProgram( m_program );
 
 		u_view_origin = gl().glGetUniformLocation( m_program, "u_view_origin" );
+		u_fog_on = gl().glGetUniformLocation( m_program, "u_fog_on" );
+		u_fog_col = gl().glGetUniformLocation( m_program, "u_fog_col" );
 
 		gl().glUseProgram( 0 );
 
@@ -445,6 +448,13 @@ public:
 
 	void enable() override {
 		gl().glUseProgram( m_program );
+		// KenRadiant: with the map's fog on, the game shows the sky as the flat fog colour
+		extern bool g_krFogDrawing, g_krFogOn, g_krFogSky;
+		extern Vector3 g_krFogColour;
+		const bool fog = g_krFogDrawing && g_krFogOn && g_krFogSky;
+		gl().glUniform1i( u_fog_on, fog ? 1 : 0 );
+		if( fog )
+			gl().glUniform3f( u_fog_col, g_krFogColour.x(), g_krFogColour.y(), g_krFogColour.z() );
 
 		GlobalOpenGL_debugAssertNoErrors();
 
@@ -474,6 +484,12 @@ GLSLSkyboxProgram g_skyboxGLSL;
 bool g_krLightPreview = false;
 bool g_krLightPreviewDrawing = false;
 bool g_krProbeDebug = false; // Lighting Probe frame: the light preview writes stored light values
+/* KenRadiant fog (kr_fog.cpp): set for the 3D view's scene pass, like the game draws it */
+bool g_krFogDrawing = false;
+bool g_krFogOn = false;
+bool g_krFogSky = true;
+Vector3 g_krFogColour( 0, 0, 0 );
+float g_krFogDepth = 4000;
 Matrix4 g_krLightPreviewView = g_matrix4_identity;
 std::vector<KrPreviewLight> g_krLightPreviewLights;
 Vector3 g_krSunDirection( 0, 0, 1 );
@@ -555,7 +571,9 @@ public:
 	GLint u_overbright, u_rgamma, u_stage, u_env, u_cam_vs, u_lmscale, u_brightness, u_vscale, u_vertexlit, u_debug, u_dbgcut;
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
+	GLint u_fog_on, u_fog_col, u_fog_depth;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
+	bool m_fog = false;     // the map's fog, drawn like the game (kr_fog.cpp)
 	bool m_bound = false;
 
 	void create(){
@@ -585,6 +603,7 @@ public:
 		u_lmscale = u( "u_lmscale" ); u_brightness = u( "u_brightness" ); u_vscale = u( "u_vscale" ); u_vertexlit = u( "u_vertexlit" ); u_debug = u( "u_debug" ); u_dbgcut = u( "u_dbgcut" ); u_stage = u( "u_stage" ); u_env = u( "u_env" ); u_cam_vs = u( "u_cam_vs" ); u_overbright = u( "u_overbright" ); u_rgamma = u( "u_rgamma" ); u_gamma = u( "u_gamma" ); u_compensate = u( "u_compensate" ); u_saturation = u( "u_saturation" ); u_bounce = u( "u_bounce" );
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
+		u_fog_on = u( "u_fog_on" ); u_fog_col = u( "u_fog_col" ); u_fog_depth = u( "u_fog_depth" );
 		gl().glUniform1i( u_tex, 0 );
 		gl().glUniform1i( u( "u_shadow" ), 7 );
 		gl().glUniform1i( u( "u_cube0" ), 8 );
@@ -623,9 +642,17 @@ public:
 	void enable() override {
 		// the lit preview only in the 3D view; otherwise the program runs just for surfaces with vertex effects (applyState)
 		m_preview = g_krLightPreview && g_krLightPreviewDrawing && m_program != 0;
-		if( !m_preview )
+		m_fog = g_krFogDrawing && g_krFogOn && m_program != 0;
+		if( !m_preview && !m_fog )
 			return;
 		bind( true );
+		gl().glUniform1i( u_fog_on, m_fog ? 1 : 0 );
+		if( m_fog ){
+			gl().glUniform3f( u_fog_col, g_krFogColour.x(), g_krFogColour.y(), g_krFogColour.z() );
+			gl().glUniform1f( u_fog_depth, std::max( g_krFogDepth, 1.f ) );
+		}
+		if( !m_preview )
+			return;
 		const std::size_t count = g_krLightPreviewLights.size();
 		gl().glUniform1i( u_has_lights, count != 0 && g_krLightTex != 0 ? 1 : 0 );
 		gl().glUniform3f( u_grid_min, g_krGridMin.x(), g_krGridMin.y(), g_krGridMin.z() );
@@ -695,9 +722,12 @@ public:
 		const int deform = fx != nullptr && g_krDeformVertexes ? fx->deform : 0;
 		const KrTerrainGL* terrain = state.m_krTerrain >= 0 && ( globalstate & RENDER_TEXTURE ) ? KrTerrain_gl( state.m_krTerrain ) : nullptr;
 		const KrStageGL* stage = ( globalstate & RENDER_TEXTURE ) ? state.m_krStage : nullptr;
-		bind( m_preview || turb || deform != 0 || terrain != nullptr || stage != nullptr );
+		// KenRadiant: the sky takes no light - the program only runs on it to draw the game's flat fog colour
+		const bool fogSky = state.m_krSky && m_fog && g_krFogSky;
+		bind( fogSky || ( !state.m_krSky && ( m_preview || m_fog || turb || deform != 0 || terrain != nullptr || stage != nullptr ) ) );
 		if( !m_bound )
 			return;
+		gl().glUniform1i( u_fog_on, !m_fog ? 0 : fogSky ? 2 : 1 ); // 2 = flat fog colour (the sky)
 		gl().glUniform1i( u_terrain, terrain != nullptr ? terrain->layers : 0 );
 		if( terrain != nullptr ){
 			gl().glActiveTexture( GL_TEXTURE1 );
@@ -2416,10 +2446,13 @@ void OpenGLShader::construct( const char* name ){
 			// draw fullbright in the preview (they make light instead of receiving it)
 			const BlendFunc blend = m_shader->getBlendFunc();
 			const bool additive = ( m_shader->getFlags() & QER_TRANS ) && blend.m_dst == BLEND_ONE;
+			state.m_state |= RENDER_PROGRAM;
+			state.m_program = &g_krLightGLSL;
 			if( !( m_shader->getFlags() & QER_SKY ) ){
-				state.m_state |= RENDER_PROGRAM;
-				state.m_program = &g_krLightGLSL;
 				state.m_krEmissive = m_shader->isEmissive() || additive;
+			}
+			else{ // KenRadiant: the sky takes no light; the program only runs on it to draw the game's flat fog colour
+				state.m_krSky = true;
 			}
 			state.m_krFx = m_shader->getEffects();
 			if ( ( m_shader->getFlags() & QER_CULL ) != 0 ) {

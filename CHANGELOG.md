@@ -3,6 +3,21 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (35)
+### Fog in the 3D view, like the game draws it
+- **New: View > Light Preview > Fog...** shows the map's fog in the 3D view, exactly the way the engine does it:
+  the colour and the distance come from the worldspawn `fog` key's shader (`fogparms ( r g b ) <distance>`), a
+  surface fades into that colour on the engine's own curve (`alpha = sqrt( distance / depthForOpaque )`, idTech3's
+  `fogTable = pow( x, 0.5 )`), and the sky is drawn as the flat fog colour - which is what the game really shows
+  (checked against mp_col2 in game: the sky pixels are exactly `fogparms ( 0.58 0.74 0.64 )`).
+- Tweakable: untick "Use the map's fog shader" to set a colour and distance in the window, with
+  "Copy the map's values here" to start from the map's own fog. The sky-as-fog-colour part can be turned off on its
+  own. All of it is remembered between sessions.
+- Works on everything the 3D view draws in the textured modes: brushes, patches, models, terrain, the game look
+  (all shader stages), the light preview, and the compiled lighting from a `.bsp` (Game View). The camera
+  background turns the fog colour too, so the horizon looks like it does in game.
+- Nothing is written to the map: this only changes what the 3D view shows.
+
 ## Build 2026-10-25 (34)
 ### Terrain works with the stock SOF2 shaders
 - **`textures/tools/_terrain` is terrain by name now** (SOF2), in both q3map2 and the editor. Raven's own

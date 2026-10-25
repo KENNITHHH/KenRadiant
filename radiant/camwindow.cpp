@@ -3194,9 +3194,26 @@ void CamWnd::Cam_Draw(){
 	gl().glDepthMask( GL_TRUE );
 	gl().glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 
+	// KenRadiant: the map's fog, like the game draws it (kr_fog.cpp) - off in the wireframe modes
+	{
+		extern bool g_krFogDrawing, g_krFogOn, g_krFogSky;
+		extern Vector3 g_krFogColour;
+		extern float g_krFogDepth;
+		extern bool KrFog_active( Vector3& colour, float& depth, bool& sky );
+		g_krFogOn = ( m_Camera.draw_mode == cd_texture || m_Camera.draw_mode == cd_texture_plus_wire )
+		         && KrFog_active( g_krFogColour, g_krFogDepth, g_krFogSky );
+		g_krFogDrawing = false; // only the scene pass (the shadow passes draw plain depth)
+	}
+
 	Vector3 clearColour( 0, 0, 0 );
 	if ( m_Camera.draw_mode != cd_lighting ) {
 		clearColour = g_camwindow_globals.color_cameraback;
+	}
+	{	// the game shows the fog colour where the sky would be: the background too
+		extern bool g_krFogOn, g_krFogSky;
+		extern Vector3 g_krFogColour;
+		if ( g_krFogOn && g_krFogSky )
+			clearColour = g_krFogColour;
 	}
 
 	gl().glClearColor( clearColour[0], clearColour[1], clearColour[2], 0 );
@@ -3309,6 +3326,9 @@ void CamWnd::Cam_Draw(){
 	}
 
 	{
+		extern bool g_krFogDrawing, g_krFogOn;
+		g_krFogDrawing = g_krFogOn;
+
 		CamRenderer renderer( globalstate,
 		                      g_camwindow_globals_private.m_bFaceWire ? m_state_facewire : 0,
 		                      m_Camera.draw_mode == cd_texture_plus_wire ? m_state_wire : 0,
@@ -3332,6 +3352,7 @@ void CamWnd::Cam_Draw(){
 		KrBspPreview_draw( m_Camera.modelview, m_Camera.projection ); // compiled lighting (.bsp), when on
 		renderer.render( m_Camera.modelview, m_Camera.projection );
 		g_krLightPreviewDrawing = false;
+		g_krFogDrawing = false;
 		extern void KrProbe_afterScene( const Matrix4& modelview, const Matrix4& projection, int w, int h );
 		KrProbe_afterScene( m_Camera.modelview, m_Camera.projection, m_Camera.width, m_Camera.height ); // Lighting Probe readbacks
 		if( KrSelection_outlineAny() && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive && GlobalSelectionSystem().countSelected() != 0 )
@@ -3869,6 +3890,8 @@ void CamWnd_Construct(){
 	KrPerf_registerCommands();
 	extern void KrPlay_registerCommands();
 	KrPlay_registerCommands();
+	extern void KrFog_registerCommands();
+	KrFog_registerCommands();
 	extern void KrBspPreview_registerCommands();
 	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant

@@ -275,21 +275,23 @@ bool Bsp_load( const char* path ){
 
 const char* const c_vp =
 	"uniform vec2 u_tcscale; uniform vec2 u_tcscroll; uniform int u_tclm; uniform int u_env; uniform vec3 u_campos;\n"
-	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour;\n"
+	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour; varying vec3 v_eye;\n"
 	"void main(){\n"
 	"  vec2 st = u_tclm != 0 ? gl_MultiTexCoord1.st : gl_MultiTexCoord0.st;\n"
 	"  if( u_env != 0 ){ // tcGen environment, like the engine (RB_CalcEnvironmentTexCoords)\n"
 	"    vec3 n = normalize( gl_Normal ); vec3 viewer = normalize( u_campos - gl_Vertex.xyz );\n"
 	"    vec3 r = n * ( 2.0 * dot( n, viewer ) ) - viewer; st = vec2( 0.5 + r.y * 0.5, 0.5 - r.z * 0.5 );\n"
 	"  }\n"
-	"  v_st = st * u_tcscale + u_tcscroll; v_lm = gl_MultiTexCoord1.st; v_colour = gl_Color; gl_Position = ftransform();\n"
+	"  v_st = st * u_tcscale + u_tcscroll; v_lm = gl_MultiTexCoord1.st; v_colour = gl_Color;\n"
+	"  v_eye = ( gl_ModelViewMatrix * gl_Vertex ).xyz; gl_Position = ftransform();\n"
 	"}\n";
 // u_src: 0 texture, 1 the lightmap ($lightmap stage), 2 texture * lightmap (a shader without stages), 3 texture * vertex light (same, vertex lit)
 // u_rgb: 0 identity, 1 vertex light, 2 constant (u_const); u_alpha: 0 texture, 1 vertex alpha, 2 constant
 const char* const c_fp =
 	"uniform sampler2D u_tex; uniform sampler2D u_lm; uniform int u_src; uniform int u_rgb; uniform int u_alpha; uniform int u_afunc;\n"
 	"uniform vec4 u_const; uniform float u_shift; uniform float u_gamma;\n"
-	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour;\n"
+	"varying vec2 v_st; varying vec2 v_lm; varying vec4 v_colour; varying vec3 v_eye;\n"
+	"uniform int u_fog_on; uniform vec3 u_fog_col; uniform float u_fog_depth; // KenRadiant: the map's fog (fogparms)\n"
 	"vec3 shifted( vec3 l ){ l *= u_shift; float peak = max( l.r, max( l.g, l.b ) ); if( peak > 1.0 ) l /= peak; return l; } // the engine's overbright clamp keeps the colour\n"
 	"void main(){\n"
 	"  vec4 c;\n"
@@ -305,8 +307,11 @@ const char* const c_fp =
 	"  if( u_alpha == 1 ) c.a *= v_colour.a; else if( u_alpha == 2 ) c.a *= u_const.a;\n"
 	"  if( ( u_afunc == 1 && c.a <= 0.0 ) || ( u_afunc == 2 && c.a >= 0.5 ) || ( u_afunc == 3 && c.a < 0.5 ) ) discard;\n"
 	"  gl_FragColor = vec4( pow( c.rgb, vec3( 1.0 / u_gamma ) ), c.a );\n"
+	"  if( u_fog_on != 0 ) // the engine's fog curve: alpha = sqrt( distance / depthForOpaque )\n"
+	"    gl_FragColor.rgb = mix( gl_FragColor.rgb, u_fog_col, sqrt( clamp( length( v_eye ) / u_fog_depth, 0.0, 1.0 ) ) );\n"
 	"}\n";
 GLint u_src, u_rgb, u_alpha, u_afunc, u_const, u_tcscale, u_tcscroll, u_tclm, u_env, u_campos;
+GLint u_fog_on, u_fog_col, u_fog_depth;
 
 GLuint Program_create(){
 	GLuint program = gl().glCreateProgram();
@@ -330,6 +335,7 @@ GLuint Program_create(){
 	u_tex = u( "u_tex" ); u_lm = u( "u_lm" ); u_shift = u( "u_shift" ); u_gamma = u( "u_gamma" );
 	u_src = u( "u_src" ); u_rgb = u( "u_rgb" ); u_alpha = u( "u_alpha" ); u_afunc = u( "u_afunc" ); u_const = u( "u_const" );
 	u_tcscale = u( "u_tcscale" ); u_tcscroll = u( "u_tcscroll" ); u_tclm = u( "u_tclm" ); u_env = u( "u_env" ); u_campos = u( "u_campos" );
+	u_fog_on = u( "u_fog_on" ); u_fog_col = u( "u_fog_col" ); u_fog_depth = u( "u_fog_depth" );
 	gl().glUniform1i( u_tex, 0 );
 	gl().glUniform1i( u_lm, 1 );
 	gl().glUseProgram( 0 );
@@ -444,6 +450,16 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	gl().glUseProgram( g_program );
 	gl().glUniform1f( u_shift, float( 1 << std::clamp( g_krEngineShift, 0, 2 ) ) );
 	gl().glUniform1f( u_gamma, std::clamp( g_krEngineGamma, 0.5f, 3.f ) );
+	{	// KenRadiant: the map's fog, like the game draws it (kr_fog.cpp)
+		extern bool g_krFogOn;
+		extern Vector3 g_krFogColour;
+		extern float g_krFogDepth;
+		gl().glUniform1i( u_fog_on, g_krFogOn ? 1 : 0 );
+		if( g_krFogOn ){
+			gl().glUniform3f( u_fog_col, g_krFogColour.x(), g_krFogColour.y(), g_krFogColour.z() );
+			gl().glUniform1f( u_fog_depth, std::max( g_krFogDepth, 1.f ) );
+		}
+	}
 	gl().glEnable( GL_DEPTH_TEST );
 	gl().glDepthFunc( GL_LEQUAL );
 	gl().glDepthMask( GL_TRUE );

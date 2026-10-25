@@ -968,6 +968,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 		create_check_menu_item_with_mnemonic( submenu, "Sun Shadows", "ToggleSunShadows" );
 		create_check_menu_item_with_mnemonic( submenu, "Light Shadows (nearest lights, count in Light Preview Settings)", "ToggleLightShadows" );
 		create_menu_item_with_mnemonic( submenu, "Sun Calibrator / Light Preview Settings...", "SunCalibrator" );
+		create_menu_item_with_mnemonic( submenu, "Fog... (the map's fog, as in game)", "KrFogWindow" );
 	}
 	{ // KenRadiant
 		QMenu* submenu = menu->addMenu( "Shader Effects" );

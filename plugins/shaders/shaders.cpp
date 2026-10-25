@@ -319,6 +319,9 @@ public:
 	bool m_krHasLightRGB = false;
 	float m_krLightRGB[3] = { 1, 1, 1 };      // q3map_surfacelight (on a sky shader: light from the whole sky, like q3map_skyLight)
 	bool m_krLightPass = false, m_krAlphaShadow = false;
+	bool m_krHasFog = false;                  // fogparms ( r g b ) <distance>
+	float m_krFogColour[3] = { 1, 1, 1 };
+	float m_krFogDepth = 0;
 
 	ShaderTemplate() :
 		m_refcount( 0 ){
@@ -962,6 +965,13 @@ public:
 		std::copy( m_template.m_krLightRGB, m_template.m_krLightRGB + 3, colour );
 		return true;
 	}
+	bool krFogParms( float colour[3], float& depth ) const override {
+		if( !m_template.m_krHasFog )
+			return false;
+		std::copy( m_template.m_krFogColour, m_template.m_krFogColour + 3, colour );
+		depth = m_template.m_krFogDepth;
+		return true;
+	}
 	const std::vector<KrStage>* getStages() const override {
 		return m_template.m_krStages.empty() ? nullptr : &m_template.m_krStages;
 	}
@@ -1581,6 +1591,32 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				if( ok && m_sunExt ){
 					Tokeniser_getFloat( tokeniser, m_sunDeviance );
 					Tokeniser_getFloat( tokeniser, m_sunSamples );
+				}
+			}
+			else if ( string_equal_nocase( token, "fogparms" ) ) {
+				// fogparms ( r g b ) <distance to full fog> [opaque]; the brackets are optional in some shaders
+				const char* t = tokeniser.getToken();
+				if ( t != 0 && string_equal( t, "(" ) )
+					t = tokeniser.getToken();
+				float v[4] = { 1, 1, 1, 0 };
+				bool ok = t != 0;
+				for ( int k = 0; ok && k < 3; ++k ) {
+					if ( k != 0 )
+						t = tokeniser.getToken();
+					if ( t == 0 || string_equal( t, ")" ) ) { ok = false; break; }
+					v[k] = float( atof( t ) );
+				}
+				if ( ok ) {
+					t = tokeniser.getToken();
+					if ( t != 0 && string_equal( t, ")" ) )
+						t = tokeniser.getToken();
+					if ( t != 0 )
+						v[3] = float( atof( t ) );
+				}
+				if ( ok && v[3] > 0 ) {
+					m_krHasFog = true;
+					std::copy( v, v + 3, m_krFogColour );
+					m_krFogDepth = v[3];
 				}
 			}
 			else if ( string_equal_nocase( token, "q3map_skyLight" ) ) {

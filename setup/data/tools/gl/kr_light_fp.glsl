@@ -64,6 +64,18 @@ varying vec3 v_pos;
 varying vec3 v_normal;
 varying vec3 v_world;
 
+// KenRadiant: the map's fog, as the engine draws it (fogparms). 0 = off, 1 = fade into it, 2 = flat fog colour (sky)
+uniform int u_fog_on;
+uniform vec3 u_fog_col;
+uniform float u_fog_depth; // fogparms' distance: completely fogged this far away
+
+/* the engine's fog curve: alpha = sqrt( distance / depthForOpaque ), clamped (tr_shade fogTable = pow( x, 0.5 ) ) */
+vec3 krFog( vec3 colour ){
+	if( u_fog_on == 0 )
+		return colour;
+	return mix( colour, u_fog_col, sqrt( clamp( length( v_pos ) / u_fog_depth, 0.0, 1.0 ) ) );
+}
+
 // q3map2 index-map terrain: layer weights from the index map, layer textures with their tcMod scale
 uniform int u_terrain;      // number of layers, 0 = not terrain
 uniform sampler2D u_tidx;   // RGBA = layers 0-3
@@ -161,6 +173,10 @@ vec3 pointLight( float id, vec3 nw ){
 
 void main()
 {
+	if( u_fog_on == 2 ){ // the sky: the game shows the flat fog colour where it would be
+		gl_FragColor = vec4( u_fog_col, 1.0 );
+		return;
+	}
 	vec4 tex = u_terrain > 0 ? terrainColour() : texture2D( u_tex, gl_TexCoord[0].st );
 	if( u_debug != 0 ){
 		if( u_dbgcut != 0 && tex.a * gl_Color.a * u_stage.a < 0.5 )
@@ -172,10 +188,11 @@ void main()
 	}
 	if( u_mode == 0 ){
 		gl_FragColor = tex * gl_Color * u_stage;
+		gl_FragColor.rgb = krFog( gl_FragColor.rgb );
 		return;
 	}
 	if( u_mode == 2 ){
-		gl_FragColor = vec4( tex.rgb * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
+		gl_FragColor = vec4( krFog( tex.rgb * u_stage.rgb ), tex.a * gl_Color.a * u_stage.a );
 		return;
 	}
 	vec3 n = normalize( v_normal );
@@ -280,5 +297,5 @@ void main()
 	if( peak > 1.0 )
 		shown /= peak;
 	shown *= u_lmscale;
-	gl_FragColor = vec4( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb, tex.a * gl_Color.a * u_stage.a );
+	gl_FragColor = vec4( krFog( pow( tex.rgb * shown, vec3( 1.0 / u_rgamma ) ) * u_stage.rgb ), tex.a * gl_Color.a * u_stage.a );
 }

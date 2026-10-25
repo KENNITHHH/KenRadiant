@@ -146,6 +146,8 @@ public:
 	virtual float krSurfaceLight() const { return 0; }
 	/// KenRadiant: q3map_lightRGB r g b (false = not given: q3map2 takes the light / editor image's colour)
 	virtual bool krLightRGB( float colour[3] ) const { return false; }
+	/// KenRadiant: fogparms ( r g b ) <distance to full fog> (false = not a fog shader)
+	virtual bool krFogParms( float colour[3], float& depth ) const { return false; }
 };
 
 
