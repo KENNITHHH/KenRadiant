@@ -109,7 +109,10 @@ static int RunTool( Args& args ){
 		Error( "-runtool: can't run %s", program );
 	}
 	char line[4096];
+	bool tooManyShaders = false;
 	while ( fgets( line, sizeof( line ), pipe ) != nullptr ) {
+		if ( strstr( line, "MAX_SURFACE_INFO" ) != nullptr )
+			tooManyShaders = true;
 		for ( char *c = line; *c; ++c )
 			if ( *c == '\r' )
 				*c = ' ';
@@ -128,6 +131,10 @@ static int RunTool( Args& args ){
 #ifdef WIN32
 	const int code = status;
 #endif
+	if ( tooManyShaders ) {
+		Sys_Printf( "sof2map holds at most 8192 shaders and reads every loose .shader file in base/shaders: move the shader files "
+		            "this map doesn't need out of that folder while compiling\n" );
+	}
 	if ( code != 0 ) { // stop the build here, like a q3map2 error does
 		Error( "%s failed (exit code %d)%s", program, code,
 #ifdef WIN32

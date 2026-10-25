@@ -3,6 +3,16 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (32)
+- **sof2map: what it needs, checked before it runs.** Raven's sof2map reads shaders **only from loose .shader files** in
+  base\shaders - not from .pk3s (tested: with mp_col2's shaders in a .pk3 the sky `3w_scan2` comes out a plain texture,
+  so no sky, no sun, no sky light - the "sky not loaded" you saw) - and holds **at most 8192 shaders** ("Exceeded
+  MAX_SURFACE_INFO" with other games' converted shaders in the folder). Compile now lists the map's shaders that are
+  only in .pk3 files and warns when the loose files hold too many, before starting; the sof2map tab explains the
+  requirements and what can go wrong; a MAX_SURFACE_INFO stop says what to do.
+- q3map2: **`q3map_clusterportal` no longer warns.** Checked in Raven's sof2map: it reads the keyword, only uses it to
+  complain about brushes mixing it, and nothing in the compiled map changes - so nothing is lost.
+
 ## Build 2026-10-25 (31)
 ### How Raven built the original maps - and doing the same
 - **Found with Raven's own sof2map.exe** (SOF2 SDK bin folder, v1.0c): the original mp_col2 was compiled with

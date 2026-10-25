@@ -45,6 +45,8 @@
 #include "qerplugin.h"
 #include "math/vector.h"
 #include "kr_compile_flags.h"
+#include "ishaders.h"
+#include "ifilesystem.h"
 #include <QToolButton>
 #include <QInputDialog>
 #include <QFileDialog>
@@ -65,6 +67,7 @@ void MRU_AddFile( const char* str );
 bool ConfirmModified( const char* title );
 bool KrMapText_selectPrimitive( int entity, int brush, bool focus );
 void KrCamera_goTo( const Vector3& origin );
+std::vector<CopiedString> KrMap_usedShaders();
 
 namespace
 {
@@ -126,6 +129,55 @@ QString Compile_advanced( const CopiedString& adv ){
 			out += ' ' + p[1].trimmed();
 	}
 	return out;
+}
+
+/// what would go wrong with Raven's sof2map, found before running it ("" = nothing):
+/// it reads shaders only from loose .shader files (not from .pk3s) and holds at most 8192 shaders
+QString Sof2map_preflight(){
+	QStringList out;
+	const QString shaderDir = QString( EnginePath_get() ) + gamename_get() + "/shaders/";
+	int defs = 0;
+	for( const QString& f : QDir( shaderDir ).entryList( { "*.shader" }, QDir::Files ) ){
+		QFile file( shaderDir + f );
+		if( !file.open( QIODevice::ReadOnly ) )
+			continue;
+		const QByteArray text = file.readAll();
+		int depth = 0;
+		bool comment = false;
+		for( int i = 0; i < text.size(); ++i ){
+			const char c = text[i];
+			if( comment ){ if( c == '\n' ) comment = false; continue; }
+			if( c == '/' && i + 1 < text.size() && text[i + 1] == '/' ){ comment = true; continue; }
+			if( c == '{' ){ if( depth == 0 ) ++defs; ++depth; }
+			else if( c == '}' && depth > 0 ) --depth;
+		}
+	}
+	if( defs > 7600 )
+		out << QString( "%1 shaders in the loose files of %2. sof2map holds at most 8192 (with the map's plain textures) and stops with "
+		                "\"Exceeded MAX_SURFACE_INFO\". Move the .shader files this map doesn't need (other games' conversions ...) out of that folder while compiling." )
+		       .arg( defs ).arg( shaderDir );
+	QStringList packed;
+	for( const CopiedString& name : KrMap_usedShaders() ){
+		if( string_equal_nocase_n( name.c_str(), "textures/tools/", 15 ) || string_equal_nocase_n( name.c_str(), "textures/common/", 16 ) )
+			continue;
+		IShader* shader = GlobalShaderSystem().getShaderForName( name.c_str() );
+		if( shader == nullptr )
+			continue;
+		if( !shader->IsDefault() ){
+			const char* root = GlobalFileSystem().findFile( shader->getShaderFileName() );
+			const std::size_t n = string_length( root );
+			if( n != 0 && root[n - 1] != '/' )
+				packed << QString( "%1  (in %2)" ).arg( name.c_str(), shader->getShaderFileName() );
+		}
+		shader->DecRef();
+	}
+	if( !packed.isEmpty() ){
+		out << QString( "%1 shader(s) of this map are only inside .pk3 files. sof2map doesn't read shaders from .pk3s: for it they are plain "
+		                "textures - a sky stops being sky (no sun, no sky light), light-giving and surfaceparm shaders lose that. "
+		                "Unpack their .shader files into %2:\n  " ).arg( packed.size() ).arg( shaderDir )
+		       + QStringList( packed.mid( 0, 12 ) ).join( "\n  " ) + ( packed.size() > 12 ? "\n  ..." : "" );
+	}
+	return out.join( "\n\n" );
 }
 
 /// Raven's sof2map.exe: the chosen one, else next to KenRadiant, in the game's bin folder or the game folder
@@ -834,12 +886,25 @@ public:
 			check( g, 3, 0, "-rename  (misc_model _bsp shaders)", o.ravenRename, "BSP stage: misc_model surfaces get their shader's _bsp version, as in Raven's maps (the models then light like the world). Keep it on." );
 			check( g, 3, 1, "-extra  (light, 2x2 samples)", o.ravenExtra, "LIGHT stage: four samples per lightmap pixel - what Raven's original maps were lit with (measured: mp_col2 matches to 0.3%). Off is faster and rougher." );
 			check( g, 3, 2, "-vis -fast  (rough vis)", o.visFast, "VIS stage: rough visibility in a fraction of the time, for testing (the same setting as the VIS tab's -fast)." );
-			auto *note = new QLabel( "The map has to be inside a folder called <i>base</i> (e.g. ...\\base\\maps\\), "
-			                         "sof2map finds the game files from there (and reads the .pk3 files in it). Terrain index maps must be .tga "
-			                         "(KenRadiant's decompiler and Terrain Paint write .tga)." );
+			auto *note = new QLabel(
+				"<b>sof2map is Raven's compiler from 2000 (SOF2 SDK) - what the original maps were built with. What it needs:</b><ul>"
+				"<li>The map inside a folder called <i>base</i> (e.g. ...\\base\\maps\\x.map): it finds the game files from there.</li>"
+				"<li>The map's shaders as <b>loose .shader files</b> in base\\shaders: it does not read shaders from .pk3 files. A sky shader "
+				"only inside a .pk3 is a plain texture for it: no sky, no sun, no sky light.</li>"
+				"<li><b>At most 8192 shaders</b> in those files (plus the map's plain textures). More (e.g. other games' converted shaders) "
+				"stops it with <i>Exceeded MAX_SURFACE_INFO</i>: move what the map doesn't need out of the folder while compiling.</li>"
+				"<li>Terrain index maps as .tga (KenRadiant's decompiler and Terrain Paint write .tga).</li></ul>"
+				"<b>What can happen:</b> it uses one CPU core (slower than q3map2), has the old limits of 2000 (map size, surfaces, lightmaps) and "
+				"knows none of q3map2's own shader keywords (q3map_skyLight, q3map_lightmapScale ...): those are ignored. "
+				"Compile checks the shader points first and tells you what it found." );
+			note->setTextFormat( Qt::RichText );
 			note->setWordWrap( true );
-			g->addWidget( note, 4, 0, 1, 3 );
-			g->setRowStretch( 5, 1 );
+			auto *scroll = new QScrollArea;
+			scroll->setWidget( note );
+			scroll->setWidgetResizable( true );
+			scroll->setFrameShape( QFrame::NoFrame );
+			g->addWidget( scroll, 4, 0, 1, 3 );
+			g->setRowStretch( 4, 1 );
 		}
 		{
 			QGridLayout* g = page( "Decompile" );
@@ -1069,6 +1134,10 @@ public:
 					if( m_tabs->tabText( i ) == "sof2map" )
 						m_tabs->setCurrentIndex( i );
 				return;
+			}
+			if( const QString issues = Sof2map_preflight(); !issues.isEmpty() ){
+				if( QMessageBox::warning( this, "Compile with sof2map", issues + "\n\nCompile anyway?", QMessageBox::Yes | QMessageBox::No, QMessageBox::No ) != QMessageBox::Yes )
+					return;
 			}
 			const QString path = QFileInfo( Map_Name( g_map ) ).absoluteFilePath().replace( '\\', '/' );
 			if( !path.contains( "/base/", Qt::CaseInsensitive ) ){

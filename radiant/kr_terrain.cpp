@@ -14,6 +14,7 @@
 #include "kr_terrain.h"
 
 #include <vector>
+#include <set>
 #include <memory>
 #include <cstring>
 #include <cmath>
@@ -1405,3 +1406,10 @@ void KrTerrain_shutdown(){
 
 /// (brush.h) smoothed normals for q3map_terrain faces
 bool ( *g_krTerrainNormals )( const Winding& winding, const Vector3& faceNormal, Vector3* out ) = Terrain_normals;
+
+/// every shader the map's brushes use (Compile window: checks before running Raven's sof2map)
+std::vector<CopiedString> KrMap_usedShaders(){
+	std::set<CopiedString> names;
+	Scene_ForEachBrush_ForEachFace( GlobalSceneGraph(), [&]( Face& face ){ names.insert( CopiedString( face.GetShader() ) ); } );
+	return { names.begin(), names.end() };
+}

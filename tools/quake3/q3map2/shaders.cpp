@@ -1613,6 +1613,11 @@ static void ParseShaderFile( const char *filename ){
 				}
 
 				/* q3map_notjunc */
+				/* KenRadiant: q3map_clusterportal (Raven's SOF2 shaders) - Raven's sof2map only stores it (and complains about
+				   brushes mixing it), it changes nothing in the compiled map; nothing to do */
+				else if ( striEqual( token, "q3map_clusterportal" ) ) {
+				}
+
 				else if ( striEqual( token, "q3map_notjunc" ) ) {
 					si.notjunc = true;
 				}
