@@ -600,9 +600,12 @@ static void FinishShader( shaderInfo_t& si ){
 	/* legacy terrain has explicit image-sized texture projection */
 	if ( si.legacyTerrain && !si.tcGen ) {
 		/* set xy texture projection */
+		/* KenRadiant: SOF2's sof2map projects terrain like a floor (s = x, t = -y); Team Arena's q3map2 crutch used
+		   +y, which mirrors every terrain cell along y (measured against Raven's mp_col2: 81% of the terrain surface) */
+		const float ty = strEqual( g_game->arg, "sof2" )? -1.0f : 1.0f;
 		si.tcGen = true;
 		si.vecs[ 0 ] = { ( 1.0f / ( si.shaderWidth * 0.5f ) ), 0, 0 };
-		si.vecs[ 1 ] = { 0, ( 1.0f / ( si.shaderHeight * 0.5f ) ), 0 };
+		si.vecs[ 1 ] = { 0, ty * ( 1.0f / ( si.shaderHeight * 0.5f ) ), 0 };
 	}
 
 	/* find pixel coordinates best matching the average color of the image */

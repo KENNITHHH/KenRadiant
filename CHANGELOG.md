@@ -3,6 +3,20 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-25 (33)
+### q3map2: terrain textures were mirrored along y
+- **Fixed: every q3map_terrain cell had its texture mirrored on the y axis.** q3map2 projects terrain textures with
+  the Team Arena crutch (s = x, **t = +y**); Raven's sof2map projects them like a floor (s = x, **t = -y**). The
+  difference lands on whole texture repeats at the cell corners, so the corners looked right and the inside of every
+  cell was mirrored - the terrain looked shifted / differently scaled without an obvious seam.
+- Measured on Raven's mp_col2 (decompiled, then recompiled), sampling the terrain surface at 1854 points:
+  texture coordinates were off by 0.23 of a texture on average (95th percentile 0.48) over **81% of the terrain**;
+  now **0.00 everywhere**, the same as Raven's sof2map on the same map. Coverage, heights and the layer blend were
+  already right: 0.8% of the surface gets a different layer shader, exactly like sof2map's own output.
+- This also makes the compiled terrain match what Terrain Paint shows in the 3D view (the editor always used the
+  floor projection). Terrains made with earlier builds will have their texture mirrored compared to before - that is
+  the fix, not a regression; the editor view was the correct one.
+
 ## Build 2026-10-25 (32)
 ### q3map2: `-ravenlight` - light like Raven's sof2map, without sof2map
 Worked out from Raven's sof2map.exe (decompiled, and run here as the reference) and id's GPL q3map 1.x it is built on.
