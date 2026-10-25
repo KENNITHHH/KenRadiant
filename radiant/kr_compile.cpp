@@ -52,6 +52,7 @@
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMenu>
+#include <QSettings>
 
 void Build_setPreset( const char* name, const std::vector<CopiedString>& commands );
 bool Build_runPreset( const char* name );
@@ -266,6 +267,146 @@ protected:
 	}
 };
 
+/// a Build menu entry's / saved commands back into compile settings (game and decompile settings kept from o)
+CompileOptions Options_fromCommands( const CompileOptions& o, const std::vector<CopiedString>& commands ){
+	CompileOptions p;
+	p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
+	p.decompBsp = o.decompBsp; p.decompFormat = o.decompFormat; p.decompFast = o.decompFast;
+	p.decompModelclip = o.decompModelclip; p.decompWtf = o.decompWtf; p.decompLegacy = o.decompLegacy;
+	p.bsp = p.vis = p.light = false;
+	p.meta = p.saveprt = p.filter = false;
+	p.super = 1; p.bounce = 0;
+	const auto argCount = []( const char* arg ){
+		const QString a = QString( arg ).remove( '<' ).remove( '>' ).trimmed();
+		return a.isEmpty() ? 0 : int( a.split( ' ', Qt::SkipEmptyParts ).size() );
+	};
+	for( const CopiedString& command : commands ){
+		QStringList t = QProcess::splitCommand( QString( command.c_str() ) );
+		t.erase( std::remove_if( t.begin(), t.end(), []( const QString& x ){ return x.contains( "[q3map2]" ) || x.contains( "[MapFile]" ) || x.contains( "[ExtraResourcePaths]" ); } ), t.end() );
+		const int stage = t.contains( "-vis" ) ? 1 : t.contains( "-light" ) ? 2 : t.contains( "-convert" ) ? 3 : 0;
+		if( stage == 3 )
+			continue;
+		QStringList extra, adv;
+		bool fast = false, faster = false;
+		for( int i = 0; i < t.size(); ++i ){
+			const QString f = t[i];
+			const auto next = [&]( auto& value ){
+				if( i + 1 < t.size() ){
+					using T = std::decay_t<decltype( value )>;
+					if constexpr ( std::is_same_v<T, int> ) value = t[++i].toInt();
+					else value = t[++i].toFloat();
+				}
+			};
+			const KrCompileFlag* table = stage == 0 ? c_krFlags_bsp : stage == 1 ? c_krFlags_vis : c_krFlags_light;
+			const std::size_t size = stage == 0 ? std::size( c_krFlags_bsp ) : stage == 1 ? std::size( c_krFlags_vis ) : std::size( c_krFlags_light );
+			if( stage == 0 ){
+				p.bsp = true;
+				if( f == "-meta" ) { p.meta = true; continue; }
+				if( f == "-patchmeta" ) { p.patchmeta = true; continue; }
+				if( f == "-leaktest" ) { p.leaktest = true; continue; }
+				if( f == "-onlyents" ) { p.onlyents = true; continue; }
+				if( f == "-nocurves" ) { p.nocurves = true; continue; }
+				if( f == "-nodetail" ) { p.nodetail = true; continue; }
+				if( f == "-notjunc" ) { p.notjunc = true; continue; }
+				if( f == "-samplesize" ) { next( p.samplesize ); continue; }
+			}
+			else if( stage == 1 ){
+				p.vis = true;
+				if( f == "-vis" ) continue;
+				if( f == "-fast" ) { p.visFast = true; continue; }
+				if( f == "-saveprt" ) { p.saveprt = true; continue; }
+				if( f == "-nopassage" ) { p.nopassage = true; continue; }
+			}
+			else{
+				p.light = true;
+				if( f == "-light" ) continue;
+				if( f == "-fast" ) { fast = true; continue; }
+				if( f == "-faster" ) { faster = true; continue; }
+				if( f == "-super" ) { next( p.super ); continue; }
+				if( f == "-samples" ) { next( p.samples ); continue; }
+				if( f == "-filter" ) { p.filter = true; continue; }
+				if( f == "-bounce" ) { next( p.bounce ); continue; }
+				if( f == "-dirty" ) { p.dirty = true; continue; }
+				if( f == "-patchshadows" ) { p.patchshadows = true; continue; }
+				if( f == "-shade" ) { p.shade = true; continue; }
+				if( f == "-nocollapse" ) { p.nocollapse = true; continue; }
+				if( f == "-nomerge" ) { p.nomerge = true; continue; }
+				if( f == "-gamma" ) { next( p.gamma ); continue; }
+				if( f == "-compensate" ) { next( p.compensate ); continue; }
+			}
+			// one of the "all options"?
+			const KrCompileFlag* found = nullptr;
+			for( std::size_t k = 0; k < size; ++k )
+				if( f == table[k].flag )
+					found = &table[k];
+			if( found != nullptr ){
+				QStringList values;
+				for( int n = argCount( found->arg ); n > 0 && i + 1 < t.size(); --n )
+					values << t[++i];
+				adv << f + '=' + values.join( ' ' );
+			}
+			else
+				extra << ( f.contains( ' ' ) ? '"' + f + '"' : f );
+		}
+		if( stage == 2 )
+			p.quality = faster ? 0 : fast ? 1 : 2;
+		CopiedString& ex = stage == 0 ? p.extraBsp : stage == 1 ? p.extraVis : p.extraLight;
+		CopiedString& ad = stage == 0 ? p.advBsp : stage == 1 ? p.advVis : p.advLight;
+		ex = extra.join( ' ' ).toLatin1().constData();
+		ad = ( adv.join( ';' ) + ( adv.isEmpty() ? "" : ";" ) ).toLatin1().constData();
+	}
+	return p;
+}
+
+/* compile settings per map: the last ones used for a map come back when it is opened again (the live light preview
+   follows them too: a map compiled with -brightness / -gamma must not be previewed with another map's settings) */
+QString Compile_mapKey(){
+	return QFileInfo( Map_Name( g_map ) ).absoluteFilePath().toLower();
+}
+QSettings& Compile_mapSettings(){
+	static QSettings settings( QString( SettingsPath_get() ) + "kr_compile_maps.ini", QSettings::IniFormat );
+	return settings;
+}
+bool g_restoring = false;
+void Compile_rememberForMap(){
+	if( g_restoring || Map_Unnamed( g_map ) )
+		return;
+	std::vector<CopiedString> commands;
+	Compile_commandsText( g_options, &commands );
+	QStringList lines;
+	for( const CopiedString& c : commands )
+		lines << c.c_str();
+	QSettings& st = Compile_mapSettings();
+	st.beginGroup( "maps" );
+	st.setValue( Compile_mapKey().replace( '/', '|' ), lines );
+	st.endGroup();
+}
+void Compile_dialogReload();
+/// the map changed: its own last settings, if it has any
+void Compile_restoreForMap(){
+	static QString last;
+	const QString key = Map_Unnamed( g_map ) ? QString() : Compile_mapKey();
+	if( key == last )
+		return;
+	last = key;
+	if( key.isEmpty() )
+		return;
+	QSettings& st = Compile_mapSettings();
+	st.beginGroup( "maps" );
+	const QStringList lines = st.value( QString( key ).replace( '/', '|' ) ).toStringList();
+	st.endGroup();
+	if( lines.isEmpty() )
+		return;
+	std::vector<CopiedString> commands;
+	for( const QString& l : lines )
+		commands.emplace_back( l.toLatin1().constData() );
+	g_restoring = true;
+	g_options = Options_fromCommands( g_options, commands );
+	Compile_dialogReload();
+	g_restoring = false;
+	globalOutputStream() << "compile settings: the ones last used for this map (" << lines.join( " / " ).toLatin1().constData() << ")\n";
+}
+
 class CompileDialog : public QDialog
 {
 	CompileOptions& o = g_options;
@@ -286,6 +427,7 @@ class CompileDialog : public QDialog
 		widget->installEventFilter( &m_hints );
 	}
 	void changed(){
+		Compile_rememberForMap();
 		m_preview->setPlainText( Compile_commandsText( o, nullptr ) );
 		m_visBox->setEnabled( !( o.bsp && o.onlyents ) );
 		for( int i = 0; i < 3; ++i )
@@ -468,6 +610,7 @@ class CompileDialog : public QDialog
 			}
 		} );
 	}
+public:
 	void load(){
 		for( auto& f : m_loaders )
 			f();
@@ -475,93 +618,7 @@ class CompileDialog : public QDialog
 	}
 	/// a Build menu entry's commands back into the window's settings
 	void loadCommands( const std::vector<CopiedString>& commands ){
-		CompileOptions p;
-		p.runGame = o.runGame; p.gameExe = o.gameExe; p.gameArgs = o.gameArgs;
-		p.decompBsp = o.decompBsp; p.decompFormat = o.decompFormat; p.decompFast = o.decompFast;
-		p.decompModelclip = o.decompModelclip; p.decompWtf = o.decompWtf; p.decompLegacy = o.decompLegacy;
-		p.bsp = p.vis = p.light = false;
-		p.meta = p.saveprt = p.filter = false;
-		p.super = 1; p.bounce = 0;
-		const auto argCount = []( const char* arg ){
-			const QString a = QString( arg ).remove( '<' ).remove( '>' ).trimmed();
-			return a.isEmpty() ? 0 : int( a.split( ' ', Qt::SkipEmptyParts ).size() );
-		};
-		for( const CopiedString& command : commands ){
-			QStringList t = QProcess::splitCommand( QString( command.c_str() ) );
-			t.erase( std::remove_if( t.begin(), t.end(), []( const QString& x ){ return x.contains( "[q3map2]" ) || x.contains( "[MapFile]" ) || x.contains( "[ExtraResourcePaths]" ); } ), t.end() );
-			const int stage = t.contains( "-vis" ) ? 1 : t.contains( "-light" ) ? 2 : t.contains( "-convert" ) ? 3 : 0;
-			if( stage == 3 )
-				continue;
-			QStringList extra, adv;
-			bool fast = false, faster = false;
-			for( int i = 0; i < t.size(); ++i ){
-				const QString f = t[i];
-				const auto next = [&]( auto& value ){
-					if( i + 1 < t.size() ){
-						using T = std::decay_t<decltype( value )>;
-						if constexpr ( std::is_same_v<T, int> ) value = t[++i].toInt();
-						else value = t[++i].toFloat();
-					}
-				};
-				const KrCompileFlag* table = stage == 0 ? c_krFlags_bsp : stage == 1 ? c_krFlags_vis : c_krFlags_light;
-				const std::size_t size = stage == 0 ? std::size( c_krFlags_bsp ) : stage == 1 ? std::size( c_krFlags_vis ) : std::size( c_krFlags_light );
-				if( stage == 0 ){
-					p.bsp = true;
-					if( f == "-meta" ) { p.meta = true; continue; }
-					if( f == "-patchmeta" ) { p.patchmeta = true; continue; }
-					if( f == "-leaktest" ) { p.leaktest = true; continue; }
-					if( f == "-onlyents" ) { p.onlyents = true; continue; }
-					if( f == "-nocurves" ) { p.nocurves = true; continue; }
-					if( f == "-nodetail" ) { p.nodetail = true; continue; }
-					if( f == "-notjunc" ) { p.notjunc = true; continue; }
-					if( f == "-samplesize" ) { next( p.samplesize ); continue; }
-				}
-				else if( stage == 1 ){
-					p.vis = true;
-					if( f == "-vis" ) continue;
-					if( f == "-fast" ) { p.visFast = true; continue; }
-					if( f == "-saveprt" ) { p.saveprt = true; continue; }
-					if( f == "-nopassage" ) { p.nopassage = true; continue; }
-				}
-				else{
-					p.light = true;
-					if( f == "-light" ) continue;
-					if( f == "-fast" ) { fast = true; continue; }
-					if( f == "-faster" ) { faster = true; continue; }
-					if( f == "-super" ) { next( p.super ); continue; }
-					if( f == "-samples" ) { next( p.samples ); continue; }
-					if( f == "-filter" ) { p.filter = true; continue; }
-					if( f == "-bounce" ) { next( p.bounce ); continue; }
-					if( f == "-dirty" ) { p.dirty = true; continue; }
-					if( f == "-patchshadows" ) { p.patchshadows = true; continue; }
-					if( f == "-shade" ) { p.shade = true; continue; }
-					if( f == "-nocollapse" ) { p.nocollapse = true; continue; }
-					if( f == "-nomerge" ) { p.nomerge = true; continue; }
-					if( f == "-gamma" ) { next( p.gamma ); continue; }
-					if( f == "-compensate" ) { next( p.compensate ); continue; }
-				}
-				// one of the "all options"?
-				const KrCompileFlag* found = nullptr;
-				for( std::size_t k = 0; k < size; ++k )
-					if( f == table[k].flag )
-						found = &table[k];
-				if( found != nullptr ){
-					QStringList values;
-					for( int n = argCount( found->arg ); n > 0 && i + 1 < t.size(); --n )
-						values << t[++i];
-					adv << f + '=' + values.join( ' ' );
-				}
-				else
-					extra << ( f.contains( ' ' ) ? '"' + f + '"' : f );
-			}
-			if( stage == 2 )
-				p.quality = faster ? 0 : fast ? 1 : 2;
-			CopiedString& ex = stage == 0 ? p.extraBsp : stage == 1 ? p.extraVis : p.extraLight;
-			CopiedString& ad = stage == 0 ? p.advBsp : stage == 1 ? p.advVis : p.advLight;
-			ex = extra.join( ' ' ).toLatin1().constData();
-			ad = ( adv.join( ';' ) + ( adv.isEmpty() ? "" : ";" ) ).toLatin1().constData();
-		}
-		o = p;
+		o = Options_fromCommands( o, commands );
 		load();
 	}
 	void preset( int which ){
@@ -951,7 +1008,12 @@ public:
 };
 
 CompileDialog* g_compile = nullptr;
+void Compile_dialogReload(){
+	if( g_compile != nullptr )
+		g_compile->load();
+}
 void Compile_show(){
+	Compile_restoreForMap();
 	if( g_compile == nullptr ){
 		g_compile = new CompileDialog( MainFrame_getWindow() );
 		QObject::connect( g_compile, &QObject::destroyed, [](){ g_compile = nullptr; } );
@@ -1042,6 +1104,7 @@ void KrCompile_registerCommands(){
 /// what the LIGHT stage will do to the lightmaps, for the live light preview: -gamma, -compensate, -brightness, -vertexscale
 /// (from the Compile window's settings, its extra options and ticked "all options")
 void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, float& vertexScale ){
+	Compile_restoreForMap(); // (a map just opened: its own settings)
 	gamma = g_options.gamma; compensate = g_options.compensate; brightness = 1; vertexScale = 1;
 	const QStringList t = QProcess::splitCommand( QString( g_options.extraLight.c_str() ) + Compile_advanced( g_options.advLight ) );
 	for( int i = 0; i + 1 < t.size(); ++i ){

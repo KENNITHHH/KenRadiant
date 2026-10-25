@@ -407,6 +407,15 @@ static int BrushDetailFlag( int bspBrushNum ){
 	}
 	if ( bspShaders[ bspBrushes[ bspBrushNum ].shaderNum ].contentFlags & GetRequiredSurfaceParm<"structural">().contentFlags )
 		return 0; // structural transparent brushes, e.g. hints
+	/* a side whose shader is structural (hint, ...) makes the brush structural when compiled - writing it as detail
+	   only gives "Mixed detail and structural" warnings */
+	{
+		const bspBrush_t& brush = bspBrushes[ bspBrushNum ];
+		for ( const bspBrushSide_t& side : Span( &bspBrushSides[ brush.firstSide ], brush.numSides ) )
+			if ( side.shaderNum >= 0 && side.shaderNum < int( bspShaders.size() )
+			  && ( ShaderInfoForShader( bspShaders[ side.shaderNum ].shader ).compileFlags & C_STRUCTURAL ) )
+				return 0;
+	}
 	return g_brushInVisLeaf[ bspBrushNum ] ? C_DETAIL : 0;
 }
 

@@ -182,12 +182,21 @@ void main()
 	// winding, so gl_FrontFacing can't be trusted)
 	if( dot( n, v_pos ) > 0.0 )
 		n = -n;
+	// terrain: smoothed normals can point to the light while the face itself turns away (ridges, far slopes) -
+	// look the shadows up off the face too, or the face shadows itself (dark rims)
+	vec3 g_off = vec3( 0.0 );
+	if( u_terrain > 0 ){
+		vec3 gn = normalize( cross( dFdx( v_pos ), dFdy( v_pos ) ) );
+		if( dot( gn, n ) < 0.0 )
+			gn = -gn;
+		g_off = gn * ( 4.0 + 0.004 * length( v_pos ) );
+	}
 
 	float ndl = max( dot( n, u_sun_dir ), 0.0 );
 	float sun = ndl;
 	if( u_has_shadow != 0 && ndl > 0.0 ){
 		// normal offset: look the shadow up a little off the surface, no self-shadow stripes (acne) on walls
-		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 2.0 + 4.0 * ( 1.0 - ndl ) ), 1.0 );
+		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 2.0 + 4.0 * ( 1.0 - ndl ) ) + g_off, 1.0 );
 		if( sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0 ){
 			// slope-scaled bias, 5x5 PCF; the spread grows with the sun's deviance (q3map_sunExt)
 			float bias = u_bias_unit * ( 1.0 + 2.0 * min( sqrt( 1.0 - ndl * ndl ) / max( ndl, 0.05 ), 8.0 ) ) * max( 1.0, u_soft );
@@ -210,7 +219,7 @@ void main()
 			continue;
 		float vis = 1.0;
 		if( u_has_sky != 0 ){
-			vec4 sc = u_eye2sky[i] * vec4( v_pos + n * ( 6.0 + 12.0 * ( 1.0 - c ) ), 1.0 );
+			vec4 sc = u_eye2sky[i] * vec4( v_pos + n * ( 6.0 + 12.0 * ( 1.0 - c ) ) + g_off * 2.0, 1.0 );
 			vec2 t0 = vec2( float( i - KR_SKY_GRID * ( i / KR_SKY_GRID ) ), float( i / KR_SKY_GRID ) ) * tileSize; // this direction's tile of the atlas
 			// a wide soft filter: q3map2's sky light comes from the whole dome, not from a few sharp directions
 			float r = 3.0 * tileSize / 1024.0;

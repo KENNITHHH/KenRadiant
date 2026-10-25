@@ -486,8 +486,8 @@ void LoadPCX( const char *filename, byte **pic, byte **palette, int *width, int 
 	     || pcx->version != 5
 	     || pcx->encoding != 1
 	     || pcx->bits_per_pixel != 8
-	     || pcx->xmax >= 640
-	     || pcx->ymax >= 480 ) {
+	     || pcx->xmax < 0 || pcx->xmax >= 8192 /* KenRadiant: terrain index maps are 512 / 1024 wide (was 640 x 480, Quake's screen size) */
+	     || pcx->ymax < 0 || pcx->ymax >= 8192 ) {
 		Error( "Bad pcx file %s", filename );
 	}
 

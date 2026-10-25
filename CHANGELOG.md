@@ -7,6 +7,13 @@ Builds are published as **KenRadiant Latest Build** on the Releases page; the q3
 ### Editor
 - **Fixed: "assertion failure: path contains invalid separator '\\'"** (plugins/vfspk3/vfs.cpp:332) with shaders that write their image paths the Windows way (`map textures\logo\logo.jpg`). The game accepts those; the editor now does too instead of stopping.
 
+### Fixed after testing (same build number, 30)
+- **Compile settings are remembered per map.** The live light follows the Compile window's LIGHT settings (-brightness / -gamma ...); after loading the Raven-style preset for mp_shop / mp_raven, dust2 was previewed without its `-brightness 0.28358 -gamma 2.2` - about 3.5x too bright. Each map now gets back the settings it was last compiled / edited with when it is opened (the console says so).
+- **Glass no longer hides what is behind it in Show Compiled Lighting / Play** (hospital glass, helicopter windows): only decals (`polygonOffset`) cover the editor's faces behind them now.
+- **Terrain: no dark rims on ridges / far slopes** in the live light: shadows are looked up off the face itself too (smoothed normals could make a face shadow itself).
+- q3map2: **"Bad pcx file" for 512 / 1024 index maps** (decompiled mp_col2, Terrain Paint's 512 size): the old 640 x 480 limit is gone.
+- Decompile: brushes with a structural side (hint ...) are written structural - no more "Mixed detail and structural" warnings on recompile.
+
 ## Build 2026-10-25 (29)
 ### Editor
 - **Compile window > Problems: Copy / Copy all** (buttons, right-click menu, Ctrl+C; Shift / Ctrl + click selects several lines).

@@ -577,6 +577,9 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	for( Batch& b : g_batches ){
 		if( b.shader == nullptr || b.verts.empty() || !Batch_translucent( b, g_krGameShaders ? b.shader->getStages() : nullptr ) )
 			continue;
+		// only decals (polygonOffset): glass and other see-through surfaces must not hide what is behind them
+		if( const KrShaderEffects* fx = b.shader->getEffects(); fx == nullptr || !fx->polygonOffset )
+			continue;
 		setArrays( b );
 		gl().glUniform1i( u_src, 0 );
 		gl().glUniform1i( u_rgb, 0 );
