@@ -83,6 +83,7 @@ struct CompileOptions
 	int super = 2;    // 1, 2, 4
 	int samples = 0;
 	bool filter = true, dirty = false, patchshadows = false, nomerge = false, shade = false, nocollapse = false;
+	bool ravenlight = false; // -ravenlight: light like Raven's sof2map (the original maps)
 	int bounce = 2;
 	float gamma = 1, compensate = 1;
 	CopiedString extraBsp, extraVis, extraLight;
@@ -251,6 +252,7 @@ QString Compile_commandsText( const CompileOptions& o, std::vector<CopiedString>
 		if( o.shade ) c += " -shade";
 		if( o.nocollapse ) c += " -nocollapse";
 		if( o.nomerge ) c += " -nomerge";
+		if( o.ravenlight ) c += " -ravenlight";
 		if( o.gamma != 1 ) c += QString( " -gamma %1" ).arg( o.gamma, 0, 'g', 3 );
 		if( o.compensate != 1 ) c += QString( " -compensate %1" ).arg( o.compensate, 0, 'g', 3 );
 		c += Compile_advanced( o.advLight );
@@ -421,6 +423,7 @@ CompileOptions Options_fromCommands( const CompileOptions& o, const std::vector<
 				if( f == "-shade" ) { p.shade = true; continue; }
 				if( f == "-nocollapse" ) { p.nocollapse = true; continue; }
 				if( f == "-nomerge" ) { p.nomerge = true; continue; }
+				if( f == "-ravenlight" ) { p.ravenlight = true; continue; }
 				if( f == "-gamma" ) { next( p.gamma ); continue; }
 				if( f == "-compensate" ) { next( p.compensate ); continue; }
 			}
@@ -842,6 +845,9 @@ public:
 			at( r, c ); dspin( g, r, c, "-gamma", o.gamma, "Above 1 brightens dark and mid tones (1 = unchanged). The Sun Calibrator previews it." );
 			at( r, c ); check( g, r, c, "-nocollapse  (keep lightmaps apart)", o.nocollapse, "Keeps identical lightmaps separate. Only for lightmap debugging." );
 			at( r, c ); check( g, r, c, "-nomerge  (no merge after light)", o.nomerge, "This q3map2 merges surfaces sharing a lightmap after -light (always, it makes the map faster). Turn on only if you see seams or wrong light on merged surfaces." );
+			at( r, c ); check( g, r, c, "-ravenlight  (like Raven's maps)", o.ravenlight, "Lights the way Raven's sof2map lit SOF2's original maps: the sky shader's surface light fills every spot "
+			                   "that sees the sky (no fall-off), the sun never drops below half strength on slopes and has sof2map's colour, only 'trans' surfaces let light through, "
+			                   "and models / terrain only get sun shadows. Measured on a decompiled mp_col2: lightmaps 4.7% off the original (12.9% without), terrain and model vertex light 1.00x (0.77x / 0.24x without)." );
 			at( r, c ); check( g, r, c, "-patchshadows  (curves cast shadows)", o.patchshadows, "q3map2 lets light pass through patches unless this is on. Arches, pipes, curved roofs." );
 			at( r, c ); spin( g, r, c, "-samples  (adaptive)", o.samples, 0, 4, "off", "Extra samples only where the light changes (shadow edges). Like -super but cheaper on flat areas." );
 			at( r, c ); check( g, r, c, "-shade  (smooth shading)", o.shade, "Phong shading: light flows smoothly over round brush work and models instead of faceting." );
@@ -1256,7 +1262,7 @@ void KrCompile_registerCommands(){
 	prefB( "KrCompileLight", o.light ); prefI( "KrCompileQuality", o.quality ); prefI( "KrCompileSuper", o.super ); prefI( "KrCompileSamples", o.samples );
 	prefB( "KrCompileFilter", o.filter ); prefB( "KrCompileDirty", o.dirty ); prefB( "KrCompilePatchshadows", o.patchshadows );
 	prefB( "KrCompileShade", o.shade ); prefB( "KrCompileNocollapse", o.nocollapse );
-	prefB( "KrCompileNomerge", o.nomerge ); prefI( "KrCompileBounce", o.bounce );
+	prefB( "KrCompileNomerge", o.nomerge ); prefB( "KrCompileRavenlight", o.ravenlight ); prefI( "KrCompileBounce", o.bounce );
 	prefF( "KrCompileGamma", o.gamma ); prefF( "KrCompileCompensate", o.compensate );
 	prefS( "KrCompileAdvBsp", o.advBsp ); prefS( "KrCompileAdvVis", o.advVis ); prefS( "KrCompileAdvLight", o.advLight );
 	prefS( "KrCompileExtraBsp", o.extraBsp ); prefS( "KrCompileExtraVis", o.extraVis ); prefS( "KrCompileExtraLight", o.extraLight );

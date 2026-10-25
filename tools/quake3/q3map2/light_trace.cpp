@@ -797,6 +797,15 @@ static int TriangulateTraceNode_r( int nodeNum ){
    filters a bsp model's surfaces into the raytracing tree
  */
 
+/* KenRadiant -ravenlight: Raven's sof2map lets light through a surface only when its shader says surfaceparm trans
+   (water, slime - SOF2's projectile clip, used for canvas -, lava ... cast shadows there); fog stays see-through */
+static bool LightPassesThrough( const shaderInfo_t *si ){
+	if ( !ravenLight )
+		return ( si->compileFlags & C_TRANSLUCENT ) != 0;
+	static const int transContents = [](){ int c = 0; ApplySurfaceParm( "trans", &c, nullptr, nullptr ); return c; }();
+	return ( si->contentFlags & transContents ) != 0 || ( si->compileFlags & C_FOG ) != 0;
+}
+
 static void PopulateWithBSPModel( const bspModel_t& model, const Matrix4& transform ){
 	int nodeNum;
 	traceInfo_t ti;
@@ -833,7 +842,7 @@ static void PopulateWithBSPModel( const bspModel_t& model, const Matrix4& transf
 		if ( ( info.si->compileFlags & C_NODRAW ) ) {
 			continue;
 		}
-		if ( ( info.si->compileFlags & C_TRANSLUCENT ) &&
+		if ( LightPassesThrough( info.si ) &&
 		    !( info.si->compileFlags & C_ALPHASHADOW ) &&
 		    !( info.si->compileFlags & C_LIGHTFILTER ) ) {
 			continue;
@@ -943,7 +952,7 @@ static void PopulateWithPicoModel( int castShadows, const std::vector<const AssM
 		if ( ( ti.si->compileFlags & C_NODRAW ) ) {
 			continue;
 		}
-		if ( ( ti.si->compileFlags & C_TRANSLUCENT ) &&
+		if ( LightPassesThrough( ti.si ) &&
 		    !( ti.si->compileFlags & C_ALPHASHADOW ) &&
 		    !( ti.si->compileFlags & C_LIGHTFILTER ) ) {
 			continue;
@@ -1202,6 +1211,21 @@ static bool TraceTriangle( const traceInfo_t& ti, const traceTriangle_t& tt, tra
 	if ( inGrid ) {
 		if ( ti.skipGrid ) {
 			return false;
+		}
+	}
+
+	/* KenRadiant -ravenlight: like sof2map (id's q3map) a triangle never blocks when the ray starts or ends within 1 unit
+	   of its plane - so a model vertex is not shadowed by the triangles around it */
+	if ( ravenLight ) {
+		Vector3 n = vector3_cross( tt.edge1, tt.edge2 );
+		const float len = vector3_length( n );
+		if ( len > 0 ) {
+			n /= len;
+			const float dist = vector3_dot( n, tt.v[ 0 ].xyz );
+			const float d1 = vector3_dot( trace->origin, n ) - dist;
+			const float d2 = vector3_dot( trace->end, n ) - dist;
+			if ( ( d1 > -1 && d1 < 1 ) || ( d2 > -1 && d2 < 1 ) )
+				return false;
 		}
 	}
 

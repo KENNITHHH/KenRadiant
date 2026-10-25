@@ -1998,15 +1998,15 @@ static void CreateTraceLightsForBounds( const MinMax& minmax, const Vector3 *nor
 			continue;
 		}
 
-		/* sunlight skips all this nonsense */
-		if ( light.type != ELightType::Sun ) {
+		/* sunlight skips all this nonsense (KenRadiant: and the -ravenlight sky fill) */
+		if ( light.type != ELightType::Sun && light.ravenSky.empty() ) {
 			/* sun only? */
 			if ( sunOnly ) {
 				continue;
 			}
 
-			/* check against pvs cluster */
-			if ( numClusters > 0 && clusters != nullptr ) {
+			/* check against pvs cluster (KenRadiant: not with -ravenlight, sof2map has no PVS test) */
+			if ( numClusters > 0 && clusters != nullptr && !ravenLight ) {
 				for ( i = 0; i < numClusters; ++i )
 				{
 					if ( ClusterVisible( light.cluster, clusters[ i ] ) ) {
@@ -2037,7 +2037,7 @@ static void CreateTraceLightsForBounds( const MinMax& minmax, const Vector3 *nor
 		}
 
 		/* planar surfaces (except twosided surfaces) have a couple more checks */
-		if ( length > 0 && !trace->twoSided ) {
+		if ( length > 0 && !trace->twoSided && light.ravenSky.empty() ) {
 			/* lights coplanar with a surface won't light it */
 			if ( !( light.flags & LightFlags::Twosided ) && vector3_dot( light.normal, *normal ) > 0.999f ) {
 				lightsPlaneCulled++;
@@ -2862,6 +2862,9 @@ void IlluminateVertexes( int num ){
 		/* twosided lighting */
 		trace.twoSided = info.si->twoSided;
 
+		/* KenRadiant -ravenlight: like sof2map, only the sun casts shadows on vertex-lit surfaces (models, terrain) */
+		trace.ravenNoShadows = ravenLight;
+
 		/* make light list for this surface */
 		CreateTraceLightsForSurface( num, &trace );
 
@@ -2911,6 +2914,10 @@ void IlluminateVertexes( int num ){
 				trace.normal = verts[ i ].normal;
 				/* try at initial origin */
 				trace.cluster = ClusterForPointExtFilter( verts[ i ].xyz, VERTEX_EPSILON, info.numSurfaceClusters, &surfaceClusters[ info.firstSurfaceCluster ] );
+				/* KenRadiant -ravenlight: sof2map lights every vertex where it is (a model vertex touching a wall too) -
+				   no "occluded" vertices getting the average; the light traces decide (there is no PVS test either) */
+				if ( ravenLight && trace.cluster < CLUSTER_NORMAL )
+					trace.cluster = 0;
 				if ( trace.cluster >= CLUSTER_NORMAL ) {
 					/* setup trace */
 					trace.origin = verts[ i ].xyz;
@@ -3239,6 +3246,11 @@ void SetupBrushesFlags( int mask_any, int test_any, int mask_all, int test_all )
 		}
 
 		/* determine if this brush is opaque to light */
+		/* KenRadiant -ravenlight: sof2map's rays only stop in solid structural space - detail brushes shadow
+		   through their faces (which skip rays starting or ending within 1 unit, like a model touching them) */
+		if ( ravenLight && ( compileFlags & C_DETAIL ) ) {
+			continue;
+		}
 		if ( ( compileFlags & mask_any ) == test_any && ( allCompileFlags & mask_all ) == test_all ) {
 			opaqueBrushes[ b ] = true;
 			numOpaqueBrushes++;
@@ -3302,8 +3314,8 @@ void SetupEnvelopes( bool forGrid, bool fastFlag ){
 			light->flags |= LightFlags::Negative;
 		}
 
-		/* sunlight? */
-		if ( light->type == ELightType::Sun ) {
+		/* sunlight? (KenRadiant: and the -ravenlight sky fill, which reaches everywhere) */
+		if ( light->type == ELightType::Sun || !light->ravenSky.empty() ) {
 			/* special cased */
 			light->cluster = 0;
 			light->envelope = MAX_WORLD_COORD * 8.0f;
@@ -3317,8 +3329,8 @@ void SetupEnvelopes( bool forGrid, bool fastFlag ){
 			/* get pvs cluster for light */
 			light->cluster = ClusterForPointExt( light->origin, LIGHT_EPSILON );
 
-			/* invalid cluster? */
-			if ( light->cluster <= CLUSTER_OPAQUE ) {
+			/* invalid cluster? (KenRadiant -ravenlight: sof2map drops lights in solid space instead of moving them) */
+			if ( light->cluster <= CLUSTER_OPAQUE && !ravenLight ) {
 				/* nudge the sample point around a bit */
 				for ( int x = 0; x < 4; ++x )
 				{

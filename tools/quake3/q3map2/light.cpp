@@ -30,6 +30,7 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include <map>
 #include "bspfile_rbsp.h"
 #include <set>
 
@@ -111,6 +112,8 @@ static void CreateSunLight( sun_t& sun ){
 
 		/* set color and photons */
 		light.color = sun.color;
+		if ( ravenLight && vector3_length( light.color ) > 0 ) // sof2map (id's q3map): VectorNormalize - unit length, not max 1
+			light.color /= vector3_length( light.color );
 		light.photons = photons * skyScale;
 	}
 }
@@ -603,6 +606,8 @@ static void CreateSurfaceLights(){
 		/* sunlight? */
 		if ( !si.suns.empty() && !nss ) {
 			auto& si_ = const_cast<shaderInfo_t&>( si );   /* FIXME: hack! */
+			if ( ravenLight ) // sof2map: only when the sun gives light (its colour x intensity is not 0)
+				si_.ravenSky = std::any_of( si.suns.begin(), si.suns.end(), []( const sun_t& sun ){ return sun.photons > 0 && sun.color != g_vector3_identity; } );
 			Sys_FPrintf( SYS_VRB, "Sun: %s\n", si.shader.c_str() );
 			if( !g_oneSky ){
 				assign_sky_index( si_ );
@@ -798,6 +803,36 @@ int LightContributionToSample( trace_t *trace ){
 		return 0;
 	}
 
+	/* KenRadiant -ravenlight: sof2map's sky fill - value * colour once, if any patch of the sky is in sight */
+	if ( !light->ravenSky.empty() ) {
+		for ( const light_t::RavenSkyPatch& p : light->ravenSky ) {
+			if ( vector3_dot( p.origin, trace->normal ) - vector3_dot( trace->origin, trace->normal ) < 0 )
+				continue; /* MrE: behind the surface */
+			const float d = vector3_dot( trace->origin, p.normal ) - p.dist;
+			if ( !( light->flags & LightFlags::Twosided ) && d < -1 )
+				continue; /* behind the sky */
+			/* sof2map works the form factor out first: the patch must be over the sample's horizon */
+			const Vector3 pushed = ( d > -8 && d < 8 ) ? trace->origin + p.normal * ( 8 - d ) : trace->origin;
+			const float factor = PointToPolygonFormFactor( pushed, trace->normal, p.w );
+			if ( factor <= 0 && !( factor < 0 && ( light->flags & LightFlags::Twosided ) ) )
+				continue;
+			trace->end = p.origin;
+			SetupTrace( trace );
+			if ( trace->testOcclusion && !trace->forceSunlight && !trace->ravenNoShadows ) {
+				trace->testAll = false;
+				trace->color.set( 1 );
+				TraceLine( trace );
+				if ( trace->passSolid || trace->opaque )
+					continue;
+			}
+			trace->color = light->color * light->ravenSkyValue; /* no filter, like sof2map */
+			trace->directionContribution.set( 0 );
+			return 1;
+		}
+		trace->color.set( 0 );
+		return 0;
+	}
+
 	/* do some culling checks */
 	if ( light->type != ELightType::Sun ) {
 		/* MrE: if the light is behind the surface */
@@ -807,8 +842,8 @@ int LightContributionToSample( trace_t *trace ){
 			}
 		}
 
-		/* ydnar: test pvs */
-		if ( !ClusterVisible( trace->cluster, light->cluster ) ) {
+		/* ydnar: test pvs (KenRadiant -ravenlight: sof2map has no PVS test - the traces decide) */
+		if ( !ravenLight && !ClusterVisible( trace->cluster, light->cluster ) ) {
 			return 0;
 		}
 	}
@@ -1075,6 +1110,10 @@ int LightContributionToSample( trace_t *trace ){
 			angle = 1;
 		}
 
+		/* KenRadiant -ravenlight: sof2map never lets the sun's angle factor below SkyMinimum (0.5) */
+		if ( ravenLight && ( light->flags & LightFlags::AttenAngle ) )
+			value_maximize( angle, ravenSunMinimum );
+
 		/* attenuate */
 		add = light->photons * angle;
 
@@ -1163,6 +1202,9 @@ int LightContributionToSample( trace_t *trace ){
 	trace->color = light->color * add;
 
 	/* raytrace */
+	if ( trace->ravenNoShadows ) {
+		return 1;
+	}
 	TraceLine( trace );
 	trace->forceSubsampling *= add;
 	if ( trace->passSolid || trace->opaque ) {
@@ -1262,6 +1304,25 @@ static bool LightContributionToPoint( trace_t *trace ){
 
 	/* ydnar: early out */
 	if ( !( light->flags & LightFlags::Grid ) || light->envelope <= 0 ) {
+		return false;
+	}
+
+	/* KenRadiant -ravenlight: sky fill (see LightContributionToSample) */
+	if ( !light->ravenSky.empty() ) {
+		for ( const light_t::RavenSkyPatch& p : light->ravenSky ) {
+			if ( !( light->flags & LightFlags::Twosided ) && vector3_dot( trace->origin, p.normal ) - p.dist < -1 )
+				continue;
+			trace->end = p.origin;
+			SetupTrace( trace );
+			trace->testAll = false;
+			trace->color.set( 1 );
+			TraceLine( trace );
+			if ( trace->passSolid || trace->opaque )
+				continue;
+			trace->color = light->color * light->ravenSkyValue;
+			return true;
+		}
+		trace->color.set( 0 );
 		return false;
 	}
 
@@ -1977,6 +2038,28 @@ static void LightWorld( bool fastAllocate, bool bounceStore ){
 	Sys_FPrintf( SYS_VRB, "--- CreateLights ---\n" );
 	CreateEntityLights();
 	CreateSurfaceLights();
+	if ( ravenLight ) { /* sof2map: the area lights of a sky shader with a sun fill flat, once - gather them per shader */
+		std::map<const shaderInfo_t*, light_t*> groups;
+		int gathered = 0;
+		for ( auto it = lights.begin(); it != lights.end(); ) {
+			if ( it->type == ELightType::Area && it->si != nullptr && it->si->ravenSky ) {
+				light_t*& g = groups[ it->si ];
+				if ( g == nullptr ) {
+					g = &*it;
+					g->ravenSkyValue = it->si->value;
+				}
+				g->ravenSky.push_back( { it->origin, it->normal, it->dist, it->w } );
+				++gathered;
+				if ( g != &*it ) {
+					it = lights.erase( it );
+					continue;
+				}
+			}
+			++it;
+		}
+		for ( auto& [si, g] : groups )
+			Sys_Printf( "Raven sky fill: %s, %zu patches, value %g\n", si->shader.c_str(), g->ravenSky.size(), g->ravenSkyValue );
+	}
 	Sys_Printf( "%9d point lights\n", numPointLights );
 	Sys_Printf( "%9d spotlights\n", numSpotLights );
 	Sys_Printf( "%9d diffuse (area) lights\n", numDiffuseLights );
@@ -2267,6 +2350,15 @@ int LightMain( Args& args ){
 			f = atof( args.takeNext() );
 			spotScale *= f;
 			Sys_Printf( "Spot point (entity) light scaled by %f to %f\n", f, spotScale );
+		}
+
+		if ( args.takeArg( "-ravenlight" ) ) {
+			ravenLight = true;
+			Sys_Printf( "Lighting like Raven's sof2map: sky fill, sun colour and angle as in SOF2's original maps\n" );
+		}
+		while ( args.takeArg( "-ravensunmin" ) ) {
+			ravenSunMinimum = atof( args.takeNext() );
+			Sys_Printf( "Raven light: sun angle minimum %f\n", ravenSunMinimum );
 		}
 
 		while ( args.takeArg( "-area", "-areascale" ) ) {

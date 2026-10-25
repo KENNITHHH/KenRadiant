@@ -4,6 +4,31 @@ Builds are published as **KenRadiant Latest Build** on the Releases page; the q3
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
 ## Build 2026-10-25 (32)
+### q3map2: `-ravenlight` - light like Raven's sof2map, without sof2map
+Worked out from Raven's sof2map.exe (decompiled, and run here as the reference) and id's GPL q3map 1.x it is built on.
+What sof2map does differently from q3map2, now copied under `-ravenlight`:
+- **Sky fill**: a sky shader with a `sun` gives every spot that sees the sky (any of its light patches over the spot's
+  horizon) its `q3map_surfacelight` value x colour **once, flat** - no distance or angle fall-off. This is what lifts
+  the shadows in the original maps (mp_col2: 95 -> shadows at ~0.30 instead of ~0.05).
+- **Sun**: colour normalised to length 1 (q3map2: brightest channel 1, ~1.3x brighter for a warm sun) and the angle
+  factor never below 0.5 ("SkyMinimum").
+- **What blocks light**: only surfaces of shaders with `surfaceparm trans` let light through (q3map2 also let it
+  through water / slime / lava - SOF2's canvas roofs are "slime"); triangles skip rays that start or end within 1 unit
+  of them; detail brushes shadow through their faces only; no PVS test; lights inside solid are dropped, not moved.
+- **Vertex light (models, terrain)**: only the sun casts shadows on it, and every vertex is lit where it is.
+Measured against the original .bsp files (decompiled with KenRadiant, compiled with this q3map2):
+
+| | lightmaps (mean error) | terrain vertex light | model vertex light |
+|---|---|---|---|
+| mp_col2, `-light -fast -super 2 -filter` | 12.9% | 0.77x | 0.24x |
+| mp_col2, `-light -super 2 -ravenlight` | **4.7%** | **1.00x** | **1.00x** |
+| mp_shop, `-light -fast -super 2 -filter` | 2.8% | - | 0.65x |
+| mp_shop, `-light -super 2 -ravenlight` | 2.9% | - | **1.03x** |
+
+(Raven's own sof2map on the same decompiled maps: mp_col2 0.3%, mp_shop 2.7%.) Compile window: LIGHT tab
+**-ravenlight**; the Build menu preset "KenRadiant: (like Raven's own maps)" now uses `-light -super 2 -ravenlight`.
+About 1.5x the light time of the same settings without it.
+
 - **sof2map: what it needs, checked before it runs.** Raven's sof2map reads shaders **only from loose .shader files** in
   base\shaders - not from .pk3s (tested: with mp_col2's shaders in a .pk3 the sky `3w_scan2` comes out a plain texture,
   so no sky, no sun, no sky light - the "sky not loaded" you saw) - and holds **at most 8192 shaders** ("Exceeded

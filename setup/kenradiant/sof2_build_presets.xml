@@ -5,11 +5,11 @@
   <command>[q3map2] -light -fast -super 2 -filter -bounce 2 "[MapFile]"</command>
   </build>
 
-  <build name="KenRadiant: (like Raven's own maps) BSP -meta, VIS, LIGHT -fast -super 2 -filter">
-  <!-- measured: mp_shop's original lightmaps = this q3map2 with these settings (no bounce, no -brightness / -gamma), 1.00x at every brightness -->
+  <build name="KenRadiant: (like Raven's own maps) BSP -meta, VIS, LIGHT -super 2 -ravenlight">
+  <!-- -ravenlight = Raven's sof2map light model (the original maps: sof2map -light -extra); measured on decompiled mp_col2 / mp_shop against the originals -->
   <command>[q3map2] -meta "[MapFile]"</command>
   <command>[q3map2] -vis -saveprt "[MapFile]"</command>
-  <command>[q3map2] -light -fast -super 2 -filter "[MapFile]"</command>
+  <command>[q3map2] -light -super 2 -ravenlight "[MapFile]"</command>
   </build>
 
   <build name="KenRadiant: (final, high quality) BSP -meta, VIS, LIGHT -super 2 -filter -bounce 4 -dirty">

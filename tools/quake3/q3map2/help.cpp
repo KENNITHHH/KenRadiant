@@ -266,6 +266,8 @@ static void HelpLight()
 		{ "-sRGBtex", "Treat textures as sRGB colorspace" },
 		{ "-style, -styles", "Enable support for light styles" },
 		{ "-sunonly", "Only compute sun light" },
+		{ "-ravenlight", "Light like Raven's sof2map (SOF2's original maps): flat sky fill, sof2map sun, only 'trans' lets light through, sun-only shadows on vertex light" },
+		{ "-ravensunmin <F>", "-ravenlight: lowest sun angle factor (sof2map SkyMinimum, default 0.5)" },
 		{ "-super <N>, -supersample <N>", "Ordered grid supersampling quality" },
 		{ "-thresh <F>", "Triangle subdivision threshold" },
 		{ "-trianglecheck", "Broken check that should ensure luxels apply to the right triangle" },

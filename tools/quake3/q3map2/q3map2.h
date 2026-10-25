@@ -566,6 +566,7 @@ struct shaderInfo_t_data
 
 	bool legacyTerrain;                                 /* ydnar: enable legacy terrain crutches */
 	bool indexed;                                       /* ydnar: attempt to use indexmap (terrain alphamap style) */
+	bool ravenSky;                                      /* KenRadiant -ravenlight: a sky shader with a sun (its surface light is Raven's flat sky fill) */
 	bool forceMeta;                                     /* ydnar: force metasurface path */
 	bool noClip;                                        /* ydnar: don't clip into bsp, preserve original face winding */
 	bool noFast;                                        /* ydnar: suppress fast lighting for surfaces with this shader */
@@ -1197,6 +1198,12 @@ struct light_t
 	float filterRadius;                 /* ydnar: lightmap filter radius in world units, 0 == default */
 
 	int skyIndex = -1;                  /* For sun/skylights. Check if particular sky triangle emits a given light. -1 = always emits */
+
+	/* KenRadiant -ravenlight: all area lights of one sky shader (with a sun) gathered in one light: Raven's sof2map adds
+	   the shader's value * colour once to every sample that sees one of them, without distance / angle falloff */
+	struct RavenSkyPatch { Vector3 origin, normal; float dist; winding_t w; };
+	std::vector<RavenSkyPatch> ravenSky;
+	float ravenSkyValue = 0;
 };
 
 
@@ -1204,6 +1211,7 @@ struct trace_t
 {
 	/* constant input */
 	bool testOcclusion, forceSunlight, testAll;
+	bool ravenNoShadows = false; /* KenRadiant -ravenlight: vertex-lit surface - sof2map only traces the sun for them */
 	int recvShadows;
 
 	int numSurfaces;
@@ -2177,6 +2185,8 @@ inline int debugSampleSize; // 1=warn; 0=warn if lmsize>128
 inline float pointScale = 7500.0f;
 inline float spotScale = 7500.0f;
 inline float areaScale = 0.25f;
+inline bool ravenLight = false;   /* KenRadiant: light like Raven's sof2map (SOF2's original maps) */
+inline float ravenSunMinimum = 0.5f; /* sof2map: the sun's angle factor never drops below this ("SkyMinimum") */
 inline float skyScale = 1;
 inline float bounceScale = 0.25f;
 inline float bounceColorRatio = 1;
