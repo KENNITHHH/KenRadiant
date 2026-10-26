@@ -1464,6 +1464,13 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				}
 				continue;
 			}
+			else if ( string_equal_nocase_n( token, "surfaceSprites", 14 ) ) {
+				/* the engine scatters sprites (grass, leaves ...) over the surface for this stage - it does not draw
+				   the stage's image over the surface itself, so the editor leaves it out instead of covering the
+				   ground with the sprite's texture */
+				stage.sprite = true;
+				continue;
+			}
 			else if ( string_equal_nocase( token, "glow" ) ) {
 				stageGlow = true;
 				stage.glow = true;

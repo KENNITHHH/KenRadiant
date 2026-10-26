@@ -532,8 +532,15 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 			}
 			// the shader's stages, as the engine draws them
 			Batch_loadStages( b, *stages );
+			bool depthWritten = false;
 			for( std::size_t i = 0; i < stages->size(); ++i ){
 				const KrStage& st = ( *stages )[i];
+				if( st.sprite ) // surfaceSprites: the engine scatters sprites, it does not draw this stage over the surface
+					continue;
+				/* depthFunc equal: SOF2's masked shaders draw the texture (alphaFunc), replace it with the lightmap and
+				   multiply it back on - only the texels the first stage kept wrote depth, and that is what cuts the
+				   stages after it to the same shape instead of filling the gaps with black */
+				gl().glDepthFunc( st.depthEqual && depthWritten? GL_EQUAL : GL_LEQUAL );
 				const bool replace = !st.blend || ( st.src == BLEND_ONE && st.dst == BLEND_ZERO );
 				if( i == 0 && replace ){
 					gl().glDisable( GL_BLEND );
@@ -583,7 +590,9 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				gl().glUniform1i( u_env, st.tcGen == 2 ? 1 : 0 );
 				gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
 				gl().glUniform1i( u_env, 0 );
+				depthWritten = depthWritten || st.depthWrite || ( i == 0 && replace );
 			}
+			gl().glDepthFunc( GL_LEQUAL );
 		}
 	// blended surfaces (decals) hide the editor's own faces behind them too: their depth, where they are seen
 	gl().glDisable( GL_BLEND );

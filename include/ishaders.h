@@ -205,6 +205,7 @@ struct KrStage
 	float alphaConst = 1;
 	int tcGen = 0;                      // 0 base, 1 lightmap, 2 environment
 	bool glow = false;                  // SOF2 glow keyword
+	bool sprite = false;                // surfaceSprites: the engine scatters sprites, it does not draw the surface
 	KrShaderEffects fx;                 // this stage's tcMods (+ the shader's deformVertexes)
 };
 

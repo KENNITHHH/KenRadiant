@@ -3,6 +3,22 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-26 (37)
+### With a .bsp loaded (Show Compiled Lighting / Game View)
+- **Masked shaders were black where they should be see-through.** The compiled-lighting view has its own renderer and
+  it ignored `depthFunc equal` as well - same bug as the 3D view's, fixed the same way: the stages after a masked one
+  only draw where the first stage wrote depth. Bamboo walls, camo nets, thatch, canopies, tower supports and wooden
+  ladders are cut out properly now.
+- **The terrain looked flat, repetitive and unblended.** SOF2's terrain layer shaders carry a `surfaceSprites` stage
+  (`gfx/sprites/ss_grass_dirt`, `blendFunc GL_ONE GL_ZERO`): the engine scatters sprites with it, it does not draw the
+  stage's image over the surface. KenRadiant drew it like a normal stage, so the sprite sheet replaced the blended
+  ground. `surfaceSprites` stages are left out of the 3D view now, in both the compiled-lighting view and the game
+  look, so the layer blend shows as it should.
+
+### Sky brushes with no skybox
+- They are drawn flat now instead of shaded by the angle of each face, so a `skyParms - 512 -` sky reads as an
+  overcast sky rather than grey walls.
+
 ## Build 2026-10-26 (36)
 ### Masked shaders (bamboo, nets, thatch, canopies) drew their cut-out parts black
 - **Fixed: `depthFunc equal` was ignored.** SOF2's masked shaders draw the texture with `alphaFunc GE128`, replace it

@@ -2522,6 +2522,7 @@ void OpenGLShader::construct( const char* name ){
 			   the game draws there, and the fog colour takes over when the fog is on */
 			if( state.m_krSky && g_skyboxPreview && ( m_shader->getSkyBox() == nullptr || m_shader->getSkyBox()->texture_number == 0 ) ){
 				state.m_texture = KrGreySkyTexture();
+				state.m_state &= ~RENDER_LIGHTING; // flat, like an overcast sky - not grey walls shaded by their angle
 			}
 
 			if ( ( m_shader->getFlags() & QER_TRANS ) != 0 ) {
@@ -2655,6 +2656,8 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 	bool maskDepthWrite = false;
 	std::vector<const KrStage*> list;
 	for( const KrStage& st : *stages ){
+		if( st.sprite ) // surfaceSprites: the engine scatters sprites, it does not draw this stage over the surface
+			continue;
 		if( st.special == 1 || st.tcGen == 1 ){
 			lightmapped = true;
 			if( st.blend && ( ( st.src == BLEND_DST_COLOUR && st.dst == BLEND_SRC_COLOUR ) || ( st.src == BLEND_SRC_COLOUR && st.dst == BLEND_DST_COLOUR ) ) )
