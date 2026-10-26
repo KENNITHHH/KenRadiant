@@ -119,6 +119,7 @@ static void HelpBsp()
 		{ "-noflares", "Turn off support for flares" },
 		{ "-nofog", "Turn off support for fog volumes" },
 		{ "-nohint", "Turn off support for hint brushes" },
+		{ "-q3terrainnormals", "Smooth index-map terrain normals q3map2's way instead of Raven's (sof2map's terrain normals light the slopes the way the shipped maps look)" },
 		{ "-q3contents", "Take a brush's contents q3map2's way (a liquid / clip / non-solid side wins) instead of Raven's (the first side decides, which is what sof2map does)" },
 		{ "-noob", "Assign surfaceparm noob to all map surfaces (Q3A:Defrag mod no-overbounces flag)" },
 		{ "-nosRGB", "Treat colors and textures as linear colorspace" },

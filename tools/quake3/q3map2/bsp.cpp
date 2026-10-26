@@ -30,6 +30,9 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include <map>
+#include <array>
+#include <tuple>
 
 
 
@@ -254,6 +257,84 @@ static void FixBrushSides( const entity_t& e ){
    creates a full bsp + surfaces for the worldspawn entity
  */
 
+
+/*
+   KenRadiant: RavenTerrainNormals()
+   the vertex normals sof2map gives index-map terrain - it uses id's Team Arena terrain code (terrain.c): the terrain
+   faces are grouped into surfaces by layer shader and by 2048 unit block; within a surface a vertex keeps the normal
+   of the first face that brought it (the entity's brushes taken last to first, as q3map links them), and the final
+   normal is the sum of those over every surface the vertex is in. So an inner vertex of an area of one layer is NOT
+   smoothed - it has the normal of one face next to it - which is what gives Raven's terrain its light. q3map2 smooths
+   instead (shadeAngle 179), which lights the slopes differently. Measured on mp_col2: these are Raven's normals for
+   99% of the terrain's vertices.
+ */
+static void RavenTerrainNormals( const entity_t& e ){
+	if ( q3TerrainNormals || !strEqual( g_game->arg, "sof2" ) )
+		return;
+	struct Face { mapDrawSurface_t *ds; const brush_t *b; std::ptrdiff_t side; };
+	std::map<const indexMap_t*, std::vector<Face>> groups;
+	for ( int i = e.firstDrawSurf; i < numMapDrawSurfs; ++i ) {
+		mapDrawSurface_t& ds = mapDrawSurfs[ i ];
+		if ( ds.type != ESurfaceType::Face || ds.mapBrush == nullptr || ds.mapBrush->im == nullptr || ds.sideRefs.empty()
+		  || ds.planeNum < 0 || ds.verts.empty() )
+			continue;
+		const side_t *side = ds.sideRefs.front();
+		if ( side->shaderInfo == nullptr || !side->shaderInfo->indexed )
+			continue;
+		groups[ ds.mapBrush->im ].push_back( { &ds, ds.mapBrush, side - ds.mapBrush->sides.data() } );
+	}
+	int changed = 0;
+	for ( auto& [ im, faces ] : groups ) {
+		/* the brushes last to first (q3map links each new brush in front), their sides in order */
+		std::stable_sort( faces.begin(), faces.end(), []( const Face& a, const Face& b ){
+			return a.b->brushNum != b.b->brushNum ? a.b->brushNum > b.b->brushNum : a.side < b.side;
+		} );
+		const MinMax& bounds = faces.front().b->eMinmax;
+		Vector3 mins, size;
+		for ( int k = 0; k < 3; ++k ) {
+			mins[ k ] = std::floor( bounds.mins[ k ] + 0.1 );
+			size[ k ] = std::floor( bounds.maxs[ k ] + 0.1 ) - mins[ k ];
+		}
+		if ( size[ 0 ] <= 0 || size[ 1 ] <= 0 )
+			continue;
+		const int blocksX = int( ( size[ 0 ] + 2047 ) / 2048 ), blocksY = int( ( size[ 1 ] + 2047 ) / 2048 );
+		using Pos = std::array<int, 3>;
+		const auto posOf = []( const Vector3& p ){
+			return Pos{ int( std::floor( p[ 0 ] + 0.1 ) ), int( std::floor( p[ 1 ] + 0.1 ) ), int( std::floor( p[ 2 ] + 0.1 ) ) };
+		};
+		std::map<std::tuple<const shaderInfo_t*, int, int, Pos>, Vector3> first; // a surface's vertex -> its first normal
+		for ( const Face& f : faces ) {
+			float minS = 1, minT = 1;
+			for ( const bspDrawVert_t& v : f.ds->verts ) {
+				minS = std::min( minS, std::clamp( float( std::floor( v.xyz[ 0 ] + 0.1 - mins[ 0 ] ) / size[ 0 ] ), 0.f, 1.f ) );
+				minT = std::min( minT, std::clamp( float( std::floor( v.xyz[ 1 ] + 0.1 - mins[ 1 ] ) / size[ 1 ] ), 0.f, 1.f ) );
+			}
+			const int bx = std::min( int( minS * blocksX ), blocksX - 1 ), by = std::min( int( minT * blocksY ), blocksY - 1 );
+			const Vector3 normal = mapplanes[ f.ds->planeNum ].normal();
+			for ( const bspDrawVert_t& v : f.ds->verts )
+				first.emplace( std::make_tuple( f.ds->shaderInfo, bx, by, posOf( v.xyz ) ), normal );
+		}
+		std::map<Pos, Vector3> sum;
+		for ( const auto& [ key, normal ] : first ) {
+			auto [ it, added ] = sum.emplace( std::get<3>( key ), normal );
+			if ( !added )
+				it->second += normal;
+		}
+		for ( const Face& f : faces ) {
+			for ( bspDrawVert_t& v : f.ds->verts ) {
+				const auto it = sum.find( posOf( v.xyz ) );
+				if ( it != sum.end() && vector3_length( it->second ) > 1e-6 ) {
+					v.normal = vector3_normalised( it->second );
+					++changed;
+				}
+			}
+			f.ds->keepNormals = true;
+		}
+	}
+	if ( changed )
+		Sys_FPrintf( SYS_VRB, "%9d terrain vertex normals set the way sof2map does\n", changed );
+}
+
 static void ProcessWorldModel( entity_t& e ){
 	const char  *value;
 
@@ -375,6 +456,9 @@ static void ProcessWorldModel( entity_t& e ){
 	/* ydnar: project decals */
 	MakeEntityDecals( e );
 
+	/* KenRadiant: sof2map's terrain vertex normals */
+	RavenTerrainNormals( e );
+
 	/* ydnar: meta surfaces */
 	MakeEntityMetaTriangles( e );
 	SmoothMetaTriangles();
@@ -491,6 +575,9 @@ static void ProcessSubModel( entity_t& e ){
 
 	/* ydnar: project decals */
 	MakeEntityDecals( e );
+
+	/* KenRadiant: sof2map's terrain vertex normals */
+	RavenTerrainNormals( e );
 
 	/* ydnar: meta surfaces */
 	MakeEntityMetaTriangles( e );
@@ -760,6 +847,10 @@ int BSPMain( Args& args ){
 		while ( args.takeArg( "-nobrushsnap" ) ) {
 			Sys_Printf( "Brush vertices snapping disabled\n" );
 			g_brushSnap = false;
+		}
+		while ( args.takeArg( "-q3terrainnormals" ) ) {
+			Sys_Printf( "Terrain normals: smoothed (q3map2) instead of sof2map's\n" );
+			q3TerrainNormals = true;
 		}
 		while ( args.takeArg( "-q3contents" ) ) {
 			Sys_Printf( "Brush contents: q3map2's rule (a liquid / clip / non-solid side wins) instead of sof2map's first side\n" );

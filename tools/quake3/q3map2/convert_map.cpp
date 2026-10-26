@@ -1435,6 +1435,27 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast )
 		ExactComputeDefaults();
 
+	/* KenRadiant: shaders the map was compiled with "surfaceparm trans" that the shader files no longer have - Raven
+	   commented it out after compiling ("remove trans for play"), so light passed through them in the original
+	   (mp_col2's river bed is lit through the water) and a recompile with today's shaders comes out darker there */
+	{
+		int trans = 0;
+		ApplySurfaceParm( "trans", &trans, nullptr, nullptr );
+		int found = 0;
+		for ( const bspShader_t& bs : bspShaders ) {
+			if ( trans == 0 || !( bs.contentFlags & trans ) )
+				continue;
+			const shaderInfo_t& si = ShaderInfoForShader( bs.shader );
+			if ( si.contentFlags & trans )
+				continue;
+			if ( found++ == 0 )
+				Sys_Warning( "these shaders were compiled with \"surfaceparm trans\", which your shader files no longer say - "
+				             "light went through them in the original. To light the map like the original, add it back "
+				             "while you compile (Raven's own shaders mark it \"remove trans for play\"):\n" );
+			Sys_Printf( "    %s\n", bs.shader );
+		}
+	}
+
 	terraindec::g_enabled = false;
 	if ( brushType == EBrushType::Quake && !g_decompile_legacy && !fast )
 		terraindec::setup( bspName );

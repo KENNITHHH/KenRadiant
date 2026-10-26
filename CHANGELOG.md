@@ -3,6 +3,33 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-26 (38)
+### q3map2: the terrain is lit like sof2map's now - Raven's terrain vertex normals
+- **The landscape still looked different in game** after build 36, and it was not the textures any more: your
+  decompile is exact (your `mp_col2_terrain1.tga` is pixel-identical to mine, and both q3map2 and sof2map give the
+  original's layers and texture coordinates from it, 0.0% different). It was the **vertex normals** the terrain is
+  lit with. sof2map uses id's Team Arena terrain code: the faces are grouped into surfaces by layer shader and by 2048
+  unit block, inside a surface a vertex keeps the normal of the *first* face that brought it (the entity's brushes
+  taken last to first), and the final normal is the sum of those over the surfaces the vertex is in. So most terrain
+  vertices are **not** smoothed - they carry one neighbouring face's normal - while q3map2 smoothed every vertex over
+  all its faces (shadeAngle 179), which lights the slopes differently.
+- q3map2 does it Raven's way now for SOF2 (`-q3terrainnormals` brings the smoothing back). On your mp_col2:
+  terrain vertex normals identical to the original **20.9% -> 99.7%** (sof2map: 99.3% on the same map); terrain
+  vertex light around the bridge, mean difference to the original **13.1 -> 9.4 /255**. Lightmaps unchanged.
+
+### Decompiling: shaders Raven compiled with `surfaceparm trans`
+- Five of mp_col2's shaders - the three waters, `mp_3w3towersupport`, `mp_3w3_woodfence` - say
+  `// remove trans for play` above a commented-out `surfaceparm trans`: Raven compiled with it, then took it out of
+  the shader files that shipped. Light went through them in the original (the river bed is lit through the water),
+  so any recompile with today's shaders - sof2map's too - is darker there. The decompiler now lists the shaders whose
+  BSP says `trans` while your shader files don't. Put `surfaceparm trans` back in them while you compile and the
+  bridge area goes **9.4 -> 5.5 /255** from the original (sof2map on the same map: 4.2).
+
+### Editor: "cull disable" faces from behind
+- Brush faces whose shader says `cull none` / `cull disable` / `twosided` (camo nets, fences, foliage) are drawn when
+  you look at them from behind now - the editor skipped every face pointing away from the camera before the
+  shader's cull mode was even looked at. With nodraw hidden (Game View) you see the net from both sides, like in game.
+
 ## Build 2026-10-26 (37)
 ### With a .bsp loaded (Show Compiled Lighting / Game View)
 - **Masked shaders were black where they should be see-through.** The compiled-lighting view has its own renderer and

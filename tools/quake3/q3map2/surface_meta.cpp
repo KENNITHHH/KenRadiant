@@ -57,6 +57,7 @@ struct metaTriangle_t
 	const side_t        *side; // can be nullptr
 	int entityNum, surfaceNum, planeNum, fogNum, sampleSize, castShadows, recvShadows;
 	float shadeAngleDegrees;
+	bool keepNormals = false; /* KenRadiant: normals set already (Raven's terrain normals) */
 	Vector3 ambientColor;
 	Plane3f plane;
 	Vector3 lightmapAxis;
@@ -314,6 +315,7 @@ static void SurfaceToMetaTriangles( mapDrawSurface_t& ds ){
 			src.fogNum            = ds.fogNum;
 			src.sampleSize        = ds.sampleSize;
 			src.shadeAngleDegrees = ds.shadeAngleDegrees;
+			src.keepNormals       = ds.keepNormals;
 			src.ambientColor      = ds.ambientColor;
 			src.lightmapAxis      = ds.lightmapAxis;
 
@@ -1109,6 +1111,10 @@ void SmoothMetaTriangles(){
 				else if ( v.triangle->shadeAngleDegrees > 0 ) {
 					shadeAngle = degrees_to_radians( v.triangle->shadeAngleDegrees );
 				}
+
+				/* KenRadiant: the normals are set already (Raven's terrain normals) */
+				if ( v.triangle->keepNormals )
+					shadeAngle = 0;
 
 				/* flag verts */
 				v.angle = shadeAngle;

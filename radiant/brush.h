@@ -2850,7 +2850,11 @@ public:
 	}
 
 	void render( Renderer& renderer, const VolumeTest& volume, const Matrix4& localToWorld ) const {
-		if ( !m_face->isFiltered() && m_face->contributes() && intersectVolume( volume, localToWorld ) ) {
+		/* KenRadiant: a "cull disable" face (SOF2's nets, fences, foliage) is seen from behind too in game, so it is
+		   drawn even when it faces away from the camera */
+		if ( !m_face->isFiltered() && m_face->contributes()
+		  && ( intersectVolume( volume, localToWorld )
+		    || ( m_face->getShader().state() != nullptr && ( m_face->getShader().state()->getFlags() & QER_KR_TWOSIDED ) ) ) ) {
 			renderer.PushState();
 			renderer.Highlight( Renderer::ePrimitiveWire );
 			if ( selectedComponents() ) {

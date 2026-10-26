@@ -655,7 +655,7 @@ bool ShaderTemplate::parseDoom3( Tokeniser& tokeniser ){
 			}
 			else if ( string_equal_nocase( token, "twosided" ) ) {
 				m_Cull = IShader::eCullNone;
-				m_nFlags |= QER_CULL;
+				m_nFlags |= QER_CULL | QER_KR_TWOSIDED;
 			}
 			else if ( string_equal_nocase( token, "nodraw" ) ) {
 				m_nFlags |= QER_NODRAW;
@@ -1747,6 +1747,10 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				}
 
 				m_nFlags |= QER_CULL;
+				if ( m_Cull == IShader::eCullNone )
+					m_nFlags |= QER_KR_TWOSIDED;
+				else
+					m_nFlags &= ~QER_KR_TWOSIDED;
 			}
 			else if ( string_equal_nocase( token, "surfaceparm" ) ) {
 				const char* surfaceparm = tokeniser.getToken();

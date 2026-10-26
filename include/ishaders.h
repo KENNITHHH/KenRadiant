@@ -42,6 +42,7 @@ enum
 	QER_SKY = 1 << 11,
 	QER_KR_LIGHTPASS = 1 << 12, // KenRadiant: q3map2 lets light through (surfaceparm trans / nonsolid / clip / water ...)
 	QER_KR_TERRAIN = 1 << 13,   // KenRadiant: q3map_terrain / q3map_indexed (blended by the terrain entity's index map)
+	QER_KR_TWOSIDED = 1 << 14,  // KenRadiant: cull none / disable / twosided - the game draws the face from behind too
 };
 
 struct qtexture_t;
