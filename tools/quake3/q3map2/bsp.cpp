@@ -761,6 +761,10 @@ int BSPMain( Args& args ){
 			Sys_Printf( "Brush vertices snapping disabled\n" );
 			g_brushSnap = false;
 		}
+		while ( args.takeArg( "-q3contents" ) ) {
+			Sys_Printf( "Brush contents: q3map2's rule (a liquid / clip / non-solid side wins) instead of sof2map's first side\n" );
+			q3Contents = true;
+		}
 		while ( args.takeArg( "-nohint" ) ) {
 			Sys_Printf( "Hint brushes disabled\n" );
 			noHint = true;

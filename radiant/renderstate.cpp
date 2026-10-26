@@ -558,6 +558,32 @@ inline float KrWave( int func, const float wave[4], float time ){
 	return wave[0] + wave[1] * v;
 }
 
+/// KenRadiant: a 1x1 texture of one colour ($whiteimage stages, and the sky when it has no skybox to show)
+GLuint KrFlatTexture( unsigned char r, unsigned char g, unsigned char b ){
+	GLuint tex = 0;
+	const unsigned char px[4] = { r, g, b, 255 };
+	gl().glGenTextures( 1, &tex );
+	gl().glBindTexture( GL_TEXTURE_2D, tex );
+	gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+	gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+	gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px );
+	gl().glBindTexture( GL_TEXTURE_2D, 0 );
+	return tex;
+}
+GLuint KrWhiteTexture(){
+	static GLuint white = 0;
+	if( white == 0 )
+		white = KrFlatTexture( 255, 255, 255 );
+	return white;
+}
+/// the sky where the shader has no skybox images to show: a plain overcast grey
+GLuint KrGreySkyTexture(){
+	static GLuint grey = 0;
+	if( grey == 0 )
+		grey = KrFlatTexture( 122, 130, 140 );
+	return grey;
+}
+
 class GLSLKrLightProgram : public GLProgram
 {
 	GLint u( const char* name ) const { return gl().glGetUniformLocation( m_program, name ); }
@@ -2491,6 +2517,12 @@ void OpenGLShader::construct( const char* name ){
 				}
 			}
 			state.m_colour = Vector4( m_shader->getTexture()->color, 1 );
+			/* KenRadiant: with the skybox shown, a sky shader whose skyParms names no images (SOF2's "skyParms - 512 -",
+			   the maps that fog the sky instead) would show its editor image across the sky: plain grey is closer to what
+			   the game draws there, and the fog colour takes over when the fog is on */
+			if( state.m_krSky && g_skyboxPreview && ( m_shader->getSkyBox() == nullptr || m_shader->getSkyBox()->texture_number == 0 ) ){
+				state.m_texture = KrGreySkyTexture();
+			}
 
 			if ( ( m_shader->getFlags() & QER_TRANS ) != 0 ) {
 				state.m_state |= RENDER_BLEND;
@@ -2619,12 +2651,25 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		return false;
 	bool lightmapped = false;
 	float lmScale = 1;
+	int maskFunc = 0;        // the alphaFunc / depthWrite of stages the lightmap replaces (SOF2's masked shaders)
+	bool maskDepthWrite = false;
 	std::vector<const KrStage*> list;
 	for( const KrStage& st : *stages ){
 		if( st.special == 1 || st.tcGen == 1 ){
 			lightmapped = true;
 			if( st.blend && ( ( st.src == BLEND_DST_COLOUR && st.dst == BLEND_SRC_COLOUR ) || ( st.src == BLEND_SRC_COLOUR && st.dst == BLEND_DST_COLOUR ) ) )
 				lmScale = 2; // dst * lm + lm * dst
+			/* a $lightmap stage that replaces what is under it (GL_ONE GL_ZERO) throws the stages before it away -
+			   SOF2's masked shaders draw the texture, replace it with the lightmap, then multiply the texture back on.
+			   Only the mask (alphaFunc) and the depth write of those stages survive, on the stage that multiplies. */
+			if( !st.blend || ( st.src == BLEND_ONE && st.dst == BLEND_ZERO ) ){
+				for( const KrStage* e : list ){
+					if( e->alphaFunc != 0 )
+						maskFunc = e->alphaFunc;
+					maskDepthWrite = maskDepthWrite || e->depthWrite;
+				}
+				list.clear();
+			}
 			continue;
 		}
 		list.push_back( &st );
@@ -2635,28 +2680,22 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		return st.blend && ( st.src == BLEND_DST_COLOUR || ( st.src == BLEND_ZERO && st.dst == BLEND_SRC_COLOUR ) ); // filter, 2x modulate ...
 	};
 	const KrStage& base = *list.front();
-	const bool baseOpaque = !base.blend || ( base.src == BLEND_ONE && base.dst == BLEND_ZERO ) || ( lightmapped && multiplies( base ) );
-	static GLuint white = 0;
-	if( white == 0 ){
-		const unsigned char px[4] = { 255, 255, 255, 255 };
-		gl().glGenTextures( 1, &white );
-		gl().glBindTexture( GL_TEXTURE_2D, white );
-		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-		gl().glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-		gl().glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px );
-		gl().glBindTexture( GL_TEXTURE_2D, 0 );
-	}
+	// "<x> GL_ZERO" never reads what is behind it: it covers it, like GL_SRC_ALPHA GL_ZERO + alphaFunc (SOF2's masked shaders)
+	const bool baseOpaque = !base.blend
+	                     || ( base.dst == BLEND_ZERO && ( base.src == BLEND_ONE || base.src == BLEND_SRC_ALPHA ) )
+	                     || ( lightmapped && multiplies( base ) );
 	const auto load = [this]( const CopiedString& name ) -> GLuint {
 		qtexture_t* t = GlobalTexturesCache().capture( name.c_str() );
 		m_krTextures.push_back( t );
 		return t != nullptr ? t->texture_number : 0;
 	};
 	int pass = 0;
+	bool depthWritten = false; // an earlier pass of this shader wrote depth (for depthFunc equal)
 	for( std::size_t i = 0; i < list.size(); ++i ){
 		const KrStage& st = *list[i];
 		auto gls = std::make_unique<KrStageGL>();
 		gls->stage = &st;
-		GLuint texture = st.special == 2 ? white : 0;
+		GLuint texture = st.special == 2 ? KrWhiteTexture() : 0;
 		if( st.special != 2 ){
 			if( !st.frames.empty() ){
 				for( const CopiedString& f : st.frames )
@@ -2682,10 +2721,11 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		state.m_krFx = &st.fx;
 		if( !( flags & QER_CULL ) || m_shader->getCull() == IShader::eCullBack )
 			state.m_state |= RENDER_CULLFACE;
-		if( st.alphaFunc != 0 ){
+		const int alphaFunc = isBase && st.alphaFunc == 0 ? maskFunc : st.alphaFunc;
+		if( alphaFunc != 0 ){
 			state.m_state |= RENDER_ALPHATEST;
-			state.m_alphafunc = st.alphaFunc == 1 ? GL_GREATER : st.alphaFunc == 2 ? GL_LESS : GL_GEQUAL;
-			state.m_alpharef = st.alphaFunc == 1 ? 0.f : 0.5f;
+			state.m_alphafunc = alphaFunc == 1 ? GL_GREATER : alphaFunc == 2 ? GL_LESS : GL_GEQUAL;
+			state.m_alpharef = alphaFunc == 1 ? 0.f : 0.5f;
 		}
 		if( isBase && baseOpaque ){
 			state.m_state |= RENDER_DEPTHWRITE;
@@ -2697,8 +2737,10 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 				state.m_blend_src = convertBlendFactor( st.src );
 				state.m_blend_dst = convertBlendFactor( st.dst );
 			}
-			state.m_depthfunc = GL_LEQUAL;
-			if( st.depthWrite )
+			// depthFunc equal: this stage only draws where an earlier stage of the shader wrote depth - that is what
+			// cuts the stages after a masked one (alphaFunc) to the same shape instead of filling the gaps with black
+			state.m_depthfunc = st.depthEqual && depthWritten? GL_EQUAL : GL_LEQUAL;
+			if( st.depthWrite || ( isBase && maskDepthWrite ) )
 				state.m_state |= RENDER_DEPTHWRITE;
 			state.m_sort = baseOpaque ? OpenGLState::ESort( std::min( int( OpenGLState::eSortMultiFirst ) + pass - 1, int( OpenGLState::eSortMultiLast ) ) )
 			                          : OpenGLState::eSortTranslucent;
@@ -2710,6 +2752,7 @@ bool OpenGLShader::constructStages( OpenGLState& first ){
 		               && std::any_of( list.begin(), list.begin() + i, [&st]( const KrStage* e ){ return e->image == st.image; } );
 		if( lightmapped && isBase && gls->lit && st.rgbGen != 1 )
 			gls->lmScale = lmScale;
+		depthWritten = depthWritten || ( state.m_state & RENDER_DEPTHWRITE ) != 0;
 		state.m_krEmissive = !gls->lit;
 		state.m_krStage = gls.get();
 		m_krStagesGL.push_back( std::move( gls ) );

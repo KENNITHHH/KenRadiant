@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- KenRadiant: fog window (hills fading into bands of fog) -->
+<svg width="128" height="128" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 12,78 34,48 52,70 74,36 100,78 Z" style="fill:none;stroke:#8aa88f;stroke-width:8;stroke-linejoin:round" />
+  <path d="M 10,92 H 118 M 24,108 H 104 M 44,76 H 92" style="fill:none;stroke:#cfd8cf;stroke-width:9;stroke-linecap:round" />
+</svg>

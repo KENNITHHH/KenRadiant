@@ -463,6 +463,14 @@ static void SetBrushContents( brush_t& b ){
 	int compileFlags = s->compileFlags;
 	b.contentShader = s->shaderInfo;
 
+	/* KenRadiant: Raven's sof2map takes the brush's contents from its first side and never looks at the others
+	   (id's original q3map did the same - it only warns "mixed face contents"). q3map2 instead prefers a liquid /
+	   fog / playerclip / non-solid side, which quietly turns a SOF2 brush non-solid wherever a hidden face uses
+	   textures/tools/_nodraw - Raven's own shader for that says "surfaceparm nonsolid". On mp_col2 it changes 82
+	   brushes, one of them a terrain brush you can walk through. Liquid and fog sides still win, so a water or fog
+	   brush keeps working whichever face carries the shader. -q3contents brings q3map2's own rule back. */
+	const bool ravenContents = !q3Contents && strEqual( g_game->arg, "sof2" );
+
 	/* get the content/compile flags for every side in the brush */
 	for ( ++s; s != b.sides.cend(); ++s )
 	{
@@ -487,6 +495,9 @@ static void SetBrushContents( brush_t& b ){
 		}
 		else if ( s->compileFlags & C_FOG ){
 			b.contentShader = s->shaderInfo;
+		}
+		else if ( ravenContents ){ /* SOF2: the first side decides, like sof2map */
+			continue;
 		}
 		else if ( b.contentShader->contentFlags & GetRequiredSurfaceParm<"playerclip">().contentFlags ){
 			continue;

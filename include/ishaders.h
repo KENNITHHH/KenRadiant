@@ -194,6 +194,7 @@ struct KrStage
 	BlendFactor src = 1, dst = 0;       // BLEND_ONE, BLEND_ZERO
 	int alphaFunc = 0;                  // 1 GT0, 2 LT128, 3 GE128
 	bool depthWrite = false;
+	bool depthEqual = false;            // depthFunc equal: only where an earlier stage of this shader drew
 	int rgbGen = 0;                     // 0 identity, 1 lit (vertex / exactVertex / lightingDiffuse), 2 wave, 3 const, 4 oneMinusVertex, 5 identityLighting
 	int rgbFunc = 0;
 	float rgbWave[4] = { 1, 0, 0, 0 };  // base amp phase freq
@@ -227,6 +228,10 @@ public:
 	virtual IShader* getShaderForName( const char* name ) = 0;
 
 	virtual void foreachShaderName( const ShaderNameCallback& callback ) = 0;
+
+/// KenRadiant: every shader with fogparms - name, colour (3 floats), distance to full fog.
+/// Reads the parsed shaders only: nothing is captured and no texture is loaded.
+	virtual void krForEachFogShader( const Callback<void(const char*, const float*, float)>& callback ){}
 
 // iterate over the list of active shaders
 	virtual void beginActiveShadersIterator() = 0;

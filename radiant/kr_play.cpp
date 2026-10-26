@@ -39,6 +39,8 @@
 #include <random>
 #include <cmath>
 #include <cstring>
+#include <sstream>
+#include <string>
 #include <QTimer>
 #include <QDialog>
 #include <QVBoxLayout>
@@ -131,6 +133,73 @@ std::shared_ptr<std::vector<unsigned char>> File_load( const char* name ){
 	return out;
 }
 
+/* KenRadiant: SOF2's sound sets (base/sound/sound.txt). A target_speaker usually names a set instead of a wave:
+   "soundSet" "lwfall" is the waterfall on mp_col2. A set has a looping wave, a list of waves played at random
+   intervals, a volume range (0-255) and, for a localSet, a radius. */
+struct SoundSet {
+	CopiedString looped;
+	std::vector<CopiedString> subs;
+	float volMin = 255, volMax = 255;
+	float radius = 0;
+	float waveMin = 0, waveMax = 0;
+};
+std::map<CopiedString, SoundSet, StringLessNoCase> g_sets;
+bool g_setsRead = false;
+
+void SoundSets_read(){
+	if( g_setsRead )
+		return;
+	g_setsRead = true;
+	void* buffer = nullptr;
+	const std::size_t size = GlobalFileSystem().loadFile( "sound/sound.txt", &buffer );
+	if( size == 0 || buffer == nullptr ){
+		globalOutputStream() << "play mode: no sound/sound.txt - speakers that name a sound set stay quiet\n";
+		return;
+	}
+	const std::string text( static_cast<const char*>( buffer ), size );
+	GlobalFileSystem().freeFile( buffer );
+	SoundSet* set = nullptr;
+	std::istringstream in( text );
+	for( std::string line; std::getline( in, line ); ){
+		if( const auto c = line.find( ';' ); c != std::string::npos )
+			line.erase( c );
+		std::istringstream ls( line );
+		std::string key;
+		if( !( ls >> key ) )
+			continue;
+		const auto word = [&ls](){ std::string w; ls >> w; return w; };
+		const auto number = [&ls]( float d ){ float v; return ls >> v ? v : d; };
+		if( string_equal_nocase( key.c_str(), "generalSet" ) || string_equal_nocase( key.c_str(), "localSet" )
+		 || string_equal_nocase( key.c_str(), "bmodelSet" ) ){
+			const std::string name = word();
+			if( name.empty() ){ set = nullptr; continue; }
+			set = &g_sets[ name.c_str() ];
+			*set = SoundSet();
+		}
+		else if( set == nullptr ){
+			continue;
+		}
+		else if( string_equal_nocase( key.c_str(), "loopedWave" ) ){
+			set->looped = StringStream<128>( "sound/", word().c_str() );
+		}
+		else if( string_equal_nocase( key.c_str(), "subWaves" ) ){
+			const std::string dir = word();
+			for( std::string w = word(); !w.empty(); w = word() )
+				set->subs.push_back( StringStream<160>( "sound/", dir.c_str(), "/", w.c_str() ).c_str() );
+		}
+		else if( string_equal_nocase( key.c_str(), "volRange" ) ){
+			set->volMin = number( 255 ); set->volMax = number( set->volMin );
+		}
+		else if( string_equal_nocase( key.c_str(), "radius" ) ){
+			set->radius = number( 0 );
+		}
+		else if( string_equal_nocase( key.c_str(), "timeBetweenWaves" ) ){
+			set->waveMin = number( 0 ); set->waveMax = number( set->waveMin );
+		}
+	}
+	globalOutputStream() << "play mode: " << int( g_sets.size() ) << " sound sets from sound/sound.txt\n";
+}
+
 bool Sound_init( Sound& s ){
 	ma_decoder_config config = ma_decoder_config_init( ma_format_f32, 0, 0 );
 	if( ma_decoder_init_memory( s.data->data(), s.data->size(), &config, &s.decoder ) != MA_SUCCESS )
@@ -202,6 +271,7 @@ void Sounds_start(){
 		}
 	}
 	int looping = 0, timed = 0, missing = 0, skipped = 0;
+	SoundSets_read();
 	CopiedString music;
 	Scene_forEachEntity( [&]( scene::Instance& instance ){
 		Entity* e = Node_getEntity( instance.path().top() );
@@ -213,22 +283,71 @@ void Sounds_start(){
 		}
 		if( !string_equal( e->getClassName(), "target_speaker" ) )
 			return;
-		const char* noise = e->getKeyValue( "noise" );
-		if( string_empty( noise ) ){ // soundSet speakers: the game's sound sets are not read here
-			++skipped;
-			return;
-		}
 		int flags = 0;
 		string_parse_int( e->getKeyValue( "spawnflags" ), flags );
+		Vector3 origin( 0, 0, 0 );
+		string_parse_vector3( e->getKeyValue( "origin" ), origin );
+		const char* noise = e->getKeyValue( "noise" );
+		if( string_empty( noise ) ){
+			/* a sound set (sound/sound.txt): its looping wave, plus its subWaves at the set's own interval */
+			const char* setName = e->getKeyValue( "soundSet" );
+			const auto it = string_empty( setName )? g_sets.end() : g_sets.find( setName );
+			if( it == g_sets.end() ){
+				++skipped;
+				return;
+			}
+			const SoundSet& set = it->second;
+			const float volume = ( set.volMin + set.volMax ) * 0.5f / 255.f;
+			float radius = set.radius;
+			string_parse_float( e->getKeyValue( "radius" ), radius );
+			const auto add = [&]( const char* file, float wait, float random ) -> bool {
+				auto s = std::make_unique<Sound>();
+				s->loop = wait <= 0;
+				s->global = ( flags & 4 ) != 0;
+				s->origin = origin;
+				s->radius = radius;
+				s->volume = volume;
+				s->wait = wait;
+				s->random = random;
+				s->data = File_load( file );
+				if( !s->data ){
+					if( missing++ < 5 )
+						globalWarningStream() << "play mode: sound not found: " << file << '\n';
+					return false;
+				}
+				if( !Sound_init( *s ) )
+					return false;
+				if( s->loop ){
+					ma_sound_start( &s->sound );
+					++looping;
+				}
+				else{
+					std::uniform_real_distribution<float> first( 0, std::max( 0.5f, wait ) );
+					s->next = first( g_rand );
+					++timed;
+				}
+				g_sounds.push_back( std::move( s ) );
+				return true;
+			};
+			if( !set.looped.empty() )
+				add( set.looped.c_str(), 0, 0 );
+			if( !set.subs.empty() && set.waveMax > 0 ){
+				// the game plays one of them every timeBetweenWaves: here each gets its turn that much less often
+				const float n = float( set.subs.size() );
+				const float wait = ( set.waveMin + set.waveMax ) * 0.5f * n;
+				const float random = ( set.waveMax - set.waveMin ) * 0.5f * n;
+				for( const CopiedString& w : set.subs )
+					add( w.c_str(), wait, random );
+			}
+			return;
+		}
 		auto s = std::make_unique<Sound>();
 		s->loop = ( flags & 1 ) != 0;
 		s->global = ( flags & 4 ) != 0;
+		s->origin = origin;
 		string_parse_float( e->getKeyValue( "wait" ), s->wait );
 		string_parse_float( e->getKeyValue( "random" ), s->random );
 		string_parse_float( e->getKeyValue( "radius" ), s->radius );
-		Vector3 origin;
-		if( string_parse_vector3( e->getKeyValue( "origin" ), origin ) )
-			s->origin = origin;
 		if( !s->loop && s->wait <= 0 ){ // only plays when triggered in game
 			++skipped;
 			return;
@@ -269,10 +388,10 @@ void Sounds_start(){
 	}
 	Play_info( QString( "%1 looping and %2 timed speakers%3%4" ).arg( looping ).arg( timed )
 	           .arg( music.empty() ? QString() : musicOk ? QString( ", music %1" ).arg( music.c_str() ) : QString( ", music not found (%1)" ).arg( music.c_str() ) )
-	           .arg( skipped ? QString( "; %1 only when triggered / soundSet" ).arg( skipped ) : QString() ) );
+	           .arg( skipped ? QString( "; %1 only when triggered / unknown sound set" ).arg( skipped ) : QString() ) );
 	globalOutputStream() << "play mode: " << looping << " looping and " << timed << " timed speakers"
 	                     << ( music.empty() ? "" : musicOk ? ", music " : ", music not found: " ) << music.c_str()
-	                     << ( skipped ? StringStream<64>( " (", skipped, " only when triggered / soundSet)" ).c_str() : "" ) << '\n';
+	                     << ( skipped ? StringStream<80>( " (", skipped, " only when triggered / unknown sound set)" ).c_str() : "" ) << '\n';
 	if( g_timer == nullptr ){
 		g_timer = new QTimer;
 		QObject::connect( g_timer, &QTimer::timeout, [](){ Sounds_tick(); } );

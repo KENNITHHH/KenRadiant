@@ -767,6 +767,20 @@ static void ConvertBrushExact( FILE *f, int bspBrushNum, const Vector3& origin, 
 		}
 	}
 
+	/* KenRadiant: the brush's contents come from its first side (that is what sof2map does, and what q3map2 does for
+	   sof2 now), so the side carrying the shader this brush had its contents from goes first - otherwise a hidden
+	   textures/tools/_nodraw side (Raven's is "surfaceparm nonsolid") would make the brush non-solid on the way back */
+	{
+		const char *brushShader = bspShaders[ bspBrushes[ bspBrushNum ].shaderNum ].shader;
+		const auto writtenShader = [&]( const Out& o ) -> const char* {
+			return terrain && terraindec::g_shaderLayer.count( o.side->shaderInfo->shader.c_str() )
+			       ? "textures/tools/_terrain" : o.side->shaderInfo->shader.c_str();
+		};
+		const auto first = std::find_if( outs.begin(), outs.end(), [&]( const Out& o ){ return striEqual( writtenShader( o ), brushShader ); } );
+		if ( first != outs.end() && first != outs.begin() )
+			std::rotate( outs.begin(), first, first + 1 );
+	}
+
 	fprintf( f, "\t// brush %d\n\t{\n", bspBrushNum );
 	char b[9][32];
 	for ( const Out& o : outs ) {

@@ -3,6 +3,53 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-26 (36)
+### Masked shaders (bamboo, nets, thatch, canopies) drew their cut-out parts black
+- **Fixed: `depthFunc equal` was ignored.** SOF2's masked shaders draw the texture with `alphaFunc GE128`, replace it
+  with `$lightmap`, then multiply the texture back on with `depthFunc equal`. Only the first stage is alpha-tested, so
+  without `depthFunc equal` the stage that multiplies filled the cut-away texels with black - bamboo walls, camo nets,
+  thatch, canopies and tower supports showed up as black slabs in the 3D view with Shaders On.
+  `depthFunc` is now parsed and used, and `<x> GL_ZERO` stages count as opaque (they cover what is behind them).
+- **Fixed: those shaders came out twice as dark.** A `$lightmap` stage that replaces what is under it (`GL_ONE
+  GL_ZERO`) throws the stages before it away - only their mask and depth write carry over to the stage that multiplies
+  the texture back on. The 3D view drew the texture, then multiplied it by itself.
+
+### Brushes could come out non-solid (the bit of landscape you could walk through)
+- **Fixed: q3map2 took a brush's contents from the wrong side.** Raven's sof2map takes them from the brush's **first
+  side** and never looks at the others (id's original q3map did the same - it only warns about "mixed face
+  contents"). q3map2 instead prefers a liquid / fog / playerclip / **non-solid** side, and SOF2's own
+  `textures/tools/_nodraw` says `surfaceparm nonsolid`, so any brush with a hidden nodraw face quietly became
+  non-solid. On mp_col2 that is 82 brushes - fences, crates, beams, and one terrain brush at **1435 1599 -366** you
+  could walk straight through. For SOF2 the first side decides now, like sof2map; liquid and fog sides still win so
+  water and fog brushes keep working whichever face carries the shader. `-q3contents` brings the old rule back.
+- **Decompiling writes the brush's own content side first**, so the contents survive the round trip - without it a
+  hidden `_nodraw` face could end up first and decide the brush.
+- Measured on Raven's mp_col2: decompiled and recompiled, **0 of 3078 matched brushes** now differ from the original
+  in whether they are solid (it was 30 before), and the spot above is solid terrain again. The terrain itself is
+  unchanged: texture coordinates still 0.0000 off over 1854 samples, same coverage, same 0.8% of cells on a
+  different layer as sof2map.
+
+### Play mode: SOF2's sound sets
+- **`target_speaker` entities that name a `soundSet` play now** - that is most of them (74 of mp_col2's speakers,
+  the waterfalls among them). KenRadiant reads `base/sound/sound.txt`, takes the set's `loopedWave`, its `subWaves`
+  at the set's own `timeBetweenWaves` interval, its `volRange` and, for a `localSet`, its `radius`. Speakers with a
+  plain `noise` key work as before.
+
+### Fog
+- **Fixed: the fog came on far too early towards the edges of the view.** The engine measures the fog distance along
+  the view axis (`RB_CalcFogTexCoords`: `dot( vertex - eye, forward )`), not as the distance to the eye. At a wide FOV
+  the difference at the edge of the screen is over 1.5x.
+- The Fog window now lists **every fog shader of the game** (name, colour and distance, with a colour swatch) next to
+  the map's own fog, so you can try Raven's originals; the colour follows the picker **live** while you drag; the
+  distance is a slider with a Reset back to what the shader really has; and there is a **fog button in the toolbar**
+  next to the Sun Calibrator.
+
+### Sky brushes with no skybox
+- A sky shader whose `skyParms` names no images (`skyParms - 512 -`, used by the maps that fog the sky instead, like
+  mp_col2's `textures/threewave/3w_scan2`) showed its editor image stretched over the sky with "Sky Brushes Show
+  Skybox" on. It is drawn as plain overcast grey now - and as the flat fog colour when the map's fog is on, which is
+  what the game shows.
+
 ## Build 2026-10-25 (35)
 ### Fog in the 3D view, like the game draws it
 - **New: View > Light Preview > Fog...** shows the map's fog in the 3D view, exactly the way the engine does it:

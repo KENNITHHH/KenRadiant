@@ -1469,6 +1469,13 @@ bool ShaderTemplate::parseQuake3( Tokeniser& tokeniser ){
 				stage.glow = true;
 				continue;
 			}
+			else if ( string_equal_nocase( token, "depthfunc" ) ) {
+				// depthFunc equal: the masked stages of SOF2's shaders rely on it - only the texels the first stage
+				// kept (alphaFunc) wrote depth, so the stages after it are cut out the same way
+				if( const char* f = tokeniser.getToken() )
+					stage.depthEqual = string_equal_nocase( f, "equal" );
+				continue;
+			}
 			else if ( string_equal_nocase( token, "depthWrite" ) ) {
 				if( stageNum == 1 )
 					m_krFx.depthWrite = true;
@@ -2248,6 +2255,12 @@ public:
 		{
 			callback( name.c_str() );
 		}
+	}
+
+	void krForEachFogShader( const Callback<void(const char*, const float*, float)>& callback ) override {
+		for ( const auto& [ name, shader ] : g_shaderDefinitions )
+			if ( shader.shaderTemplate != nullptr && shader.shaderTemplate->m_krHasFog )
+				callback( name.c_str(), shader.shaderTemplate->m_krFogColour, shader.shaderTemplate->m_krFogDepth );
 	}
 
 	void beginActiveShadersIterator() override {

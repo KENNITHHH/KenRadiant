@@ -1971,6 +1971,7 @@ inline bool nosubdivide;
 inline bool notjunc;
 inline bool fulldetail;
 inline bool nowater;
+inline bool q3Contents;    /* KenRadiant -q3contents: q3map2's own brush contents rule instead of sof2map's */
 inline bool noCurveBrushes;
 inline bool fakemap;
 inline bool nofog;

@@ -69,11 +69,13 @@ uniform int u_fog_on;
 uniform vec3 u_fog_col;
 uniform float u_fog_depth; // fogparms' distance: completely fogged this far away
 
-/* the engine's fog curve: alpha = sqrt( distance / depthForOpaque ), clamped (tr_shade fogTable = pow( x, 0.5 ) ) */
+/* the engine's fog curve: alpha = sqrt( distance / depthForOpaque ), clamped (tr_shade fogTable = pow( x, 0.5 ) ).
+   The distance is the one the engine uses in RB_CalcFogTexCoords: along the view axis (dot( vertex - eye, forward )),
+   which is -z in eye space - not the distance to the eye, or the screen edges would fog far too early. */
 vec3 krFog( vec3 colour ){
 	if( u_fog_on == 0 )
 		return colour;
-	return mix( colour, u_fog_col, sqrt( clamp( length( v_pos ) / u_fog_depth, 0.0, 1.0 ) ) );
+	return mix( colour, u_fog_col, sqrt( clamp( -v_pos.z / u_fog_depth, 0.0, 1.0 ) ) );
 }
 
 // q3map2 index-map terrain: layer weights from the index map, layer textures with their tcMod scale

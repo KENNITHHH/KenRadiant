@@ -1528,6 +1528,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_toggle_button( toolbar, "Shaders like in game: every stage of a shader (glows, blends, rgbGen, animMap) - off = the editor image only", "kr_gameshaders.png", "ToggleGameShaders" );
 	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );
 	toolbar_append_button( toolbar, "Sun Calibrator: tweak the sky shader's q3map_sun live, preview gamma / compensate / bounce", "kr_sun.png", "SunCalibrator" );
+	toolbar_append_button( toolbar, "Fog: show the map's fog in the 3D view like the game does, or try another one", "kr_fog.png", "KrFogWindow" );
 	toolbar->addSeparator();
 	toolbar_append_button( toolbar, "Map Text: the .map as text, follows the selection; click a line to select it, find models / keys", "kr_maptext.png", "MapTextWindow" );
 	toolbar_append_button( toolbar, "Go To (Ctrl+Shift+G): fly the camera to typed or pasted coordinates", "kr_goto.png", "GoToCoordinates" );
