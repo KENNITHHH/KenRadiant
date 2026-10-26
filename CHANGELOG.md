@@ -29,6 +29,17 @@ Builds are published as **KenRadiant Latest Build** on the Releases page; the q3
   unchanged: texture coordinates still 0.0000 off over 1854 samples, same coverage, same 0.8% of cells on a
   different layer as sof2map.
 
+### Decompiling: the terrain's layers come back exactly now
+- **Fixed: the index map got the wrong layer wherever a cell blended three layers at once.** q3map's terrain gives
+  alpha 0 to *every* corner below a face's highest layer, so "layer a to b, alpha 0" only means `a <= layer < b`.
+  The decompiler read that as "layer a" and, where a corner was shared by several faces, kept the **lowest** of those
+  guesses - so a corner that was really layer 1 came back as 0 and the ground was painted with the wrong blend
+  (`jungle_0to2` instead of `jungle_1to2` on mp_col2). It now keeps the **tightest** lower bound, capped by the
+  tightest upper bound, which is exact whenever the corner is the lowest of any one face it belongs to.
+- Measured on Raven's mp_col2, decompiled and recompiled, sampling the terrain surface: cells on a different layer
+  shader than the original **0.8% -> 0.0%** over the whole map, and **2.4% -> 0.0%** around the bridge, where it was
+  plainly visible in game. Texture coordinates and heights were already exact and still are.
+
 ### Play mode: SOF2's sound sets
 - **`target_speaker` entities that name a `soundSet` play now** - that is most of them (74 of mp_col2's speakers,
   the waterfalls among them). KenRadiant reads `base/sound/sound.txt`, takes the set's `loopedWave`, its `subWaves`

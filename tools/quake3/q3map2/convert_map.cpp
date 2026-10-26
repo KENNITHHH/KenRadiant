@@ -592,7 +592,11 @@ void setup( const char *bspName ){
 		}
 		if ( !f.bounds.valid() )
 			continue;
-		struct V { float x, y; int layer; bool sure; };
+		/* a vertex's layer: exact ("sure") from a single-layer surface or from a blend vertex at full alpha, else only
+		   a range - q3map's terrain gives alpha 0 to every index under the face's maximum, so "a to b, alpha 0" means
+		   a <= layer < b. The tightest lower bound over all the faces that share the vertex is the answer whenever the
+		   vertex is the lowest corner of one of them, which is what the original index map had. */
+		struct V { float x, y; int layer; bool sure; int hi; };
 		std::vector<V> verts;
 		for ( int si = 0; si < world.numBSPSurfaces; ++si ) {
 			const bspDrawSurface_t& ds = bspDrawSurfaces[ world.firstBSPSurface + si ];
@@ -606,7 +610,7 @@ void setup( const char *bspName ){
 				const bspDrawVert_t& dv = bspDrawVerts[ v ];
 				// a blend vertex with low alpha only says "below b" (q3map's terrain sets alpha 0 for any index under the max)
 				const bool high = b >= 0 && dv.color[0].alpha() >= 128;
-				verts.push_back( { dv.xyz[0], dv.xyz[1], b < 0 ? a : ( high ? b : a ), b < 0 || high } );
+				verts.push_back( { dv.xyz[0], dv.xyz[1], b < 0 ? a : ( high ? b : a ), b < 0 || high, b < 0 || high ? 255 : b - 1 } );
 			}
 		}
 		if ( verts.empty() )
@@ -622,8 +626,9 @@ void setup( const char *bspName ){
 		const auto tryRes = [&]( int rx, int ry ){
 			px.assign( std::size_t( rx ) * ry, -1 );
 			std::vector<char> sure( px.size(), 0 );
+			std::vector<int> hi( px.size(), 255 );
 			bool ok = true;
-			for ( int pass = 1; pass >= 0; --pass ) // sure layers first, then the "below b" ones fill the gaps
+			for ( int pass = 1; pass >= 0; --pass ) // the exact layers first, then the ranges fill the gaps
 				for ( const V& v : verts ) {
 					if ( v.sure != bool( pass ) )
 						continue;
@@ -634,9 +639,14 @@ void setup( const char *bspName ){
 						if ( px[i] >= 0 && px[i] != v.layer ) ok = false;
 						px[i] = v.layer; sure[i] = 1;
 					}
-					else if ( !sure[i] && ( px[i] < 0 || v.layer < px[i] ) )
-						px[i] = v.layer;
+					else if ( !sure[i] ) {
+						px[i] = px[i] < 0 ? v.layer : std::max( px[i], v.layer ); // tightest lower bound
+						hi[i] = std::min( hi[i], v.hi );
+					}
 				}
+			for ( std::size_t i = 0; i < px.size(); ++i ) // a lower bound never goes past the tightest upper one
+				if ( !sure[i] && px[i] > hi[i] )
+					px[i] = hi[i];
 			return ok;
 		};
 		const auto pow2 = []( double n ){ int p = 2; while ( p < n - 0.001 ) p *= 2; return p; };
