@@ -46,6 +46,8 @@
 
 Vector3 KrCamera_origin();
 void KrCamera_goTo( const Vector3& origin );
+void KrCamera_getView( Vector3& origin, Vector3& angles, float& fov );
+void KrCamera_setView( const Vector3& origin, const Vector3& angles );
 
 namespace
 {
@@ -155,9 +157,14 @@ protected:
 	}
 };
 
+constexpr float c_gameViewHeight = 38; // setviewpos puts the player's feet there, the eye is this much higher (Lighting Probe)
+
 class GoToDialog : public QDialog
 {
 	QDoubleSpinBox* m_xyz[3];
+	QDoubleSpinBox* m_yaw;
+	QDoubleSpinBox* m_pitch;
+	QLabel* m_note;
 	QLineEdit* m_text;
 	KeepKeysFilter m_keepKeys;
 public:
@@ -165,9 +172,10 @@ public:
 		setWindowTitle( "Go To" );
 		auto *vbox = new QVBoxLayout( this );
 		m_text = new QLineEdit;
-		m_text->setPlaceholderText( "x y z  (paste a position, an origin key, a console line ...)" );
+		m_text->setPlaceholderText( "x y z [yaw]  - or paste a game line with setviewpos x y z yaw" );
+		m_text->setToolTip( "A position (x y z, optionally the yaw), an origin key, or the game's setviewpos line from the\n"
+		                    "Lighting Probe: setviewpos sets the player's feet, so the camera goes 38 units higher, where the eye is." );
 		QObject::connect( m_text, &QLineEdit::textEdited, [this]( const QString& t ){ parse( t ); } );
-		QObject::connect( m_text, &QLineEdit::returnPressed, [this](){ go(); } );
 		m_text->installEventFilter( &m_keepKeys );
 		vbox->addWidget( m_text );
 		auto *grid = new QGridLayout;
@@ -181,7 +189,28 @@ public:
 			m_xyz[i]->installEventFilter( &m_keepKeys );
 			grid->addWidget( m_xyz[i], 0, i * 2 + 1 );
 		}
+		grid->addWidget( new QLabel( "Yaw" ), 1, 0 );
+		m_yaw = new QDoubleSpinBox;
+		m_yaw->setRange( -360, 360 );
+		m_yaw->setDecimals( 1 );
+		m_yaw->setSingleStep( 15 );
+		m_yaw->setWrapping( true );
+		m_yaw->setToolTip( "Where the camera looks: 0 = +X (east), 90 = +Y (north) - the last number of setviewpos" );
+		m_yaw->installEventFilter( &m_keepKeys );
+		grid->addWidget( m_yaw, 1, 1 );
+		grid->addWidget( new QLabel( "Pitch" ), 1, 2 );
+		m_pitch = new QDoubleSpinBox;
+		m_pitch->setRange( -90, 90 );
+		m_pitch->setDecimals( 1 );
+		m_pitch->setSingleStep( 5 );
+		m_pitch->setToolTip( "Up / down, 0 = level (setviewpos always makes it level)" );
+		m_pitch->installEventFilter( &m_keepKeys );
+		grid->addWidget( m_pitch, 1, 3 );
 		vbox->addLayout( grid );
+		m_note = new QLabel;
+		m_note->setStyleSheet( "color: gray;" );
+		m_note->setWordWrap( true );
+		vbox->addWidget( m_note );
 		auto *buttons = new QHBoxLayout;
 		auto *paste = new QPushButton( "Paste" );
 		paste->setToolTip( "Take the coordinates from the clipboard" );
@@ -192,12 +221,12 @@ public:
 		auto *close = new QPushButton( "Close" );
 		QObject::connect( close, &QPushButton::clicked, [this](){ hide(); } );
 		auto *current = new QPushButton( "Current" );
-		current->setToolTip( "Fill in where the 3D camera is now" );
+		current->setToolTip( "Fill in where the 3D camera is now, and where it looks" );
 		QObject::connect( current, &QPushButton::clicked, [this](){ fill(); } );
 		auto *copy = new QPushButton( "Copy" );
 		copy->setToolTip( "Copy these coordinates to the clipboard" );
 		QObject::connect( copy, &QPushButton::clicked, [this](){
-			QGuiApplication::clipboard()->setText( QString( "%1 %2 %3" ).arg( m_xyz[0]->value() ).arg( m_xyz[1]->value() ).arg( m_xyz[2]->value() ) );
+			QGuiApplication::clipboard()->setText( QString( "%1 %2 %3 %4" ).arg( m_xyz[0]->value() ).arg( m_xyz[1]->value() ).arg( m_xyz[2]->value() ).arg( m_yaw->value() ) );
 		} );
 		buttons->addWidget( paste );
 		buttons->addWidget( current );
@@ -209,20 +238,42 @@ public:
 	}
 	void parse( const QString& text ){
 		QRegularExpression number( "-?\\d+(\\.\\d+)?" );
-		auto it = number.globalMatch( text );
-		for( int i = 0; i < 3 && it.hasNext(); ++i )
-			m_xyz[i]->setValue( it.next().captured( 0 ).toDouble() );
+		// a game line: the numbers after setviewpos (x y z yaw), the eye 38 units over the feet, level
+		const int sv = text.indexOf( "setviewpos", 0, Qt::CaseInsensitive );
+		const bool game = sv >= 0;
+		auto it = number.globalMatch( game ? text.mid( sv + 10 ) : text );
+		double v[4];
+		int n = 0;
+		while( n < 4 && it.hasNext() )
+			v[n++] = it.next().captured( 0 ).toDouble();
+		for( int i = 0; i < 3 && i < n; ++i )
+			m_xyz[i]->setValue( v[i] + ( game && i == 2 ? c_gameViewHeight : 0 ) );
+		if( n >= 4 )
+			m_yaw->setValue( v[3] );
+		if( game )
+			m_pitch->setValue( 0 );
+		m_note->setText( game ? QString( "Game line: the camera goes to the eye, %1 units over the setviewpos height, level." ).arg( c_gameViewHeight ) : QString() );
 	}
 	void fill(){
-		const Vector3 o = KrCamera_origin();
+		Vector3 o, angles;
+		float fov;
+		KrCamera_getView( o, angles, fov );
 		for( int i = 0; i < 3; ++i )
 			m_xyz[i]->setValue( o[i] );
+		m_pitch->setValue( angles[0] );
+		m_yaw->setValue( angles[1] );
 		m_text->clear();
+		m_note->clear();
 	}
 	void go(){
 		const Vector3 target( float( m_xyz[0]->value() ), float( m_xyz[1]->value() ), float( m_xyz[2]->value() ) );
-		KrCamera_goTo( target );
-		globalOutputStream() << "go to " << target << '\n';
+		Vector3 o, angles;
+		float fov;
+		KrCamera_getView( o, angles, fov );
+		angles[0] = float( m_pitch->value() );
+		angles[1] = float( m_yaw->value() );
+		KrCamera_setView( target, angles );
+		globalOutputStream() << "go to " << target << " yaw " << angles[1] << " pitch " << angles[0] << '\n';
 	}
 };
 GoToDialog* g_goTo = nullptr;

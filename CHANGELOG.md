@@ -3,6 +3,12 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (44)
+- **Go To (View > Go To Coordinates..., Ctrl+Shift+G) sets where the camera looks too**: Yaw and Pitch fields, and
+  you can paste the game line straight in (`... setviewpos -597 -272 -85 66`): x y z yaw, the camera 38 units over
+  the setviewpos height (where the eye is in game) and level - exactly the view the Lighting Probe measures.
+  "Current" fills in the camera's direction too, "Copy" copies x y z yaw.
+
 ## Build 2026-10-31 (43)
 ### Live light preview, from your Lighting Probe on mp_col2 (q3map2 -ravenlight)
 - The sky was counted twice with -ravenlight / sof2map: the editor's stand-in sky light for SOF2 skies without
