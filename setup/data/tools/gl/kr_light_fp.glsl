@@ -15,6 +15,8 @@ uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
 uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
 uniform vec3 u_minlight;   // worldspawn _minlight, in its _color
+uniform vec3 u_raven_fill; // sof2map / q3map2 -ravenlight: the sky shader's surface light, flat wherever the sky is seen
+uniform float u_sun_min;   // sof2map / -ravenlight: the sun's angle factor never below this (SkyMinimum) where it faces the sun
 uniform vec3 u_flood;      // worldspawn _floodlight colour * intensity (q3map2 fill light), weighed by the sky seen
 // sky light occlusion: 16 directional depth maps (zenith + 2 rings) in a 4 x 4 atlas
 uniform sampler2DShadow u_skyshadow;
@@ -200,9 +202,22 @@ void main()
 	}
 	vec3 n = normalize( v_normal );
 	// the side the camera sees (two-sided "cull none" surfaces: the editor draws those with the other front-face
-	// winding, so gl_FrontFacing can't be trusted)
-	if( dot( n, v_pos ) > 0.0 )
-		n = -n;
+	// winding, so gl_FrontFacing can't be trusted), decided with the triangle's own normal - a smoothed normal
+	// (terrain, models) points away from the camera on steep faces / near outlines although the face itself faces
+	// the camera, and flipping those turned them to the ground: black
+	{
+		vec3 fc = cross( dFdx( v_pos ), dFdy( v_pos ) );
+		float fl = length( fc );
+		if( fl > 1e-6 ){
+			vec3 facing = fc / fl;
+			if( dot( facing, v_pos ) > 0.0 )
+				facing = -facing; // the triangle's side that faces the camera
+			if( dot( n, facing ) < 0.0 )
+				n = -n;
+		}
+		else if( dot( n, v_pos ) > 0.0 ) // too small / far to tell: as before
+			n = -n;
+	}
 	// terrain: smoothed normals can point to the light while the face itself turns away (ridges, far slopes) -
 	// look the shadows up off the face too, or the face shadows itself (dark rims)
 	vec3 g_off = vec3( 0.0 );
@@ -217,7 +232,7 @@ void main()
 	}
 
 	float ndl = max( dot( n, u_sun_dir ), 0.0 );
-	float sun = ndl;
+	float sun = ndl > 0.0 ? max( ndl, u_sun_min ) : 0.0;
 	if( u_has_shadow != 0 && ndl > 0.0 ){
 		// normal offset: look the shadow up a little off the surface, no self-shadow stripes (acne) on walls
 		vec4 sc = u_eye2shadow * vec4( v_pos + n * ( 2.0 + 4.0 * ( 1.0 - ndl ) ) + g_off, 1.0 );
@@ -263,6 +278,8 @@ void main()
 	// q3map2 _floodlight: light from the directions open within its distance - the share of sky this spot sees
 	// stands in for that (right outdoors, a bit dark under roofs where q3map2 also counts far walls as open)
 	light += u_flood * clamp( skyVis / max( skyAll, 0.001 ), 0.0, 1.0 );
+	// Raven's sky fill: all of it as soon as some of the sky is in sight
+	light += u_raven_fill * smoothstep( 0.0, 0.06, skyVis / max( skyAll, 0.001 ) );
 	if( u_has_lights != 0 ){
 		g_wp = u_eye2world * v_pos + u_cam_world;
 		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );

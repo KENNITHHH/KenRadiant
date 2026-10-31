@@ -756,7 +756,8 @@ public:
 public:
 	CompileDialog( QWidget* parent ) : QDialog( parent, Qt::Window ){
 		setWindowTitle( "Compile" );
-		resize( 760, 440 );
+		resize( 820, 600 ); // tall enough for the Decompile tab's note (a word-wrapped label doesn't ask for its height)
+		setMinimumSize( 640, 540 ); // (also over a smaller size remembered from before)
 		auto *outer = new QVBoxLayout( this );
 		m_hint = new QLabel;
 		m_hints.hint = m_hint;
@@ -949,6 +950,7 @@ public:
 				note->setWordWrap( true );
 				note->setTextFormat( Qt::RichText );
 				note->setStyleSheet( "QLabel { background: rgba(255, 190, 60, 40); border: 1px solid rgba(255, 190, 60, 120); padding: 6px; }" );
+				note->setMinimumHeight( note->heightForWidth( 640 ) + 14 ); // all of it, also in a narrow window
 				g->addWidget( note, r++, 0, 1, 3 );
 			}
 			auto *file = text( g, r++, ".bsp to decompile", o.decompBsp, "Any compiled map. q3map2 writes <name>_converted.map next to it (brushes, patches, entities, misc_models), "
@@ -1316,6 +1318,10 @@ void KrCompile_registerCommands(){
 void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, float& vertexScale ){
 	Compile_restoreForMap(); // (a map just opened: its own settings)
 	gamma = g_options.gamma; compensate = g_options.compensate; brightness = 1; vertexScale = 1;
+	if( g_options.compiler == 1 ){ // sof2map has none of these
+		gamma = compensate = 1;
+		return;
+	}
 	const QStringList t = QProcess::splitCommand( QString( g_options.extraLight.c_str() ) + Compile_advanced( g_options.advLight ) );
 	for( int i = 0; i + 1 < t.size(); ++i ){
 		if( t[i] == "-gamma" ) gamma = t[i + 1].toFloat();
@@ -1327,6 +1333,20 @@ void KrCompile_lightParams( float& gamma, float& compensate, float& brightness, 
 	if( compensate <= 0 ) compensate = 1;
 	if( brightness <= 0 ) brightness = 1;
 	if( vertexScale <= 0 ) vertexScale = 1;
+}
+
+/// how the LIGHT stage lights, for the live light preview: Raven's way (sof2map itself, or q3map2 -ravenlight) and
+/// -ravensunmin
+void KrCompile_ravenParams( bool& raven, bool& sof2map, float& sunMinimum ){
+	Compile_restoreForMap();
+	sof2map = g_options.compiler == 1;
+	raven = sof2map || g_options.ravenlight;
+	sunMinimum = 0.5f;
+	const QStringList t = QProcess::splitCommand( QString( g_options.extraLight.c_str() ) + Compile_advanced( g_options.advLight ) );
+	for( int i = 0; i < t.size(); ++i ){
+		if( t[i] == "-ravenlight" ) raven = true;
+		else if( t[i] == "-ravensunmin" && i + 1 < t.size() ) sunMinimum = t[i + 1].toFloat();
+	}
 }
 
 /// the Compile window's commands as text (Lighting Probe report)

@@ -2132,6 +2132,7 @@ static void KrSun_readMap(){
 	s_krSunDirty = false;
 	g_krSun.valid = false;
 	g_krSun.skyColour = Vector3( 1, 1, 1 );
+	g_krSun.surfaceLight = 0;
 	g_krSun.shader = "";
 	for( const CopiedString& name : Scene_findSkyShaders() ){
 		IShader* shader = GlobalShaderSystem().getShaderForName( name.c_str() );
@@ -2146,6 +2147,7 @@ static void KrSun_readMap(){
 			g_krSun.degrees = degrees;
 			g_krSun.elevation = elevation;
 			g_krSun.skyLight = sky;
+			g_krSun.surfaceLight = shader->krSurfaceLight();
 			shader->getSunExt( g_krSun.ext, g_krSun.deviance, g_krSun.samples, g_krSun.skyIterations );
 			// sky light colour like q3map2: q3map_lightRGB, else the average colour of the shader's image, brightest channel 1
 			float rgb[3];
@@ -2209,6 +2211,7 @@ static void KrSun_readMap(){
 			g_krSun.degrees = radians_to_degrees( std::atan2( toSun.y(), toSun.x() ) );
 			g_krSun.elevation = radians_to_degrees( std::asin( std::clamp( toSun.z(), -1.f, 1.f ) ) );
 			g_krSun.skyLight = 0;
+			g_krSun.surfaceLight = 0;
 			g_krSun.ext = false;
 			globalOutputStream() << "light preview: sun from the _sun light entity (target " << s.target.c_str() << ")\n";
 			break;
@@ -2283,6 +2286,9 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 				if( string_parse_vector3( entity->getKeyValue( "_color" ), c ) && ( c.x() > 0 || c.y() > 0 || c.z() > 0 ) )
 					g_krWorldColour = c;
 				g_krWorldFlood = entity->getKeyValue( "_floodlight" );
+				extern float g_krWorldSkyMinimum;
+				g_krWorldSkyMinimum = -1;
+				string_parse_float( entity->getKeyValue( "SkyMinimum" ), g_krWorldSkyMinimum );
 				return false;
 			}
 			Vector3 origin;
@@ -2507,6 +2513,34 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		c = vector3_normalised( c ); // q3map2 ColorNormalize
 		if( i < 1 ) i = 128;
 		g_krFloodLight = c * float( std::clamp( i / 255.0, 0.0, 4.0 ) );
+	}
+	// how the map is lit: Raven's sof2map, or q3map2 -ravenlight (light like sof2map) - the Compile window says which
+	extern Vector3 g_krRavenFill;
+	extern float g_krSunMinimum, g_krWorldSkyMinimum;
+	extern void KrCompile_ravenParams( bool& raven, bool& sof2map, float& sunMinimum );
+	bool raven = false, sof2map = false;
+	float sunMinimum = 0.5f;
+	KrCompile_ravenParams( raven, sof2map, sunMinimum );
+	g_krRavenFill = Vector3( 0, 0, 0 );
+	g_krSunMinimum = 0;
+	if( raven && g_krSun.valid ){
+		// sof2map normalises the sun's colour to unit length (q3map2: brightest channel 1) - white is 58% as bright
+		const float len = vector3_length( g_krSun.colour );
+		if( len > 0 )
+			g_krSunColour = g_krSun.colour / len * ( g_krSun.intensity / 255.f );
+		// the sun's angle factor never drops below SkyMinimum on the sides that face it
+		g_krSunMinimum = std::clamp( sof2map && g_krWorldSkyMinimum >= 0 ? g_krWorldSkyMinimum : sunMinimum, 0.f, 1.f );
+		// the sky shader's q3map_surfacelight fills every spot that sees the sky, flat (no fall-off, no angle), once
+		if( g_krSun.intensity > 0 && len > 0 && g_krSun.surfaceLight > 0 ){
+			g_krRavenFill = g_krSun.skyColour * ( g_krSun.surfaceLight / 255.f );
+			if( ambient <= 0 && minlight <= 0 && g_krPreviewAmbient ) // the fill lights everything outdoors: no made-up ambient
+				g_krAmbient = Vector3( 0, 0, 0 );
+		}
+	}
+	if( sof2map ){ // sof2map knows none of q3map2's q3map_skyLight, _minlight, _floodlight
+		g_krSkyAmbient = Vector3( 0, 0, 0 );
+		g_krMinLightColour = Vector3( 0, 0, 0 );
+		g_krFloodLight = Vector3( 0, 0, 0 );
 	}
 }
 

@@ -3,6 +3,31 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (42)
+### Live light preview
+- **Black terrain fixed.** Steep landscape faces turned black in the live light preview (Ctrl+L). Cause: the smoothed
+  terrain normals point away from the camera on steep faces seen from below, and the preview took those for the back
+  of a two-sided surface and flipped them to face the ground (no sun, no sky: black). Which side you see is now
+  decided by the triangle itself, so the smoothing stays (also fixes the same thing on models near their outlines).
+- **Lit the way the map is compiled.** With sof2map as the compiler, or q3map2 with -ravenlight, the preview now
+  follows Raven's lighting rules (the ones -ravenlight copies from sof2map):
+  the sun's colour is normalised to unit length (a white sun is 58% as bright as q3map2 makes it), the sun never
+  drops below SkyMinimum (0.5, or the worldspawn key with sof2map) on the sides that face it, and the sky shader's
+  q3map_surfacelight fills every spot that sees the sky, flat. With sof2map, q3map_skyLight, _minlight and
+  _floodlight are left out (sof2map doesn't know them), and -gamma / -compensate aren't applied.
+  On mp_col2 the ground in front of the spawn now comes out at 55 (screen brightness) against 46 for Raven's own
+  lightmaps; it was 36 before.
+
+### Worldspawn tab
+- **soundSet**: pick one of the game's ambient sound sets (the generalSets of sound/sound.txt, read from base or its
+  .pk3s such as musicandsound.pk3) with the arrow; the tooltip shows its looping wave.
+- Enter after typing a value moves the key to the top at once (ticking still waits until the mouse leaves the list).
+
+### Other
+- Compile window: opens big enough for the whole Decompile note (and never smaller than 640 x 540, also when a
+  smaller size was remembered).
+- New KenRadiant splash screen, About logo, window icon and Windows program icon.
+
 ## Build 2026-10-31 (41)
 ### Sun Calibrator in tabs
 - **Sky Shader | Lights | Worldspawn | Compile Preview | Game Look** instead of one long window. The Worldspawn tab

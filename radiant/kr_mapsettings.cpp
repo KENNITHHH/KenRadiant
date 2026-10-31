@@ -68,6 +68,7 @@
 
 void KrLightPreview_redraw();
 extern QTabWidget* g_texModelTabs;
+void KrSoundSets_list( int kind, std::vector<std::pair<CopiedString, CopiedString>>& out ); // kr_play.cpp
 
 /* the editor-only preview switches (saved as preferences) */
 bool g_krPreviewAmbient = true;      // ambient / _color / _minlight in the live light preview
@@ -550,7 +551,7 @@ QWidget* g_tab = nullptr;     // the scroll area in the Textures / Models / Enti
 QWidget* g_page = nullptr;    // ... or the group window page
 
 /* ---- every key a worldspawn can have ---- */
-enum class Kind { Text, Number, Colour, Fog, Music, Choice };
+enum class Kind { Text, Number, Colour, Fog, Music, Choice, SoundSet };
 enum Who { eBoth = 0, eQ3map2 = 1, eSof2map = 2, eGame = 3, eSP = 4 };
 struct KeyDef {
 	const char* key;
@@ -566,7 +567,7 @@ const std::vector<KeyDef>& Catalogue(){
 	static const std::vector<KeyDef> keys{
 		{ "message", Kind::Text, "", eGame, "The map's name / text on the loading screen." },
 		{ "music", Kind::Music, "", eGame, "Music file(s): \"music/intro.mp3 music/loop.mp3\" - an intro and a loop." },
-		{ "soundSet", Kind::Text, "", eGame, "Ambient sound set from sound/sound.txt for the whole map." },
+		{ "soundSet", Kind::SoundSet, "", eGame, "Ambient sound set for the whole map - a generalSet of sound/sound.txt (pick one with the arrow)." },
 		{ "redteam", Kind::Choice, "colombian", eGame, "Red team skin set.", { "civilian", "colombian", "finca", "hospital", "marine", "prometheus", "shop", "snow", "thug" } },
 		{ "blueteam", Kind::Choice, "marine", eGame, "Blue team skin set.", { "civilian", "colombian", "finca", "hospital", "marine", "prometheus", "shop", "snow", "thug" } },
 		{ "gravity", Kind::Number, "800", eGame, "Gravity, 800 is normal." },
@@ -622,6 +623,7 @@ bool Key_internal( const char* key ){
 }
 
 bool g_showSP = false;
+bool g_sortNow = false; // Enter in a value: the list re-sorts at once (else only when the mouse leaves it)
 
 /// shows a row's help in the box at the bottom while the mouse is over it
 class HoverHelp : public QObject
@@ -767,6 +769,18 @@ QWidget* WorldspawnTab_construct(){
 				QObject::connect( menu, &QMenu::aboutToShow, [menu, def, r](){
 					menu->clear();
 					std::vector<CopiedString> values;
+					if( def->kind == Kind::SoundSet ){
+						std::vector<std::pair<CopiedString, CopiedString>> sets;
+						KrSoundSets_list( 0, sets );
+						if( sets.empty() )
+							menu->addAction( "(no sound/sound.txt found in base or its .pk3s)" )->setEnabled( false );
+						for( const auto& [name, loop] : sets ){
+							QAction* a = menu->addAction( name.c_str(), [r, name = name](){ Key_set( r->key.c_str(), name.c_str() ); } );
+							a->setToolTip( string_empty( loop.c_str() ) ? QString( "(no looping wave)" ) : QString( loop.c_str() ) );
+						}
+						menu->setToolTipsVisible( true );
+						return;
+					}
 					if( def->kind == Kind::Fog ){
 						static std::vector<CopiedString>* fogs;
 						fogs = &values;
@@ -786,7 +800,7 @@ QWidget* WorldspawnTab_construct(){
 				} );
 				helper->setMenu( menu );
 				helper->setPopupMode( QToolButton::InstantPopup );
-				helper->setToolTip( def->kind == Kind::Fog ? "Pick one of the game's fog shaders" : "Pick a value" );
+				helper->setToolTip( def->kind == Kind::Fog ? "Pick one of the game's fog shaders" : def->kind == Kind::SoundSet ? "Pick one of the game's ambient sound sets (sound/sound.txt)" : "Pick a value" );
 			}
 		}
 		r->reset = new QPushButton( "Reset" );
@@ -812,6 +826,7 @@ QWidget* WorldspawnTab_construct(){
 		QObject::connect( r->edit, &QLineEdit::textEdited, [r]( const QString& text ){
 			Key_live( r->key.c_str(), text.toLatin1().constData() );
 		} );
+		QObject::connect( r->edit, &QLineEdit::returnPressed, [](){ g_sortNow = true; } );
 		QObject::connect( r->edit, &QLineEdit::editingFinished, [r](){
 			Keys_commit();
 			r->wanted = false;
@@ -892,7 +907,7 @@ QWidget* WorldspawnTab_construct(){
 		wantOrder.insert( wantOrder.end(), bottom.begin(), bottom.end() );
 		const QWidget* focus = QApplication::focusWidget();
 		const bool typing = focus != nullptr && listWidget->isAncestorOf( focus ) && qobject_cast<const QLineEdit*>( focus ) != nullptr;
-		if( wantOrder != *order && ( order->empty() || ( !typing && !listWidget->underMouse() ) ) ){
+		if( wantOrder != *order && ( order->empty() || g_sortNow || ( !typing && !listWidget->underMouse() ) ) ){
 			*order = wantOrder;
 			while( list->count() > 0 )
 				delete list->takeAt( 0 );
@@ -900,6 +915,7 @@ QWidget* WorldspawnTab_construct(){
 				list->addWidget( wdg );
 			list->addStretch( 1 );
 		}
+		g_sortNow = false;
 	} );
 	return root;
 }

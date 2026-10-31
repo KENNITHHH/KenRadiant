@@ -143,6 +143,7 @@ struct SoundSet {
 	float volMin = 255, volMax = 255;
 	float radius = 0;
 	float waveMin = 0, waveMax = 0;
+	int kind = 0; // 0 generalSet (a whole map / area: worldspawn soundSet), 1 localSet (a speaker), 2 bmodelSet (doors ...)
 };
 std::map<CopiedString, SoundSet, StringLessNoCase> g_sets;
 bool g_setsRead = false;
@@ -176,6 +177,7 @@ void SoundSets_read(){
 			if( name.empty() ){ set = nullptr; continue; }
 			set = &g_sets[ name.c_str() ];
 			*set = SoundSet();
+			set->kind = string_equal_nocase( key.c_str(), "generalSet" ) ? 0 : string_equal_nocase( key.c_str(), "localSet" ) ? 1 : 2;
 		}
 		else if( set == nullptr ){
 			continue;
@@ -547,4 +549,13 @@ void KrPlay_shutdown(){
 	}
 	delete g_timer;
 	g_timer = nullptr;
+}
+
+/// the sound sets of sound/sound.txt (from the game folder or its .pk3s, e.g. musicandsound.pk3) of one kind:
+/// 0 generalSet, 1 localSet, 2 bmodelSet - with the looping wave, for the Worldspawn tab's soundSet list
+void KrSoundSets_list( int kind, std::vector<std::pair<CopiedString, CopiedString>>& out ){
+	SoundSets_read();
+	for( const auto& [name, set] : g_sets )
+		if( set.kind == kind )
+			out.emplace_back( name, set.looped );
 }
