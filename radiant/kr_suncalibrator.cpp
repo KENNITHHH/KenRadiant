@@ -10,6 +10,9 @@
 
 #include <QDialog>
 #include <QVBoxLayout>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QScreen>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -99,6 +102,9 @@ const std::vector<float> c_sunTolerance{ 0.005f, 0.005f, 0.005f, 2.5f, 0.5f, 0.5
 const std::vector<float> c_sunExtTolerance{ 0.005f, 0.005f, 0.005f, 2.5f, 0.5f, 0.5f, 0.25f, 0.5f };
 const std::vector<float> c_skyTolerance{ 2.5f, 0.5f };
 
+}
+QWidget* KrMapSettings_lightSection(); // kr_mapsettings.cpp
+namespace {
 class SunCalibrator : public QDialog
 {
 	QLabel* m_shaderLabel;
@@ -311,7 +317,16 @@ class SunCalibrator : public QDialog
 public:
 	SunCalibrator( QWidget* parent ) : QDialog( parent, Qt::Tool ){
 		setWindowTitle( "Sun Calibrator / Light Preview Settings" );
-		auto *vbox = new QVBoxLayout( this );
+		// everything in a scroll area: with the worldspawn light it is taller than many screens
+		auto *outer = new QVBoxLayout( this );
+		outer->setContentsMargins( 0, 0, 0, 0 );
+		auto *scroll = new QScrollArea;
+		scroll->setWidgetResizable( true );
+		scroll->setFrameShape( QFrame::NoFrame );
+		scroll->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
+		outer->addWidget( scroll );
+		auto *inner = new QWidget;
+		auto *vbox = new QVBoxLayout( inner );
 
 		m_shaderLabel = new QLabel;
 		m_shaderLabel->setWordWrap( true );
@@ -406,6 +421,9 @@ public:
 			vbox->addWidget( group );
 		}
 		{
+			vbox->addWidget( KrMapSettings_lightSection() ); // KenRadiant: the worldspawn light keys, live
+		}
+		{
 			auto *group = new QGroupBox( "Compile preview (approximation of q3map2 -light options)" );
 			auto *grid = new QGridLayout( group );
 			int r = 0;
@@ -456,6 +474,10 @@ public:
 		m_engineShift.set( float( g_krEngineShift ) );
 		m_engineGamma.set( g_krEngineGamma );
 		refresh();
+		scroll->setWidget( inner );
+		const QSize want = inner->sizeHint();
+		const int screenHeight = screen() != nullptr ? screen()->availableGeometry().height() : 900;
+		resize( want.width() + scroll->verticalScrollBar()->sizeHint().width() + 4, std::min( want.height() + 4, screenHeight - 80 ) );
 	}
 
 	/// shows the current sun (from the map, or the calibrator's own values)

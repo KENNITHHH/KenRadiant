@@ -1232,7 +1232,7 @@ void create_entity_menu( QMenuBar *menubar ){
 
 	Entity_constructMenu( menu );
 	menu->addSeparator();
-	create_menu_item_with_mnemonic( menu, "Map Settings... (worldspawn: ambient, floodlight, distancecull, fog)", "KrMapSettings" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Worldspawn Settings... (ambient, floodlight, distancecull, fog, all keys)", "KrMapSettings" ); // KenRadiant
 }
 
 void create_brush_menu( QMenuBar *menubar ){
@@ -1881,6 +1881,11 @@ void MainFrame::Create(){
 	if( !texModelTabs )
 		g_page_models = GroupDialog_addPage( "Models", ModelBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Models" ) );
 
+	if( !texModelTabs ){
+		extern void KrWorldspawn_constructPage();
+		KrWorldspawn_constructPage(); // KenRadiant
+	}
+
 	g_page_layers = GroupDialog_addPage( "Layers", LayersBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Layers" ) );
 
 	window->show();
@@ -1922,6 +1927,8 @@ void MainFrame::Create(){
 					tabs->addTab( ModelBrowser_constructWindow( window ), "Models" );
 					extern QWidget* KrEntityBrowser_constructWindow( QWidget* parent );
 					tabs->addTab( KrEntityBrowser_constructWindow( window ), "Entities" ); // KenRadiant: drag entities into the views
+					extern QWidget* KrWorldspawn_constructTab();
+					tabs->addTab( KrWorldspawn_constructTab(), "Worldspawn" ); // KenRadiant: every worldspawn key, live
 					m_vSplit2->addWidget( tabs );
 					g_texModelTabs = tabs;
 				}

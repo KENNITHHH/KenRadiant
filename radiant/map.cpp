@@ -1027,6 +1027,8 @@ void Map_LoadFile( const char *filename ){
 	g_currentMap = &g_map;
 
 	GridStatus_changed();
+	extern void KrWorldspawn_snapshot();
+	KrWorldspawn_snapshot(); // KenRadiant: what the Worldspawn tab's Reset goes back to
 }
 
 class Excluder
@@ -1284,6 +1286,8 @@ void Map_New(){
 	g_currentMap = &g_map;
 
 	GridStatus_changed();
+	extern void KrWorldspawn_snapshot();
+	KrWorldspawn_snapshot(); // KenRadiant: what the Worldspawn tab's Reset goes back to
 }
 
 /*

@@ -6,6 +6,11 @@
    default, so the copy lands exactly against the original (3ds Max's Mirror tool works the same way: axis, offset,
    copy or not), with a gap / overlap you can fine-tune by the unit.
 
+   Live: opening the window (or pressing Mirror) with something selected mirrors it at once - the mirrored copy is
+   selected and every change in the window (axis, plane, gap, copy or not) moves it while you watch. Done keeps it
+   (one undo step), Cancel takes it away. Anything else you do (move it with the mouse, select something else, undo)
+   ends the preview and keeps what is there.
+
    Entities come along: origins mirror, "angle" / "angles" turn to face the mirrored way (spawn points, lights, NPCs),
    misc_models get a mirrored scale (modelscale_vec) so q3map2 compiles them mirrored.
 
@@ -26,6 +31,7 @@
 #include <QDoubleSpinBox>
 #include <QTimer>
 #include <cmath>
+#include <vector>
 
 #include "iselection.h"
 #include "ientity.h"
@@ -40,6 +46,7 @@
 #include "mainframe.h"
 #include "select.h"
 #include "grid.h"
+#include "iscenegraph.h"
 
 void Scene_Clone_Selected();
 
@@ -62,9 +69,33 @@ QDoubleSpinBox* g_gapSpin = nullptr;
 QCheckBox* g_copyBox = nullptr;
 QLabel* g_info = nullptr;
 QPushButton* g_apply = nullptr;
+QPushButton* g_cancel = nullptr;
 QTimer* g_timer = nullptr;
 
 const char* const c_axisName[3] = { "X", "Y", "Z" };
+
+/* ---- the live preview ---- */
+struct Live {
+	bool on = false;
+	std::vector<scene::Path> originals; // what was selected
+	Vector3 mins, maxs;                 // its bounds: the plane is worked out from these
+	int axis = 0; bool copy = true;     // what the applied mirror did
+	float plane = 0;
+	std::size_t count = 0;              // the selection after it, to notice when someone else changes it
+	Vector3 rmins, rmaxs;
+} g_live;
+bool g_busy = false;     // our own undo / command
+bool g_external = false; // something else went into the undo since
+
+class Tracker : public UndoTracker
+{
+public:
+	void clear() override { g_external = true; }
+	void begin() override { if( !g_busy ) g_external = true; }
+	void undo() override { if( !g_busy ) g_external = true; }
+	void redo() override { if( !g_busy ) g_external = true; }
+} g_tracker;
+bool g_trackerAttached = false;
 
 bool Selection_bounds( Vector3& mins, Vector3& maxs ){
 	if( GlobalSelectionSystem().countSelected() == 0 )
@@ -143,8 +174,9 @@ void Selection_check( bool& terrain, bool& models ){
 void Window_update(){
 	if( g_window == nullptr )
 		return;
-	if( !g_window->isVisible() ){
+	if( !g_window->isVisible() ){ // closed: what is there stays
 		g_timer->stop();
+		g_live = {};
 		return;
 	}
 	const char* ax = c_axisName[g_axis];
@@ -160,21 +192,29 @@ void Window_update(){
 		g_whereBox->addItem( QString( "A %1 coordinate" ).arg( ax ) );
 		g_whereBox->setCurrentIndex( g_where );
 	}
+	void Live_check();
+	Live_check();
 	Vector3 mins, maxs;
-	const bool have = Selection_bounds( mins, maxs );
+	const bool have = g_live.on ? ( mins = g_live.mins, maxs = g_live.maxs, true ) : Selection_bounds( mins, maxs );
 	g_coordSpin->setEnabled( g_where == 4 );
 	if( g_where != 4 && have ){
 		const QSignalBlocker b( g_coordSpin );
 		g_coordSpin->setValue( Plane_base( mins, maxs ) );
 	}
-	g_apply->setEnabled( have && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive );
+	g_apply->setText( g_live.on ? "Done" : "Mirror" );
+	g_apply->setToolTip( g_live.on ? "Keep it (one undo step, Ctrl+Z takes it away again)."
+	                               : "Mirror the selection - live: change anything here and it moves while you watch." );
+	g_apply->setEnabled( g_live.on || ( have && GlobalSelectionSystem().Mode() == SelectionSystem::ePrimitive ) );
+	g_cancel->setEnabled( g_live.on );
 	if( !have ){
 		g_info->setText( "Select what you want to mirror (brushes, patches, entities)." );
 		return;
 	}
 	const float plane = Plane( mins, maxs );
 	const float lo = 2 * plane - maxs[g_axis], hi = 2 * plane - mins[g_axis];
-	QString text = QString( "The selection spans %1 %2 .. %3. Mirror plane at %1 = %4, so the %5 lands at %1 %6 .. %7" )
+	QString text = g_live.on ? QString( "<b>Live preview</b> - the %1 is selected; change anything here and it follows. Done keeps it.<br>" )
+	                           .arg( g_copy ? "mirrored copy" : "mirrored selection" ) : QString();
+	text += QString( "The selection spans %1 %2 .. %3. Mirror plane at %1 = %4, so the %5 lands at %1 %6 .. %7" )
 	               .arg( ax ).arg( mins[g_axis], 0, 'g', 6 ).arg( maxs[g_axis], 0, 'g', 6 ).arg( plane, 0, 'g', 6 )
 	               .arg( g_copy ? "copy" : "selection" ).arg( lo, 0, 'g', 6 ).arg( hi, 0, 'g', 6 );
 	if( g_copy ){
@@ -195,35 +235,132 @@ void Window_update(){
 	g_info->setText( text );
 }
 
-void Mirror_apply(){
+/// mirrors what is selected (bounds mins / maxs) as the window says, one undo step
+void Mirror_do( const Vector3& mins, const Vector3& maxs ){
+	const float plane = Plane( mins, maxs );
+	g_busy = true;
+	{
+		const auto name = StringStream<64>( "mirrorSelected -axis ", c_axisName[g_axis], g_copy ? " -copy" : "" );
+		UndoableCommand undo( name ); // the name has to outlive the command: it is read when the command ends
+		if( g_copy )
+			Scene_Clone_Selected(); // the copies are selected now, the originals stay where they are
+		// flip around the pivot (whatever it is), then move the result so it lies where the plane says
+		Vector3 flip( 1, 1, 1 );
+		flip[g_axis] = -1;
+		GlobalSelectionSystem().scaleSelected( flip, false );
+		Vector3 mins2, maxs2;
+		Select_GetBounds( mins2, maxs2 );
+		Vector3 move( 0, 0, 0 );
+		move[g_axis] = ( 2 * plane - maxs[g_axis] ) - mins2[g_axis];
+		if( std::fabs( move[g_axis] ) > 1e-4f )
+			GlobalSelectionSystem().translateSelected( move );
+		// point entities face the mirrored way
+		class V : public SelectionSystem::Visitor {
+		public:
+			void visit( scene::Instance& instance ) const override {
+				if( Entity* e = Node_getEntity( instance.path().top() ) )
+					Entity_mirrorAngles( *e, g_axis );
+			}
+		};
+		GlobalSelectionSystem().foreachSelected( V() );
+	}
+	g_busy = false;
+	g_live.axis = g_axis;
+	g_live.copy = g_copy;
+	g_live.plane = plane;
+}
+
+void Live_record(){
+	g_live.count = GlobalSelectionSystem().countSelected();
+	Select_GetBounds( g_live.rmins, g_live.rmaxs );
+	g_external = false;
+}
+void Live_end(){
+	g_live = Live();
+}
+/// the preview ends (keeping what is there) when anything else changed the map or the selection
+void Live_check(){
+	if( !g_live.on )
+		return;
+	Vector3 mins, maxs;
+	if( g_external || GlobalSelectionSystem().countSelected() != g_live.count
+	 || GlobalSelectionSystem().Mode() != SelectionSystem::ePrimitive || !Selection_bounds( mins, maxs )
+	 || vector3_length( mins - g_live.rmins ) > 0.01f || vector3_length( maxs - g_live.rmaxs ) > 0.01f )
+		Live_end();
+}
+/// back to before the mirror: our undo step undone, the originals selected again
+void Live_undo(){
+	g_busy = true;
+	GlobalUndoSystem().undo();
+	g_busy = false;
+	GlobalSelectionSystem().setSelectedAll( false );
+	for( const scene::Path& path : g_live.originals )
+		if( scene::Instance* instance = GlobalSceneGraph().find( path ) )
+			Instance_setSelected( *instance, true );
+}
+
+/// starts a live mirror of the selection
+void Live_start(){
 	if( GlobalSelectionSystem().Mode() != SelectionSystem::ePrimitive )
 		return;
+	Live_end();
 	Vector3 mins, maxs;
 	if( !Selection_bounds( mins, maxs ) )
 		return;
-	const float plane = Plane( mins, maxs );
-	UndoableCommand undo( StringStream<64>( "mirrorSelected -axis ", c_axisName[g_axis], g_copy ? " -copy" : "" ) );
-	if( g_copy )
-		Scene_Clone_Selected(); // the copies are selected now, the originals stay where they are
-	// flip around the pivot (whatever it is), then move the result so it lies where the plane says
-	Vector3 flip( 1, 1, 1 );
-	flip[g_axis] = -1;
-	GlobalSelectionSystem().scaleSelected( flip, false );
-	Vector3 mins2, maxs2;
-	Select_GetBounds( mins2, maxs2 );
-	Vector3 move( 0, 0, 0 );
-	move[g_axis] = ( 2 * plane - maxs[g_axis] ) - mins2[g_axis];
-	if( std::fabs( move[g_axis] ) > 1e-4f )
-		GlobalSelectionSystem().translateSelected( move );
-	// point entities face the mirrored way
+	if( !g_trackerAttached ){
+		GlobalUndoSystem().trackerAttach( g_tracker );
+		g_trackerAttached = true;
+	}
 	class V : public SelectionSystem::Visitor {
 	public:
-		void visit( scene::Instance& instance ) const override {
-			if( Entity* e = Node_getEntity( instance.path().top() ) )
-				Entity_mirrorAngles( *e, g_axis );
-		}
+		void visit( scene::Instance& instance ) const override { g_live.originals.push_back( instance.path() ); }
 	};
 	GlobalSelectionSystem().foreachSelected( V() );
+	g_live.mins = mins;
+	g_live.maxs = maxs;
+	Mirror_do( mins, maxs );
+	g_live.on = true;
+	Live_record();
+}
+
+/// a setting changed: the preview follows
+void Live_changed(){
+	Live_check();
+	if( g_live.on ){
+		if( g_axis != g_live.axis || g_copy != g_live.copy ){ // flipped another way / copy or not: do it again
+			Live_undo();
+			Mirror_do( g_live.mins, g_live.maxs );
+		}
+		else{ // the plane moved: the mirrored half moves twice as far (outside the undo: the undo step keeps the start)
+			const float plane = Plane( g_live.mins, g_live.maxs );
+			Vector3 move( 0, 0, 0 );
+			move[g_axis] = 2 * ( plane - g_live.plane );
+			if( std::fabs( move[g_axis] ) > 1e-4f ){
+				g_busy = true;
+				GlobalSelectionSystem().translateSelected( move );
+				g_busy = false;
+				g_live.plane = plane;
+			}
+		}
+		Live_record();
+	}
+	Window_update();
+}
+
+void Mirror_button(){
+	if( g_live.on ){ // Done
+		Live_check();
+		Live_end();
+	}
+	else
+		Live_start();
+	Window_update();
+}
+void Mirror_cancel(){
+	Live_check();
+	if( g_live.on )
+		Live_undo();
+	Live_end();
 	Window_update();
 }
 
@@ -246,13 +383,13 @@ void Mirror_show(){
 		}
 		axes->addStretch();
 		grid->addLayout( axes, 0, 1, 1, 3 );
-		QObject::connect( g_axisGroup, &QButtonGroup::idClicked, []( int id ){ g_axis = id; Window_update(); } );
+		QObject::connect( g_axisGroup, &QButtonGroup::idClicked, []( int id ){ g_axis = id; Live_changed(); } );
 
 		grid->addWidget( new QLabel( "Mirror plane" ), 1, 0 );
 		g_whereBox = new QComboBox;
 		g_whereBox->setToolTip( "Where the mirror is. On one of the selection's sides the mirrored half lands right against it: "
 		                        "a seamless double of the map. The centre is what Flip X / Y / Z do." );
-		QObject::connect( g_whereBox, QOverload<int>::of( &QComboBox::currentIndexChanged ), []( int i ){ if( i >= 0 ){ g_where = i; Window_update(); } } );
+		QObject::connect( g_whereBox, QOverload<int>::of( &QComboBox::currentIndexChanged ), []( int i ){ if( i >= 0 ){ g_where = i; Live_changed(); } } );
 		grid->addWidget( g_whereBox, 1, 1, 1, 3 );
 
 		grid->addWidget( new QLabel( "At" ), 2, 0 );
@@ -261,7 +398,7 @@ void Mirror_show(){
 		g_coordSpin->setDecimals( 1 );
 		g_coordSpin->setSingleStep( 8 );
 		g_coordSpin->setToolTip( "The plane's coordinate. Type one when the plane is \"A coordinate\"." );
-		QObject::connect( g_coordSpin, QOverload<double>::of( &QDoubleSpinBox::valueChanged ), []( double d ){ g_coordinate = float( d ); Window_update(); } );
+		QObject::connect( g_coordSpin, QOverload<double>::of( &QDoubleSpinBox::valueChanged ), []( double d ){ g_coordinate = float( d ); Live_changed(); } );
 		grid->addWidget( g_coordSpin, 2, 1 );
 
 		grid->addWidget( new QLabel( "Gap" ), 3, 0 );
@@ -280,13 +417,13 @@ void Mirror_show(){
 			g_gap = float( d );
 			const QSignalBlocker b( g_gapSpin );
 			g_gapSpin->setValue( d );
-			Window_update();
+			Live_changed();
 		} );
 		QObject::connect( g_gapSpin, QOverload<double>::of( &QDoubleSpinBox::valueChanged ), []( double d ){
 			g_gap = float( d );
 			const QSignalBlocker b( g_gapSlider );
 			g_gapSlider->setValue( int( std::lround( d ) ) );
-			Window_update();
+			Live_changed();
 		} );
 		auto *zero = new QPushButton( "Touching" );
 		zero->setToolTip( "Gap 0: the halves meet exactly." );
@@ -306,7 +443,7 @@ void Mirror_show(){
 
 		g_copyBox = new QCheckBox( "Keep the original (mirror a copy)" );
 		g_copyBox->setToolTip( "On: the mirrored half is a copy, the original stays. Off: the selection itself is mirrored." );
-		QObject::connect( g_copyBox, &QCheckBox::toggled, []( bool on ){ g_copy = on; Window_update(); } );
+		QObject::connect( g_copyBox, &QCheckBox::toggled, []( bool on ){ g_copy = on; Live_changed(); } );
 		v->addWidget( g_copyBox );
 
 		g_info = new QLabel;
@@ -318,9 +455,12 @@ void Mirror_show(){
 		auto *row = new QHBoxLayout;
 		g_apply = new QPushButton( "Mirror" );
 		g_apply->setDefault( true );
-		g_apply->setToolTip( "One undo step (Ctrl+Z). The window stays open: undo, change the gap and mirror again." );
-		QObject::connect( g_apply, &QPushButton::clicked, Mirror_apply );
+		QObject::connect( g_apply, &QPushButton::clicked, Mirror_button );
 		row->addWidget( g_apply );
+		g_cancel = new QPushButton( "Cancel" );
+		g_cancel->setToolTip( "Take the mirrored half away again, the original selected as before." );
+		QObject::connect( g_cancel, &QPushButton::clicked, Mirror_cancel );
+		row->addWidget( g_cancel );
 		row->addStretch();
 		auto *note = new QLabel( "Point entities turn to face the mirrored way; misc_models are mirrored for q3map2 "
 		                         "(sof2map can't compile mirrored models)." );
@@ -345,6 +485,9 @@ void Mirror_show(){
 	g_window->show();
 	g_window->raise();
 	g_timer->start();
+	Live_check();
+	if( !g_live.on ) // opened with something selected: mirrored at once, live
+		Live_start();
 	Window_update();
 }
 

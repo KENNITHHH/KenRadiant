@@ -3,6 +3,31 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (40)
+### Mirror is live
+- Select something and open Mirror (Modify > Mirror..., or the toolbar button): the mirrored copy appears at once and
+  stays selected. Click X / Y / Z, change the plane, the gap or "Keep the original" and it moves / flips while you
+  watch. **Done** keeps it (one undo step - Ctrl+Z takes the whole mirror away, whatever you changed in between),
+  **Cancel** takes it away again with the original selected as before. Moving it with the mouse, selecting something
+  else, undo, or closing the window ends the preview and keeps what is there; press Mirror again for a new one.
+- Fixed: the undo step's name was garbage text in the console (and in the undo of Map Settings changes) - the name
+  was read after it was gone.
+
+### Worldspawn tab (next to Textures / Models / Entities)
+- **Every worldspawn key** in a table: double-click a value and the map changes while you type (Enter keeps it, Esc
+  puts it back), add or set a key, remove keys. Keys changed since the map was loaded are bold, keys removed since are
+  shown in italics, and a column shows what each was when loaded.
+- Below it the light keys (ambient, _color, _minlight, _floodlight with their preview switches) and the in-game keys
+  (distancecull with the view cut, fog, gridsize) from the old Map Settings window, which this tab replaces
+  (Entity > Worldspawn Settings... and the inspector's "Map Settings" button switch to it). In the layouts without
+  those tabs it is a "Worldspawn" page of the group window.
+- **Reset**: the keys are remembered as they were when the map was loaded. Every row has a Reset button (enabled when
+  it differs, the tooltip says what it was), "Reset selected" in the table, and **Reset all** puts the whole
+  worldspawn back - one undo step each. "Keep as reset point" makes the current keys the ones Reset goes back to.
+- The **Sun Calibrator** has the worldspawn light section too (ambient, _color, _minlight, _floodlight and the
+  preview switches), so everything that changes the light is in one window; both stay in step. The Sun Calibrator
+  scrolls now when it is taller than the screen.
+
 ## Build 2026-10-31 (39)
 ### Mirror (Modify > Mirror..., and a toolbar button next to Flip)
 - Flip X / Y / Z mirror around the selection's centre, snapped to the grid - so copy, paste and flip leaves the halves
