@@ -300,10 +300,16 @@ inline Matrix4 projection_for_camera( float near_z, float far_z, float fieldOfVi
 }
 
 float Camera_getFarClipPlane( camera_t& camera ){
-	return ( g_camwindow_globals_private.m_bCubicClipping )
+	float farClip = ( g_camwindow_globals_private.m_bCubicClipping )
 	       ? pow( 2.0, ( g_camwindow_globals.m_nCubicScale + 7 ) / 2.0 )
 	       : ( ( g_MaxWorldCoord - g_MinWorldCoord ) * sqrt( 3 ) );
+	// KenRadiant Map Settings: the game draws nothing beyond the worldspawn's distancecull
+	extern float g_krDistanceCullApplied;
+	if( g_krDistanceCullApplied > 0 )
+		farClip = std::min( farClip, g_krDistanceCullApplied );
+	return farClip;
 }
+float g_krDistanceCullApplied = 0;
 
 void Camera_updateProjection( camera_t& camera ){
 	float farClip = Camera_getFarClipPlane( camera );
@@ -2269,6 +2275,14 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 					m_ambient = a;
 				if( string_parse_float( entity->getKeyValue( "_minlight" ), a ) )
 					m_minlight = a;
+				// KenRadiant Map Settings: _color tints ambient / _minlight (q3map2, sof2map); _floodlight (q3map2)
+				extern Vector3 g_krWorldColour;
+				extern CopiedString g_krWorldFlood;
+				g_krWorldColour = Vector3( 1, 1, 1 );
+				Vector3 c;
+				if( string_parse_vector3( entity->getKeyValue( "_color" ), c ) && ( c.x() > 0 || c.y() > 0 || c.z() > 0 ) )
+					g_krWorldColour = c;
+				g_krWorldFlood = entity->getKeyValue( "_floodlight" );
 				return false;
 			}
 			Vector3 origin;
@@ -2469,8 +2483,31 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	g_krSkyAmbient = g_krSun.skyColour * std::clamp( skyLight / 400.f, 0.f, 1.5f ); // (q3map2: the sky shader's light colour)
 	(void)tint;
 	g_krMinLight = std::clamp( minlight / 255.f, 0.f, 1.f );
-	if( ambient <= 0 && minlight <= 0 ) // never fully black (q3map2's bounce light fills rooms a little)
+	// KenRadiant Map Settings: ambient and _minlight in the _color of the worldspawn (as q3map2), switchable
+	extern bool g_krPreviewAmbient, g_krPreviewFlood;
+	extern Vector3 g_krWorldColour, g_krMinLightColour, g_krFloodLight;
+	extern CopiedString g_krWorldFlood;
+	const Vector3 tintColour = g_krWorldColour; // q3map2: ambientColor = _color * ambient, _color as written
+	g_krAmbient = vector3_scaled( tintColour, g_krAmbient );
+	g_krMinLightColour = tintColour * g_krMinLight;
+	if( !g_krPreviewAmbient ){
+		g_krAmbient = Vector3( 0, 0, 0 );
+		g_krMinLightColour = Vector3( 0, 0, 0 );
+	}
+	else if( ambient <= 0 && minlight <= 0 ) // never fully black (q3map2's bounce light fills rooms a little)
 		g_krAmbient = Vector3( 1, 1, 1 ) * ( skyLight > 0 ? 0.035f : 0.06f );
+	// _floodlight "r g b distance intensity": light from the open directions; the preview weighs it by the sky seen
+	g_krFloodLight = Vector3( 0, 0, 0 );
+	if( g_krPreviewFlood && !g_krWorldFlood.empty() ){
+		double r = 0, g = 0, b = 0, d = 1024, i = 128;
+		sscanf( g_krWorldFlood.c_str(), "%lf %lf %lf %lf %lf", &r, &g, &b, &d, &i );
+		Vector3 c{ float( r ), float( g ), float( b ) };
+		if( c.x() <= 0 && c.y() <= 0 && c.z() <= 0 )
+			c = Vector3( 0.94f, 0.94f, 1 );
+		c = vector3_normalised( c ); // q3map2 ColorNormalize
+		if( i < 1 ) i = 128;
+		g_krFloodLight = c * float( std::clamp( i / 255.0, 0.0, 4.0 ) );
+	}
 }
 
 /* ---- KenRadiant: sun shadow map for the live light preview ---- */
@@ -3183,6 +3220,14 @@ Vector3 KrCamera_targetPoint(){
 
 void CamWnd::Cam_Draw(){
 //		globalOutputStream() << "Cam_Draw()\n";
+	{	// KenRadiant Map Settings: distancecull cuts the view like the game (when switched on)
+		extern float KrMapSettings_distanceCull();
+		const float cull = KrMapSettings_distanceCull();
+		if( cull != g_krDistanceCullApplied ){
+			g_krDistanceCullApplied = cull;
+			Camera_updateProjection( m_Camera );
+		}
+	}
 
 	gl().glViewport( 0, 0, m_Camera.width, m_Camera.height );
 #if 0
@@ -3892,6 +3937,10 @@ void CamWnd_Construct(){
 	KrPlay_registerCommands();
 	extern void KrFog_registerCommands();
 	KrFog_registerCommands();
+	extern void KrMirror_registerCommands();
+	KrMirror_registerCommands();
+	extern void KrMapSettings_registerCommands();
+	KrMapSettings_registerCommands();
 	extern void KrBspPreview_registerCommands();
 	KrBspPreview_registerCommands();
 	GlobalCommands_insert( "SunCalibrator", makeCallbackF( KrSunCalibrator_show ) ); // KenRadiant

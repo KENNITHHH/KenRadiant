@@ -3,6 +3,35 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (39)
+### Mirror (Modify > Mirror..., and a toolbar button next to Flip)
+- Flip X / Y / Z mirror around the selection's centre, snapped to the grid - so copy, paste and flip leaves the halves
+  overlapping or a unit off, and ramps and bridges don't meet. **Mirror** puts the mirror plane on the selection's own
+  **+ or - side** (or its centre, 0, or a coordinate you type), so the mirrored half lands exactly against the
+  original: a seamless double of a map in one click. A **gap** slider / box fine-tunes it by the unit or by the grid
+  (below 0 the halves overlap), "Keep the original" makes it a mirrored copy, and the window tells you where the
+  result will land before you press it. One undo step; the window stays open to undo, adjust and mirror again.
+- Entities come along: origins mirror, `angle` / `angles` turn to face the mirrored way (spawn points, NPCs, lights),
+  misc_models get a mirrored `modelscale_vec` so q3map2 compiles them mirrored (sof2map can't). It warns when a
+  terrain is selected (its index map does not mirror) and for game models (they can only turn).
+
+### Map Settings (Entity > Map Settings..., and a button in the entity inspector)
+- The worldspawn keys that change how the map looks, each with what it does and which compiler reads it:
+  `ambient` and `_color` (q3map2 and sof2map), `_minlight` and `_floodlight` (q3map2 only), `distancecull`, the map's
+  `fog` (opens the Fog window) and `gridsize`. Sliders and colour pickers write to the worldspawn live, one undo step
+  per change.
+- Previews, each switchable: ambient / _color / _minlight and _floodlight in the live light preview (Ctrl+L) - the
+  light preview now tints ambient and _minlight with `_color` like q3map2 does; floodlight is weighed by how much sky a
+  spot sees (close outdoors, q3map2 is a little brighter indoors) - and **distancecull cuts the 3D view** at that
+  distance, so with the map's fog on you see the far edge disappear into the fog the way it does in game.
+
+### Decompiling custom maps: textures that come out scaled wrong
+- The Decompile tab says up front what has to be in place: the map's textures and shaders in `base` (loose, or still
+  in its .pk3), and its .shader files named in a `shaders/shaderlist.txt` - q3map2 only reads the shader files listed
+  there. The texture alignment is solved against each texture's size, and a texture it can't find counts as 64 x 64,
+  so every face using it comes out scaled wrong.
+- After decompiling, q3map2 now ends with a warning when that happened: how many faces and shaders, and what to fix.
+
 ## Build 2026-10-26 (38)
 ### q3map2: the terrain is lit like sof2map's now - Raven's terrain vertex normals
 - **The landscape still looked different in game** after build 36, and it was not the textures any more: your

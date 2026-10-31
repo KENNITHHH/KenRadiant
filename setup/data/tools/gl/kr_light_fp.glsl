@@ -14,7 +14,8 @@ uniform vec3 u_sun_dir;
 uniform vec3 u_sun_col;
 uniform vec3 u_ambient;    // worldspawn _ambient
 uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
-uniform float u_minlight;  // worldspawn _minlight
+uniform vec3 u_minlight;   // worldspawn _minlight, in its _color
+uniform vec3 u_flood;      // worldspawn _floodlight colour * intensity (q3map2 fill light), weighed by the sky seen
 // sky light occlusion: 16 directional depth maps (zenith + 2 rings) in a 4 x 4 atlas
 uniform sampler2DShadow u_skyshadow;
 uniform int u_has_sky;
@@ -259,6 +260,9 @@ void main()
 		skyVis += c * vis;
 	}
 	vec3 light = u_ambient + u_sky * ( skyVis / max( skyAll, 0.001 ) ) + u_sun_col * sun + u_bounce;
+	// q3map2 _floodlight: light from the directions open within its distance - the share of sky this spot sees
+	// stands in for that (right outdoors, a bit dark under roofs where q3map2 also counts far walls as open)
+	light += u_flood * clamp( skyVis / max( skyAll, 0.001 ), 0.0, 1.0 );
 	if( u_has_lights != 0 ){
 		g_wp = u_eye2world * v_pos + u_cam_world;
 		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );
@@ -276,7 +280,7 @@ void main()
 			}
 		}
 	}
-	light = max( light, vec3( u_minlight ) );
+	light = max( light, u_minlight );
 	// what q3map2 does (ColorToBytes): vertex light is scaled by -vertexscale before the gamma, a lightmap by
 	// -brightness after it (it goes in as lmscale), then both by 1 / -compensate
 	if( u_vertexlit != 0 )

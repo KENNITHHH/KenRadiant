@@ -1143,10 +1143,12 @@ void create_selection_menu( QMenuBar *menubar ){
 		create_menu_item_with_mnemonic( submenu, "Flip &X", "MirrorSelectionX" );
 		create_menu_item_with_mnemonic( submenu, "Flip &Y", "MirrorSelectionY" );
 		create_menu_item_with_mnemonic( submenu, "Flip &Z", "MirrorSelectionZ" );
+		create_menu_item_with_mnemonic( submenu, "Mirror... (a copy against the selection, with a gap)", "KrMirrorWindow" ); // KenRadiant
 		submenu->addSeparator();
 		create_menu_item_with_mnemonic( submenu, "Flip Horizontally", "MirrorSelectionHorizontally" );
 		create_menu_item_with_mnemonic( submenu, "Flip Vertically", "MirrorSelectionVertically" );
 	}
+	create_menu_item_with_mnemonic( menu, "Mirror...", "KrMirrorWindow" ); // KenRadiant
 	menu->addSeparator();
 	create_menu_item_with_mnemonic( menu, "Arbitrary rotation...", "ArbitraryRotation" );
 	create_menu_item_with_mnemonic( menu, "Arbitrary scale...", "ArbitraryScale" );
@@ -1229,6 +1231,8 @@ void create_entity_menu( QMenuBar *menubar ){
 	menu->setTearOffEnabled( g_Layout_enableDetachableMenus.m_value );
 
 	Entity_constructMenu( menu );
+	menu->addSeparator();
+	create_menu_item_with_mnemonic( menu, "Map Settings... (worldspawn: ambient, floodlight, distancecull, fog)", "KrMapSettings" ); // KenRadiant
 }
 
 void create_brush_menu( QMenuBar *menubar ){
@@ -1389,6 +1393,7 @@ void RotateFlip_constructToolbar( QToolBar* toolbar ){
 //	toolbar_append_button( toolbar, "z-axis Rotate", "brush_rotatez.png", "RotateSelectionZ" );
 	toolbar_append_button( toolbar, "Flip Horizontally", "brush_flip_hor.png", "MirrorSelectionHorizontally" );
 	toolbar_append_button( toolbar, "Flip Vertically", "brush_flip_vert.png", "MirrorSelectionVertically" );
+	toolbar_append_button( toolbar, "Mirror: mirror the selection or a copy of it against its own side, with a gap you can fine-tune", "kr_mirror.png", "KrMirrorWindow" ); // KenRadiant
 
 	toolbar_append_button( toolbar, "Rotate Anticlockwise", "brush_rotate_anti.png", "RotateSelectionAnticlockwise" );
 	toolbar_append_button( toolbar, "Rotate Clockwise", "brush_rotate_clock.png", "RotateSelectionClockwise" );

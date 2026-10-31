@@ -497,6 +497,11 @@ Vector3 g_krSunColour( 0, 0, 0 );
 Vector3 g_krAmbient( 0.15f, 0.15f, 0.15f );
 Vector3 g_krSkyAmbient( 0, 0, 0 );
 float g_krMinLight = 0;
+/* KenRadiant Map Settings (kr_mapsettings.cpp) */
+Vector3 g_krWorldColour( 1, 1, 1 );
+CopiedString g_krWorldFlood;
+Vector3 g_krMinLightColour( 0, 0, 0 );
+Vector3 g_krFloodLight( 0, 0, 0 );
 bool g_krShadows = true;
 bool g_krAnimateShaders = true;
 bool g_krDeformVertexes = true;
@@ -598,6 +603,7 @@ public:
 	GLint u_cube_far, u_cube_near, u_eye2world, u_gamma, u_compensate, u_saturation, u_bounce;
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	GLint u_fog_on, u_fog_col, u_fog_depth;
+	GLint u_flood;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
 	bool m_fog = false;     // the map's fog, drawn like the game (kr_fog.cpp)
 	bool m_bound = false;
@@ -630,6 +636,7 @@ public:
 		u_mode = u( "u_mode" ); u_fflight = u( "u_fflight" ); u_time = u( "u_time" ); u_turb = u( "u_turb" ); u_turb_on = u( "u_turb_on" );
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		u_fog_on = u( "u_fog_on" ); u_fog_col = u( "u_fog_col" ); u_fog_depth = u( "u_fog_depth" );
+		u_flood = u( "u_flood" );
 		gl().glUniform1i( u_tex, 0 );
 		gl().glUniform1i( u( "u_shadow" ), 7 );
 		gl().glUniform1i( u( "u_cube0" ), 8 );
@@ -698,7 +705,8 @@ public:
 		gl().glUniform3f( u_sun_col, g_krSunColour.x(), g_krSunColour.y(), g_krSunColour.z() );
 		gl().glUniform3f( u_ambient, g_krAmbient.x(), g_krAmbient.y(), g_krAmbient.z() );
 		gl().glUniform3f( u_sky, g_krSkyAmbient.x(), g_krSkyAmbient.y(), g_krSkyAmbient.z() );
-		gl().glUniform1f( u_minlight, g_krMinLight );
+		gl().glUniform3f( u_minlight, g_krMinLightColour.x(), g_krMinLightColour.y(), g_krMinLightColour.z() );
+		gl().glUniform3f( u_flood, g_krFloodLight.x(), g_krFloodLight.y(), g_krFloodLight.z() );
 		const bool shadow = g_krShadows && g_krShadowTex != 0;
 		gl().glUniform1i( u_has_shadow, shadow ? 1 : 0 );
 		gl().glUniform1f( u_texel, g_krShadowTexel );

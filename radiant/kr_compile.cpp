@@ -915,6 +915,20 @@ public:
 		{
 			QGridLayout* g = page( "Decompile" );
 			int r = 0;
+			{	// the one thing that silently goes wrong: textures the decompiler can't find come out scaled wrong
+				auto *note = new QLabel(
+					"<b>Before you decompile a custom map:</b> its textures and shaders must be where q3map2 looks - "
+					"in <i>base/textures</i> and <i>base/shaders</i>, or still inside its .pk3 in <i>base</i> (no need to unpack). "
+					"Its .shader files must also be named in a <i>shaders/shaderlist.txt</i> (yours, or one in the map's .pk3): "
+					"q3map2 only reads the shader files listed there.<br>"
+					"The texture alignment is worked out from each texture's size - a texture it can't find counts as 64 x 64, "
+					"and every face using it comes out <b>scaled wrong</b>. The same applies when you compile. "
+					"After decompiling, the console lists any <i>no image for ...</i>: fix those and decompile again." );
+				note->setWordWrap( true );
+				note->setTextFormat( Qt::RichText );
+				note->setStyleSheet( "QLabel { background: rgba(255, 190, 60, 40); border: 1px solid rgba(255, 190, 60, 120); padding: 6px; }" );
+				g->addWidget( note, r++, 0, 1, 3 );
+			}
 			auto *file = text( g, r++, ".bsp to decompile", o.decompBsp, "Any compiled map. q3map2 writes <name>_converted.map next to it (brushes, patches, entities, misc_models), "
 			                   "with the texture alignment worked back out of the .bsp." );
 			auto *browse = new QPushButton( "Browse..." );

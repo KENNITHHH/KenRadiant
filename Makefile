@@ -896,6 +896,8 @@ $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/kr_perf.o \
 	radiant/kr_play.o \
 	radiant/kr_fog.o \
+	radiant/kr_mirror.o \
+	radiant/kr_mapsettings.o \
 	radiant/kr_entitybrowser.o \
 	radiant/clippertool.o \
 	radiant/colors.o \

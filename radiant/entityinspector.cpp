@@ -20,6 +20,7 @@
  */
 
 #include "entityinspector.h"
+#include "commands.h"
 
 #include "debugging/debugging.h"
 
@@ -1325,6 +1326,13 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 				auto *b = new QPushButton( "Delete Key" );
 				hbox->addWidget( b );
 				QObject::connect( b, &QAbstractButton::clicked, EntityInspector_clearKeyValue );
+			}
+			{	// KenRadiant
+				auto *b = new QPushButton( "Map Settings" );
+				b->setToolTip( "The worldspawn's look: ambient, _color, _minlight, _floodlight, distancecull, fog, gridsize - "
+				               "with what each does and a preview in the 3D view" );
+				hbox->addWidget( b );
+				QObject::connect( b, &QAbstractButton::clicked, [](){ GlobalCommands_find( "KrMapSettings" ).m_callback(); } );
 			}
 			{
 				auto *b = new QToolButton;

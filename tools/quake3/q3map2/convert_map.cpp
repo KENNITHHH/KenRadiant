@@ -1541,6 +1541,12 @@ static int ConvertBSPToMap_Ext( char *bspName, EBrushType brushType ){
 		            "                 %d bevel/degenerate sides dropped, %d sides with missing texture image\n",
 		            st.linked, st.searched, st.exact, exactdec::g_tolTexel, st.inexact, st.worstErr,
 		            st.hiddenBrush, st.hiddenGlobal, st.bevelsDropped, st.missingImage );
+		/* KenRadiant: the texture alignment is solved against each texture's size - without the image it is 64 x 64 */
+		if ( st.missingImage > 0 )
+			Sys_Warning( "%d faces (%zu shaders, listed above as \"no image for\") have no texture here, so their texture "
+			             "scale came out wrong. Put the map's textures and shaders in base (or keep its .pk3 in base), list "
+			             "its .shader files in shaders/shaderlist.txt, and decompile again.\n",
+			             st.missingImage, g_missingImages.size() );
 	}
 
 	/* return to sender */
