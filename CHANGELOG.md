@@ -3,6 +3,15 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-11-01 (46)
+- **Show Compiled Lighting with fog**: walls and floors (lightmap + texture stages) were 25% too dark against the game
+  (Lighting Probe, mp_col2: editor 0.79 x the game). Each stage got the fog on its own, so the lightmap and the
+  texture multiplied onto it were both fogged and the fog was multiplied in twice. The fog now goes over the finished
+  surface once, like the engine. (The live light preview was already right: 1.05 x the game for walls, 1.02 x for
+  terrain and models, with the EXP2 fog of build 45.)
+- **Another map, its own fog**: a fog picked or tuned in the Fog window stayed on when you opened another map
+  (mp_col2's fog on de_dust2). Opening a map now goes back to that map's worldspawn "fog" - none when it has none.
+
 ## Build 2026-10-31 (45)
 ### The map's fog like the game (from your Lighting Probe on mp_col2)
 - SOF2's global fog is OpenGL fog, **GL_EXP2 with density 2.354 / fogparms distance** (as in Raven's JK2 / JKA

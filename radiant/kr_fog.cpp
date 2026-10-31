@@ -22,6 +22,7 @@
 #include <QColorDialog>
 #include <vector>
 
+#include "map.h"
 #include "gtkutil/guisettings.h"
 #include "ientity.h"
 #include "ishaders.h"
@@ -145,6 +146,18 @@ bool Fog_current( Vector3& colour, float& depth ){
 
 /// the fog the 3D view should draw: false = none
 bool KrFog_active( Vector3& colour, float& depth, bool& sky ){
+	// another map: back to that map's own fog (a fog picked or tuned in the Fog window was for the last map) - a map
+	// without a worldspawn "fog" key shows none
+	static CopiedString lastMap;
+	if( !string_equal( lastMap.c_str(), Map_Name( g_map ) ) ){
+		lastMap = Map_Name( g_map );
+		if( g_mode != eMap ){
+			g_mode = eMap;
+			globalOutputStream() << "fog: another map - its own fog (worldspawn \"fog\") again\n";
+		}
+		Fog_readMap( true );
+		Window_update();
+	}
 	if( !g_enabled )
 		return false;
 	sky = g_sky != 0;

@@ -35,6 +35,8 @@ void GLSLProgram_link( GLuint program );
 #include "qerplugin.h"
 #include "moduleobserver.h"
 
+extern bool g_krFogOn; // the map's fog in the 3D view (kr_fog.cpp / renderstate.cpp)
+
 namespace
 {
 
@@ -294,6 +296,11 @@ const char* const c_fp =
 	"uniform int u_fog_on; uniform vec3 u_fog_col; uniform float u_fog_depth; // KenRadiant: the map's fog (fogparms)\n"
 	"vec3 shifted( vec3 l ){ l *= u_shift; float peak = max( l.r, max( l.g, l.b ) ); if( peak > 1.0 ) l /= peak; return l; } // the engine's overbright clamp keeps the colour\n"
 	"void main(){\n"
+	"  if( u_src == 6 ){ // the fog pass over an opaque surface's stages: fog colour, alpha = the fog there\n"
+	"    float x = 2.354 * max( -v_eye.z, 0.0 ) / u_fog_depth;\n"
+	"    gl_FragColor = vec4( u_fog_col, 1.0 - exp( -x * x ) );\n"
+	"    return;\n"
+	"  }\n"
 	"  vec4 c;\n"
 	"  if( u_src == 1 ) c = vec4( shifted( texture2D( u_lm, v_lm ).rgb ), 1.0 );\n"
 	"  else if( u_src == 4 ) c = vec4( shifted( v_colour.rgb ), 1.0 );\n"
@@ -453,7 +460,6 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 	gl().glUniform1f( u_shift, float( 1 << std::clamp( g_krEngineShift, 0, 2 ) ) );
 	gl().glUniform1f( u_gamma, std::clamp( g_krEngineGamma, 0.5f, 3.f ) );
 	{	// KenRadiant: the map's fog, like the game draws it (kr_fog.cpp)
-		extern bool g_krFogOn;
 		extern Vector3 g_krFogColour;
 		extern float g_krFogDepth;
 		gl().glUniform1i( u_fog_on, g_krFogOn ? 1 : 0 );
@@ -535,6 +541,10 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 			// the shader's stages, as the engine draws them
 			Batch_loadStages( b, *stages );
 			bool depthWritten = false;
+			/* fog: an opaque surface gets it once, over the finished stages (fogging each stage on its own fogged a
+			   lightmap stage and the texture multiplied onto it twice - walls 25% too dark, Lighting Probe) */
+			const bool fogAfter = g_krFogOn && !translucent;
+			gl().glUniform1i( u_fog_on, g_krFogOn && !fogAfter ? 1 : 0 );
 			for( std::size_t i = 0; i < stages->size(); ++i ){
 				const KrStage& st = ( *stages )[i];
 				if( st.sprite ) // surfaceSprites: the engine scatters sprites, it does not draw this stage over the surface
@@ -594,6 +604,16 @@ void KrBspPreview_draw( const Matrix4& modelview, const Matrix4& projection ){
 				gl().glUniform1i( u_env, 0 );
 				depthWritten = depthWritten || st.depthWrite || ( i == 0 && replace );
 			}
+			if( fogAfter && depthWritten ){
+				gl().glEnable( GL_BLEND );
+				gl().glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+				gl().glDepthMask( GL_FALSE );
+				gl().glDepthFunc( GL_EQUAL );
+				gl().glUniform1i( u_src, 6 );
+				gl().glUniform1i( u_afunc, 0 );
+				gl().glDrawArrays( GL_TRIANGLES, 0, GLsizei( b.verts.size() ) );
+			}
+			gl().glUniform1i( u_fog_on, g_krFogOn ? 1 : 0 );
 			gl().glDepthFunc( GL_LEQUAL );
 		}
 	// blended surfaces (decals) hide the editor's own faces behind them too: their depth, where they are seen
