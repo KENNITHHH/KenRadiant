@@ -2533,6 +2533,10 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 		// the sky shader's q3map_surfacelight fills every spot that sees the sky, flat (no fall-off, no angle), once
 		if( g_krSun.intensity > 0 && len > 0 && g_krSun.surfaceLight > 0 ){
 			g_krRavenFill = g_krSun.skyColour * ( g_krSun.surfaceLight / 255.f );
+			// the editor's stand-in sky light for a SOF2 sky without q3map_skyLight (2 x its surface light) is this
+			// fill now - both counted the sky twice (Lighting Probe, mp_col2: shadowed walls 1.45 x too bright)
+			if( g_krSun.skyLight == g_krSun.surfaceLight * 2 )
+				g_krSkyAmbient = Vector3( 0, 0, 0 );
 			if( ambient <= 0 && minlight <= 0 && g_krPreviewAmbient ) // the fill lights everything outdoors: no made-up ambient
 				g_krAmbient = Vector3( 0, 0, 0 );
 		}

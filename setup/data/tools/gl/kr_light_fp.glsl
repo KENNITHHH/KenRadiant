@@ -279,7 +279,8 @@ void main()
 	// stands in for that (right outdoors, a bit dark under roofs where q3map2 also counts far walls as open)
 	light += u_flood * clamp( skyVis / max( skyAll, 0.001 ), 0.0, 1.0 );
 	// Raven's sky fill: all of it as soon as some of the sky is in sight
-	light += u_raven_fill * smoothstep( 0.0, 0.06, skyVis / max( skyAll, 0.001 ) );
+	// (vertex-lit surfaces - terrain, models - get it everywhere: sof2map / -ravenlight trace only the sun for them)
+	light += u_raven_fill * ( u_vertexlit != 0 ? 1.0 : smoothstep( 0.0, 0.06, skyVis / max( skyAll, 0.001 ) ) );
 	if( u_has_lights != 0 ){
 		g_wp = u_eye2world * v_pos + u_cam_world;
 		vec3 cellf = clamp( floor( ( g_wp - u_grid_min ) / KR_CELL ), vec3( 0.0 ), KR_GRID - vec3( 1.0 ) );

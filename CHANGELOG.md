@@ -3,6 +3,16 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (43)
+### Live light preview, from your Lighting Probe on mp_col2 (q3map2 -ravenlight)
+- The sky was counted twice with -ravenlight / sof2map: the editor's stand-in sky light for SOF2 skies without
+  q3map_skyLight (2 x the sky's q3map_surfacelight) came on top of Raven's sky fill, which is that same light. The
+  probe showed every surface 1.3 - 1.9 x too bright (shadowed walls: 1.45 x - exactly the extra). Now only the fill.
+  On mp_col2 the shadowed walls / rocks come out at the .bsp's 0.27 0.30 0.37.
+- Vertex-lit surfaces (terrain, models) get the sky fill everywhere, as -ravenlight / sof2map do (they only trace the
+  sun for those). Trees under their own leaves were nearly black (0.12 against 0.63 in the .bsp).
+- Ground in front of the mp_col2 spawn against Raven's own lightmaps: 52 vs 46 (build 42: 55, build 41: 36).
+
 ## Build 2026-10-31 (42)
 ### Live light preview
 - **Black terrain fixed.** Steep landscape faces turned black in the live light preview (Ctrl+L). Cause: the smoothed
