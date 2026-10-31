@@ -6,6 +6,7 @@
    This file is part of KenRadiant (GPL, see LICENSE).
  */
 
+#include "gtkutil/guisettings.h"
 #include "kr_brushshapes.h"
 
 #include <QDialog>
@@ -431,14 +432,14 @@ class ProblemsDialog : public QDialog
 public:
 	ProblemsDialog( QWidget* parent ) : QDialog( parent, Qt::Tool ){
 		setWindowTitle( "Check for Problems" );
-		resize( 640, 420 );
+		resize( 900, 520 );
 		auto *vbox = new QVBoxLayout( this );
 		m_summary = new QLabel;
 		vbox->addWidget( m_summary );
 		m_tree = new QTreeWidget;
 		m_tree->setColumnCount( 2 );
 		m_tree->setHeaderLabels( { "Problem", "Details" } );
-		m_tree->setRootIsDecorated( false );
+		m_tree->setRootIsDecorated( true ); // grouped by kind
 		m_tree->header()->setStretchLastSection( true );
 		m_tree->setSelectionMode( QAbstractItemView::ExtendedSelection );
 		vbox->addWidget( m_tree );
@@ -466,10 +467,30 @@ public:
 		ProblemWalker walker( m_problems );
 		GlobalSceneGraph().traverse( walker );
 		walker.finish( targetnames );
+		// one group per kind ("Missing texture (13)"), in the order they were found; small groups open
+		std::vector<std::pair<QString, QTreeWidgetItem*>> groups;
 		for( std::size_t i = 0; i < m_problems.size(); ++i ){
-			auto *item = new QTreeWidgetItem( { m_problems[i].kind, m_problems[i].text } );
+			QTreeWidgetItem* group = nullptr;
+			for( auto& [kind, item] : groups )
+				if( kind == m_problems[i].kind )
+					group = item;
+			if( group == nullptr ){
+				group = new QTreeWidgetItem( { m_problems[i].kind, QString() } );
+				group->setData( 0, Qt::UserRole, -1 );
+				QFont f = group->font( 0 );
+				f.setBold( true );
+				group->setFont( 0, f );
+				m_tree->addTopLevelItem( group );
+				groups.emplace_back( m_problems[i].kind, group );
+			}
+			auto *item = new QTreeWidgetItem( group, { m_problems[i].kind, m_problems[i].text } );
 			item->setData( 0, Qt::UserRole, int( i ) );
-			m_tree->addTopLevelItem( item );
+		}
+		for( auto& [kind, group] : groups ){
+			const int n = group->childCount();
+			group->setText( 0, QString( "%1 (%2)" ).arg( kind ).arg( n ) );
+			group->setText( 1, n == 1 ? group->child( 0 )->text( 1 ) : QString( "click the arrow to see them - selecting the group selects all %1" ).arg( n ) );
+			group->setExpanded( n <= 12 || m_problems.size() <= 40 );
 		}
 		m_tree->resizeColumnToContents( 0 );
 		m_summary->setText( m_problems.empty() ? "No problems found." : QString( "%1 problem%2 - click one to select it, double-click to fly there." )
@@ -484,14 +505,22 @@ public:
 			GlobalSelectionSystem().SetMode( SelectionSystem::ePrimitive );
 		GlobalSelectionSystem().setSelectedAll( false );
 		bool any = false;
-		for( QTreeWidgetItem* item : items ){
-			const KrProblem& p = m_problems[item->data( 0, Qt::UserRole ).toInt()];
+		const auto select = [this, &any]( const QTreeWidgetItem* item ){
+			const int i = item->data( 0, Qt::UserRole ).toInt();
+			if( i < 0 || i >= int( m_problems.size() ) )
+				return;
+			const KrProblem& p = m_problems[i];
 			if( p.path.size() < 2 )
-				continue;
+				return;
 			if( scene::Instance* instance = GlobalSceneGraph().find( p.path ) ){
 				Instance_setSelected( *instance, true );
 				any = true;
 			}
+		};
+		for( const QTreeWidgetItem* item : items ){
+			select( item );
+			for( int c = 0; c < item->childCount(); ++c ) // a group: all of its kind
+				select( item->child( c ) );
 		}
 		if( any && focus )
 			GlobalCamera_FocusOnSelected();
@@ -503,16 +532,20 @@ ProblemsDialog* g_problems = nullptr;
 } // namespace
 
 void KrBrushShapes_show(){
-	if( g_brushShapes == nullptr )
+	if( g_brushShapes == nullptr ){
 		g_brushShapes = new BrushShapesDialog( MainFrame_getWindow() );
+		g_guiSettings.addWindow( g_brushShapes, "KenRadiant/BrushShapes" ); // where you left it, next time too
+	}
 	g_brushShapes->show();
 	g_brushShapes->raise();
 	g_brushShapes->activateWindow();
 }
 
 void KrCheckProblems_show(){
-	if( g_problems == nullptr )
+	if( g_problems == nullptr ){
 		g_problems = new ProblemsDialog( MainFrame_getWindow() );
+		g_guiSettings.addWindow( g_problems, "KenRadiant/Problems" ); // where you left it, next time too
+	}
 	g_problems->check();
 	g_problems->show();
 	g_problems->raise();

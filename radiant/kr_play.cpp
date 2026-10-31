@@ -28,6 +28,7 @@
 #pragma GCC diagnostic ignored "-Wtype-limits"
 #pragma GCC diagnostic ignored "-Wshadow"
 #endif
+#include "gtkutil/guisettings.h"
 #include "miniaudio/miniaudio.h"
 #if defined( __GNUC__ )
 #pragma GCC diagnostic pop
@@ -511,6 +512,8 @@ void Play_show(){
 		g_window->adjustSize();
 	}
 	Window_update();
+	static const bool remembered = ( g_guiSettings.addWindow( g_window, "KenRadiant/Play" ), true ); // where you left it, next time too
+	(void)remembered;
 	g_window->show();
 	g_window->raise();
 }

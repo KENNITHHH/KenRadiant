@@ -28,6 +28,7 @@
 #include <QDateTime>
 #include <QTextStream>
 
+#include "gtkutil/guisettings.h"
 #include "math/matrix.h"
 #include "math/vector.h"
 #include "string/string.h"
@@ -604,6 +605,8 @@ void KrPerf_show(){
 		QObject::connect( timer, &QTimer::timeout, [](){ updateHere( false ); } );
 		timer->start( 300 );
 	}
+	static const bool remembered = ( g_guiSettings.addWindow( g_window, "KenRadiant/Performance" ), true ); // where you left it, next time too
+	(void)remembered;
 	g_window->show();
 	g_window->raise();
 	updateHere( true );

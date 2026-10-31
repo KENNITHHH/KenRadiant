@@ -19,6 +19,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QListWidget>
 #include <QFontDatabase>
 #include <QMessageBox>
@@ -35,6 +36,7 @@
 #include <memory>
 #include <map>
 
+#include "gtkutil/guisettings.h"
 #include "commands.h"
 #include "preferencesystem.h"
 #include "stringio.h"
@@ -523,8 +525,15 @@ class CompileDialog : public QDialog
 		Compile_rememberForMap();
 		m_preview->setPlainText( Compile_commandsText( o, nullptr ) );
 		m_visBox->setEnabled( !( o.bsp && o.onlyents ) );
-		for( int i = 0; i < 3; ++i )
-			m_tabs->widget( i )->setEnabled( o.compiler == 0 && ( i == 0 ? o.bsp : i == 1 ? o.vis && !( o.bsp && o.onlyents ) : o.light ) );
+		for( int i = 0; i < 3 && i < int( m_stagePages.size() ); ++i ){
+			const bool ticked = i == 0 ? o.bsp : i == 1 ? o.vis && !( o.bsp && o.onlyents ) : o.light;
+			const auto& [notice, options] = m_stagePages[i];
+			options->setEnabled( o.compiler == 0 && ticked );
+			notice->setVisible( o.compiler != 0 || !ticked );
+			notice->setText( o.compiler != 0 ? "The compiler is <b>sof2map</b>: these q3map2 options are not used (sof2map's own settings are in the sof2map tab)."
+			                 : i == 1 && o.vis && o.bsp && o.onlyents ? "-onlyents only updates the entities: VIS doesn't run."
+			                 : QString( "<b>%1</b> is not ticked at the top: this stage doesn't run." ).arg( i == 0 ? "BSP" : i == 1 ? "VIS" : "LIGHT" ) );
+		}
 	}
 	QCheckBox* check( QGridLayout* grid, int row, int col, const char* text, bool& value, const QString& help ){
 		auto *box = new QCheckBox( text );
@@ -597,9 +606,22 @@ class CompileDialog : public QDialog
 		hint( box, help );
 		return box;
 	}
+	std::vector<std::pair<QLabel*, QWidget*>> m_stagePages; // BSP / VIS / LIGHT: a notice + the options
 	QGridLayout* page( const char* title ){
+		// the options sit in their own widget, disabled when the stage isn't used, under a notice that says why
 		auto *w = new QWidget;
-		auto *grid = new QGridLayout( w );
+		w->setAutoFillBackground( true ); // the window colour: greyed-out text is readable on it (not on the lighter tab frame)
+		auto *v = new QVBoxLayout( w );
+		v->setContentsMargins( 0, 0, 0, 0 );
+		auto *notice = new QLabel;
+		notice->setWordWrap( true );
+		notice->setStyleSheet( "QLabel { background: rgba(255, 190, 60, 40); border: 1px solid rgba(255, 190, 60, 120); padding: 4px; }" );
+		notice->hide();
+		v->addWidget( notice );
+		auto *options = new QWidget;
+		v->addWidget( options, 1 );
+		m_stagePages.emplace_back( notice, options );
+		auto *grid = new QGridLayout( options );
 		grid->setColumnStretch( 0, 1 );
 		grid->setColumnStretch( 1, 1 );
 		grid->setColumnStretch( 2, 1 );
@@ -1064,7 +1086,9 @@ public:
 		m_preview = new QPlainTextEdit;
 		m_preview->setReadOnly( true );
 		m_preview->setFont( QFontDatabase::systemFont( QFontDatabase::FixedFont ) );
-		m_preview->setFixedHeight( m_preview->fontMetrics().lineSpacing() * 3 + 12 );
+		// three lines + the margins + the horizontal scroll bar long commands bring (it used to cover the last line)
+		m_preview->setFixedHeight( m_preview->fontMetrics().lineSpacing() * 3 + int( m_preview->document()->documentMargin() * 2 )
+		                           + m_preview->frameWidth() * 2 + m_preview->horizontalScrollBar()->sizeHint().height() + 6 );
 		m_preview->setLineWrapMode( QPlainTextEdit::NoWrap );
 		hint( m_preview, "The commands that run ([q3map2] and [MapFile] are filled in by the build system)." );
 		outer->addWidget( m_preview );
@@ -1199,7 +1223,7 @@ void Compile_dialogReload(){
 void Compile_show(){
 	Compile_restoreForMap();
 	if( g_compile == nullptr ){
-		g_compile = new CompileDialog( MainFrame_getWindow() );
+		g_compile = new CompileDialog( MainFrame_getWindow() ); g_guiSettings.addWindow( g_compile, "KenRadiant/Compile" ); // where you left it, next time too
 		QObject::connect( g_compile, &QObject::destroyed, [](){ g_compile = nullptr; } );
 	}
 	g_compile->show();

@@ -33,6 +33,7 @@
 #include <QResizeEvent>
 #include <QCoreApplication>
 
+#include "gtkutil/guisettings.h"
 #include "version.h"
 #include "math/vector.h"
 #include "commands.h"
@@ -226,8 +227,10 @@ public:
 };
 GoToDialog* g_goTo = nullptr;
 void GoTo_show(){
-	if( g_goTo == nullptr )
+	if( g_goTo == nullptr ){
 		g_goTo = new GoToDialog( MainFrame_getWindow() );
+		g_guiSettings.addWindow( g_goTo, "KenRadiant/GoTo" ); // where you left it, next time too
+	}
 	g_goTo->fill();
 	g_goTo->show();
 	g_goTo->raise();

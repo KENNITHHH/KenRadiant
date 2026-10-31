@@ -3,6 +3,35 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (41)
+### Sun Calibrator in tabs
+- **Sky Shader | Lights | Worldspawn | Compile Preview | Game Look** instead of one long window. The Worldspawn tab
+  has every key that changes the light or the view: ambient, _color, _minlight, _floodlight (with the preview
+  switches), distancecull with "cut the 3D view", the fog and gridsize - live, each with Remove and Reset.
+
+### Worldspawn tab: every worldspawn key, like the entity inspector
+- One list of every key a SOF2 worldspawn can have (SOF2's own definition plus the q3map2 and sof2map compile keys:
+  message, music, soundSet, redteam / blueteam, gravity, fog, ambientFog, distancecull, ambient, _color, _minlight,
+  _floodlight, gridsize, _lightmapscale, chopsize, ignoreleaks, the Sky* keys ...). The keys the map has are ticked
+  and on top, the rest below "Not set": tick one to add it (with its usual value, or type one), untick to remove it.
+- Editors that fit the key: a colour picker for _color, the game's fog shaders for fog, Browse for music, the team
+  names for redteam / blueteam, 0 / 1 for switches. Point at a key and the box at the bottom says what it does and
+  which program reads it (q3map2, sof2map, the game, single player).
+- Single-player keys (scripts, vehicles ...) are hidden unless you tick "Single-player keys" or the map has one.
+  Keys KenRadiant doesn't know are listed too (italic), and "custom key / value / Add" adds your own.
+- Reset per key, Reset all and "Keep as reset point" as before; changed keys are marked *. The list only re-sorts
+  when the mouse leaves it, so a row never jumps away from under the cursor.
+- The sliders moved to the Sun Calibrator's Worldspawn tab. The entity inspector's button is called "Worldspawn".
+
+### UI fixes
+- Compile window: the three command lines at the bottom fit (the horizontal scroll bar covered the last one).
+- Compile window with sof2map chosen (or a stage unticked): the BSP / VIS / LIGHT options were invisible (grey text
+  on a grey page). They show greyed out now, under a note saying why they are not used.
+- Check for Problems: grouped by kind with a count ("Missing texture (15)", "Duplicate (83)" ...), selecting a group
+  selects all of them, and the window is bigger.
+- Every KenRadiant window (Compile, Sun Calibrator, Fog, Mirror, Lighting Probe, Performance, Play, Map Text, Go To,
+  Terrain paint, Brush Shapes, Check for Problems) opens where you left it, at the size you left it.
+
 ## Build 2026-10-31 (40)
 ### Mirror is live
 - Select something and open Mirror (Modify > Mirror..., or the toolbar button): the mirrored copy appears at once and

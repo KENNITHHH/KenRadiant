@@ -11,9 +11,9 @@
      fog          the map's fog shader                                    -> the Fog window
      gridsize     the light grid models are lit by (both)
 
-   The controls are built as sections that can sit in more than one place: the "Worldspawn" tab (next to
-   Textures / Models / Entities, or a page of the group window in the other layouts) has all of them, the Sun
-   Calibrator has the light section. Changes are written at once (live) and become one undo step when the edit
+   The "Worldspawn" tab (next to Textures / Models / Entities, or a page of the group window in the other layouts)
+   lists every key a worldspawn can have - the ones the map has ticked and on top - with an editor that fits each
+   key; the Sun Calibrator's Worldspawn tab has the sliders for the light and view-distance keys. Changes are written at once (live) and become one undo step when the edit
    ends. The keys as they were when the map was loaded are remembered, so any key - or all of them - can be put
    back ("Reset").
 
@@ -38,6 +38,10 @@
 #include <QHeaderView>
 #include <QStyledItemDelegate>
 #include <QTabWidget>
+#include <QToolButton>
+#include <QMenu>
+#include <QApplication>
+#include <QEvent>
 #include <functional>
 #include <vector>
 #include <memory>
@@ -56,6 +60,11 @@
 #include "math/vector.h"
 #include "mainframe.h"
 #include "groupdialog.h"
+#include "qe3.h"
+#include "ishaders.h"
+#include "ifilesystem.h"
+#include "os/path.h"
+#include "gtkutil/filechooser.h"
 
 void KrLightPreview_redraw();
 extern QTabWidget* g_texModelTabs;
@@ -488,7 +497,7 @@ QGroupBox* LightSection( Panel& panel, const char* title ){
 }
 
 QGroupBox* GameSection( Panel& panel ){
-	auto *view = new QGroupBox( "In game" );
+	auto *view = new QGroupBox( "View distance, fog and light grid" );
 	auto *vg = new QGridLayout( view );
 	int r = 0;
 	NumberRow( panel, vg, r, "distancecull", { "distancecull" }, 0, 32768, 64, 0,
@@ -536,172 +545,126 @@ QGroupBox* GameSection( Panel& panel ){
 	return view;
 }
 
-/// typing in a value cell changes the key at once; Enter keeps it (one undo step), Esc puts it back
-class LiveDelegate : public QStyledItemDelegate
-{
-public:
-	int* m_editing; // editors open: the table is not rebuilt under them
-	LiveDelegate( QObject* parent, int* editing ) : QStyledItemDelegate( parent ), m_editing( editing ){}
-	static CopiedString keyOf( const QModelIndex& index ){
-		return index.sibling( index.row(), 0 ).data( Qt::UserRole ).toString().toLatin1().constData();
-	}
-	QWidget* createEditor( QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index ) const override {
-		QWidget* w = QStyledItemDelegate::createEditor( parent, option, index );
-		++*m_editing;
-		if( auto *e = qobject_cast<QLineEdit*>( w ) ){
-			const CopiedString key = keyOf( index );
-			QObject::connect( e, &QLineEdit::textEdited, [key]( const QString& t ){ Key_live( key.c_str(), t.toLatin1().constData() ); } );
-		}
-		return w;
-	}
-	void setModelData( QWidget* editor, QAbstractItemModel* model, const QModelIndex& index ) const override {
-		if( auto *e = qobject_cast<QLineEdit*>( editor ) ){
-			Key_live( keyOf( index ).c_str(), e->text().toLatin1().constData() );
-			Keys_commit();
-		}
-		QStyledItemDelegate::setModelData( editor, model, index );
-	}
-	void destroyEditor( QWidget* editor, const QModelIndex& index ) const override {
-		Keys_revert(); // nothing left when it was committed
-		--*m_editing;
-		QStyledItemDelegate::destroyEditor( editor, index );
-	}
-};
-
-QGroupBox* KeysSection( Panel& panel ){
-	auto *group = new QGroupBox( "All worldspawn keys" );
-	auto *v = new QVBoxLayout( group );
-	auto *table = new QTableWidget( 0, 3 );
-	table->setHorizontalHeaderLabels( { "Key", "Value", "When loaded" } );
-	table->horizontalHeader()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
-	table->horizontalHeader()->setSectionResizeMode( 1, QHeaderView::Stretch );
-	table->horizontalHeader()->setSectionResizeMode( 2, QHeaderView::Interactive );
-	table->verticalHeader()->hide();
-	table->setSelectionBehavior( QAbstractItemView::SelectRows );
-	table->setEditTriggers( QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed );
-	table->setMinimumHeight( 170 );
-	table->setToolTip( "Double-click a value to edit it - the map changes while you type, Enter keeps it, Esc puts it back.\n"
-	                   "Bold = changed since the map was loaded; italic = removed since." );
-	auto editing = std::make_shared<int>( 0 );
-	table->setItemDelegateForColumn( 1, new LiveDelegate( table, editing.get() ) );
-	v->addWidget( table );
-
-	auto *buttons = new QHBoxLayout;
-	auto *reset = new QPushButton( "Reset selected" );
-	reset->setToolTip( "The selected keys back to how they were when the map was loaded" );
-	auto *remove = new QPushButton( "Remove selected" );
-	buttons->addWidget( reset );
-	buttons->addWidget( remove );
-	buttons->addStretch( 1 );
-	v->addLayout( buttons );
-	auto *add = new QHBoxLayout;
-	auto *newKey = new QLineEdit;
-	newKey->setPlaceholderText( "key" );
-	auto *newValue = new QLineEdit;
-	newValue->setPlaceholderText( "value" );
-	auto *set = new QPushButton( "Add / Set" );
-	add->addWidget( newKey, 1 );
-	add->addWidget( newValue, 2 );
-	add->addWidget( set );
-	v->addLayout( add );
-
-	const auto selectedKeys = [table](){
-		std::vector<CopiedString> keys;
-		for( const QModelIndex& i : table->selectionModel()->selectedRows( 0 ) )
-			keys.emplace_back( i.data( Qt::UserRole ).toString().toLatin1().constData() );
-		return keys;
-	};
-	QObject::connect( reset, &QPushButton::clicked, [selectedKeys](){ Keys_reset( selectedKeys() ); } );
-	QObject::connect( remove, &QPushButton::clicked, [selectedKeys](){
-		Keys_commit();
-		for( const CopiedString& k : selectedKeys() )
-			Key_live( k.c_str(), "" );
-		Keys_commit( "worldspawnRemoveKeys" );
-	} );
-	const auto doSet = [newKey, newValue](){
-		const QByteArray k = newKey->text().trimmed().toLatin1();
-		if( k.isEmpty() || string_equal_nocase( k.constData(), "classname" ) )
-			return;
-		Key_set( k.constData(), newValue->text().toLatin1().constData() );
-		newKey->clear();
-		newValue->clear();
-		newKey->setFocus();
-	};
-	QObject::connect( set, &QPushButton::clicked, doSet );
-	QObject::connect( newValue, &QLineEdit::returnPressed, doSet );
-
-	auto shown = std::make_shared<QString>();
-	panel.readers.push_back( [table, shown, editing](){
-		if( *editing > 0 )
-			return;
-		const Entity* w = Worldspawn();
-		struct Row { CopiedString key, value, was; bool has, had; };
-		std::vector<Row> rows;
-		for( const auto& [k, val] : Keys_of( w ) ){
-			bool had;
-			const char* was = g_snapshot.get( k.c_str(), had );
-			rows.push_back( { k, val, was, true, had } );
-		}
-		for( const auto& [k, was] : g_snapshot.keys ){
-			bool there = false;
-			for( const Row& r : rows )
-				there = there || string_equal_nocase( r.key.c_str(), k.c_str() );
-			if( !there )
-				rows.push_back( { k, "", was, false, true } );
-		}
-		QString sig;
-		for( const Row& r : rows )
-			sig += QString( "%1\x1f%2\x1f%3\x1f%4%5\x1e" ).arg( r.key.c_str(), r.value.c_str(), r.was.c_str() ).arg( r.has ).arg( r.had );
-		if( sig == *shown )
-			return;
-		*shown = sig;
-		const int keepRow = table->currentRow();
-		table->setRowCount( int( rows.size() ) );
-		for( int i = 0; i < int( rows.size() ); ++i ){
-			const Row& r = rows[i];
-			const bool classname = string_equal_nocase( r.key.c_str(), "classname" );
-			const bool changed = !r.has || !r.had || !string_equal( r.value.c_str(), r.was.c_str() );
-			auto *k = new QTableWidgetItem( r.key.c_str() );
-			k->setData( Qt::UserRole, QString( r.key.c_str() ) );
-			k->setFlags( Qt::ItemIsSelectable | Qt::ItemIsEnabled );
-			QFont f = k->font();
-			f.setBold( changed );
-			f.setItalic( !r.has );
-			k->setFont( f );
-			auto *val = new QTableWidgetItem( r.has ? QString( r.value.c_str() ) : QString() );
-			val->setFlags( classname ? Qt::ItemIsSelectable | Qt::ItemIsEnabled : Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsEditable );
-			if( !r.has )
-				val->setToolTip( "Removed since the map was loaded - type a value to set it again, or Reset" );
-			auto *was = new QTableWidgetItem( r.had ? QString( r.was.c_str() ) : QString( "(new)" ) );
-			was->setFlags( Qt::ItemIsSelectable | Qt::ItemIsEnabled );
-			was->setForeground( QColor( 128, 128, 128 ) );
-			table->setItem( i, 0, k );
-			table->setItem( i, 1, val );
-			table->setItem( i, 2, was );
-		}
-		if( keepRow >= 0 && keepRow < table->rowCount() )
-			table->setCurrentCell( keepRow, 1, QItemSelectionModel::NoUpdate );
-	} );
-	return group;
-}
-
 /* ---- the Worldspawn tab ---- */
 QWidget* g_tab = nullptr;     // the scroll area in the Textures / Models / Entities tabs ...
 QWidget* g_page = nullptr;    // ... or the group window page
 
+/* ---- every key a worldspawn can have ---- */
+enum class Kind { Text, Number, Colour, Fog, Music, Choice };
+enum Who { eBoth = 0, eQ3map2 = 1, eSof2map = 2, eGame = 3, eSP = 4 };
+struct KeyDef {
+	const char* key;
+	Kind kind;
+	const char* value;   // written when the box is ticked ("" = type one)
+	Who who;
+	const char* help;
+	std::vector<const char*> choices = {};
+};
+const char* const c_who[] = { "q3map2 and sof2map", "q3map2 only", "sof2map only", "the game", "single player" };
+
+const std::vector<KeyDef>& Catalogue(){
+	static const std::vector<KeyDef> keys{
+		{ "message", Kind::Text, "", eGame, "The map's name / text on the loading screen." },
+		{ "music", Kind::Music, "", eGame, "Music file(s): \"music/intro.mp3 music/loop.mp3\" - an intro and a loop." },
+		{ "soundSet", Kind::Text, "", eGame, "Ambient sound set from sound/sound.txt for the whole map." },
+		{ "redteam", Kind::Choice, "colombian", eGame, "Red team skin set.", { "civilian", "colombian", "finca", "hospital", "marine", "prometheus", "shop", "snow", "thug" } },
+		{ "blueteam", Kind::Choice, "marine", eGame, "Blue team skin set.", { "civilian", "colombian", "finca", "hospital", "marine", "prometheus", "shop", "snow", "thug" } },
+		{ "gravity", Kind::Number, "800", eGame, "Gravity, 800 is normal." },
+		{ "fog", Kind::Fog, "", eBoth, "The map's global fog shader (full path, e.g. textures/fogs/fog1). The Fog window shows it in the 3D view." },
+		{ "ambientFog", Kind::Choice, "1", eGame, "1: the fog is only for looks, it does not cull distance.", { "0", "1" } },
+		{ "distancecull", Kind::Number, "4096", eBoth, "The game draws nothing further away; VIS throws away what is beyond. With fog, put it where the fog is nearly full. The Sun Calibrator's Worldspawn tab can cut the 3D view there." },
+		{ "_farplanedist", Kind::Number, "4096", eQ3map2, "q3map2's own name for distancecull (VIS)." },
+		{ "ambient", Kind::Number, "10", eBoth, "Flat light added everywhere, 0-255. Coloured by _color." },
+		{ "_color", Kind::Colour, "1 1 1", eBoth, "Colour of ambient and _minlight, \"r g b\" 0-1." },
+		{ "_minlight", Kind::Number, "10", eQ3map2, "No surface gets darker than this, 0-255." },
+		{ "_minvertexlight", Kind::Number, "10", eQ3map2, "Like _minlight, for vertex-lit surfaces only." },
+		{ "_mingridlight", Kind::Number, "10", eQ3map2, "Like _minlight, for the light grid (models, players) only." },
+		{ "_maxlight", Kind::Number, "255", eQ3map2, "No surface gets brighter than this, 0-255." },
+		{ "_floodlight", Kind::Text, "0.94 0.94 1 1024 128", eQ3map2, "Fill light from every open direction: \"r g b distance intensity\". The Sun Calibrator's Worldspawn tab has sliders for it." },
+		{ "gridsize", Kind::Text, "64 64 128", eBoth, "Spacing of the light grid models and players are lit by, \"X Y Z\". Bigger = smaller .bsp, blurrier model light." },
+		{ "_lightmapscale", Kind::Number, "1", eQ3map2, "Lightmap pixel size for the whole map (below 1 = sharper shadows, bigger .bsp)." },
+		{ "_noshadersun", Kind::Choice, "1", eQ3map2, "1: ignore q3map_sun in the sky shaders (only sun entities light the map).", { "0", "1" } },
+		{ "_keepLights", Kind::Choice, "1", eQ3map2, "1: keep the light entities in the .bsp (normally removed after LIGHT).", { "0", "1" } },
+		{ "_celshader", Kind::Text, "", eQ3map2, "Cel shader drawn over the whole map." },
+		{ "_blocksize", Kind::Text, "1024 1024 1024", eQ3map2, "Size of the BSP blocks the world is split into, \"X Y Z\" (0 = no split on that axis)." },
+		{ "chopsize", Kind::Number, "1024", eSof2map, "sof2map: maximum polygon / portal size." },
+		{ "ignoreleaks", Kind::Choice, "1", eBoth, "1: keep compiling when the map leaks (for instances).", { "0", "1" } },
+		{ "SkyTexture", Kind::Text, "", eSof2map, "sof2map: shader of the sky texture." },
+		{ "SkyHeight", Kind::Number, "", eSof2map, "sof2map: z height of the sky." },
+		{ "SkyIntensity", Kind::Number, "1", eSof2map, "sof2map: sky light intensity, 0-3 (default 1)." },
+		{ "SkyAmbient", Kind::Text, "", eSof2map, "sof2map: ambient light vector (calculated when not set)." },
+		{ "SkyMinimum", Kind::Number, "0.5", eSof2map, "sof2map: minimum modifier, 0-1 (default 0.5)." },
+		{ "SkyEdge", Kind::Number, "100", eSof2map, "sof2map: world edge error deviation (default 100)." },
+		{ "spawnscript", Kind::Text, "", eSP, "Script run on the player entering the level." },
+		{ "deathScript", Kind::Text, "", eSP, "Script run when the player dies (common/failed when not set)." },
+		{ "rDmgScript", Kind::Text, "", eSP, "Script run when the player throws an explosive anywhere." },
+		{ "hearscript", Kind::Text, "", eSP, "Script run the first time the player's sound is above 0.7." },
+		{ "soundlevel", Kind::Number, "0.7", eSP, "Sound level that fires hearscript (default 0.7)." },
+		{ "mission", Kind::Text, "", eSP, "Mission script file for mission mode." },
+		{ "npcView", Kind::Number, "", eSP, "View distance of the NPCs." },
+		{ "emplacement", Kind::Text, "", eSP, "The player starts the map on this weapon." },
+		{ "dynamic_music", Kind::Choice, "OFF", eSP, "OFF: no dynamic music on this level.", { "OFF" } },
+		{ "vehicle", Kind::Choice, "0", eSP, "The player rides: 0 nothing, 1 helicopter, 2 truck.", { "0", "1", "2" } },
+		{ "vehicleWeapon", Kind::Text, "", eSP, "Vehicle-mounted weapon the player does not start attached to (pra4)." },
+		{ "suit", Kind::Choice, "1", eSP, "1: the SET_SUIT Icarus command works on this map.", { "0", "1" } },
+	};
+	return keys;
+}
+const KeyDef* Catalogue_find( const char* key ){
+	for( const KeyDef& d : Catalogue() )
+		if( string_equal_nocase( d.key, key ) )
+			return &d;
+	return nullptr;
+}
+/// keys that are written by the compiler or the editor, not by you
+bool Key_internal( const char* key ){
+	return string_equal_nocase( key, "classname" ) || string_equal_nocase( key, "_q3map2_cmdline" ) || string_equal_nocase( key, "_q3map2_version" );
+}
+
+bool g_showSP = false;
+
+/// shows a row's help in the box at the bottom while the mouse is over it
+class HoverHelp : public QObject
+{
+	QLabel* m_label;
+	QString m_text;
+public:
+	HoverHelp( QObject* parent, QLabel* label, QString text ) : QObject( parent ), m_label( label ), m_text( std::move( text ) ){}
+	bool eventFilter( QObject* watched, QEvent* event ) override {
+		if( event->type() == QEvent::Enter || event->type() == QEvent::FocusIn )
+			m_label->setText( m_text );
+		return QObject::eventFilter( watched, event );
+	}
+};
+
+/// one key of the list: tick box, name, value with a helper, Reset
+struct KeyRow {
+	CopiedString key;
+	const KeyDef* def = nullptr; // nullptr: a custom key
+	QWidget* widget = nullptr;
+	QCheckBox* tick = nullptr;
+	QLabel* name = nullptr;
+	QLineEdit* edit = nullptr;
+	QPushButton* reset = nullptr;
+	bool wanted = false;          // ticked, no value typed yet
+	bool set = false;             // in the worldspawn now
+	bool known = false;           // in the worldspawn now or when loaded (custom keys)
+};
+
 QWidget* WorldspawnTab_construct(){
-	auto *scroll = new QScrollArea;
-	scroll->setWidgetResizable( true );
-	auto *inner = new QWidget;
-	Panel& panel = Panel_new( scroll );
-	auto *v = new QVBoxLayout( inner );
+	auto *root = new QWidget;
+	Panel& panel = Panel_new( root );
+	auto *v = new QVBoxLayout( root );
 
 	auto *top = new QHBoxLayout;
-	auto *noWorld = new QLabel( "No map open." );
-	top->addWidget( noWorld );
-	auto *info = new QLabel;
-	info->setStyleSheet( "color: gray;" );
-	top->addWidget( info, 1 );
+	auto *filter = new QLineEdit;
+	filter->setPlaceholderText( "Filter keys" );
+	filter->setClearButtonEnabled( true );
+	top->addWidget( filter, 1 );
+	auto *sp = new QCheckBox( "Single-player keys" );
+	sp->setToolTip( "Show the keys only SOF2's single player reads (scripts, vehicles ...). Keys the map already has are always shown." );
+	sp->setChecked( g_showSP );
+	top->addWidget( sp );
 	auto *resetAll = new QPushButton( "Reset all" );
 	resetAll->setToolTip( "Every worldspawn key back to how it was when the map was loaded (one undo step)" );
 	QObject::connect( resetAll, &QPushButton::clicked, [](){ Keys_resetAll(); } );
@@ -711,26 +674,234 @@ QWidget* WorldspawnTab_construct(){
 	QObject::connect( mark, &QPushButton::clicked, [](){ Snapshot_take(); Panels_read(); } );
 	top->addWidget( mark );
 	v->addLayout( top );
-	panel.readers.push_back( [noWorld, info, resetAll](){
-		const Entity* w = Worldspawn();
-		noWorld->setVisible( w == nullptr );
-		int changed = 0;
-		for( const auto& [k, val] : Keys_of( w ) )
-			changed += Key_changed( k.c_str() );
-		for( const auto& [k, was] : g_snapshot.keys )
-			if( w != nullptr && string_empty( w->getKeyValue( k.c_str() ) ) && !string_empty( was.c_str() ) )
-				++changed;
-		info->setText( changed == 0 ? QString( "Changes show at once in the views." )
-		               : QString( "%1 key%2 changed since the map was loaded." ).arg( changed ).arg( changed == 1 ? "" : "s" ) );
-		resetAll->setEnabled( changed != 0 );
-	} );
+	auto *info = new QLabel;
+	info->setStyleSheet( "color: gray;" );
+	v->addWidget( info );
 
-	v->addWidget( KeysSection( panel ) );
-	v->addWidget( LightSection( panel, "Light - used when you compile (LIGHT stage)" ) );
-	v->addWidget( GameSection( panel ) );
-	v->addStretch( 1 );
-	scroll->setWidget( inner );
-	return scroll;
+	auto *scroll = new QScrollArea;
+	scroll->setWidgetResizable( true );
+	auto *listWidget = new QWidget;
+	auto *list = new QVBoxLayout( listWidget );
+	list->setSpacing( 2 );
+	list->setContentsMargins( 4, 4, 4, 4 );
+	scroll->setWidget( listWidget );
+	v->addWidget( scroll, 1 );
+	auto *notSet = new QLabel( "<b>Not set</b> - tick to add" );
+	notSet->setStyleSheet( "color: gray; padding-top: 6px;" );
+
+	auto *help = new QLabel( "Point at a key to see what it does." );
+	help->setWordWrap( true );
+	help->setMinimumHeight( help->fontMetrics().lineSpacing() * 2 + 6 );
+	help->setStyleSheet( "color: gray;" );
+	v->addWidget( help );
+
+	auto *add = new QHBoxLayout;
+	auto *newKey = new QLineEdit;
+	newKey->setPlaceholderText( "custom key" );
+	auto *newValue = new QLineEdit;
+	newValue->setPlaceholderText( "value" );
+	auto *set = new QPushButton( "Add" );
+	add->addWidget( newKey, 1 );
+	add->addWidget( newValue, 2 );
+	add->addWidget( set );
+	v->addLayout( add );
+	const auto doSet = [newKey, newValue](){
+		const QByteArray k = newKey->text().trimmed().toLatin1();
+		const QByteArray val = newValue->text().toLatin1();
+		if( k.isEmpty() || val.isEmpty() || Key_internal( k.constData() ) )
+			return;
+		Key_set( k.constData(), val.constData() );
+		newKey->clear();
+		newValue->clear();
+		newKey->setFocus();
+	};
+	QObject::connect( set, &QPushButton::clicked, doSet );
+	QObject::connect( newValue, &QLineEdit::returnPressed, doSet );
+
+	auto rows = std::make_shared<std::vector<std::unique_ptr<KeyRow>>>();
+	const auto makeRow = [rows, listWidget, help]( const char* key, const KeyDef* def ){
+		auto row = std::make_unique<KeyRow>();
+		KeyRow* r = row.get();
+		r->key = key;
+		r->def = def;
+		r->widget = new QWidget( listWidget );
+		auto *h = new QHBoxLayout( r->widget );
+		h->setContentsMargins( 0, 0, 0, 0 );
+		r->tick = new QCheckBox;
+		h->addWidget( r->tick );
+		r->name = new QLabel( key );
+		r->name->setMinimumWidth( r->name->fontMetrics().horizontalAdvance( "_minvertexlight" ) + 12 );
+		h->addWidget( r->name );
+		r->edit = new QLineEdit;
+		h->addWidget( r->edit, 1 );
+		const QString tip = def != nullptr ? QString( "<b>%1</b> (%2)<br>%3" ).arg( key, c_who[def->who], def->help )
+		                                   : QString( "<b>%1</b> - a key KenRadiant does not know (custom)" ).arg( key );
+		r->widget->setToolTip( tip );
+		auto *hover = new HoverHelp( r->widget, help, tip );
+		for( QWidget* w : std::initializer_list<QWidget*>{ r->widget, r->edit, r->tick } )
+			w->installEventFilter( hover );
+		if( def != nullptr && def->kind != Kind::Text && def->kind != Kind::Number ){
+			auto *helper = new QToolButton;
+			helper->setText( def->kind == Kind::Colour ? "Colour..." : def->kind == Kind::Music ? "Browse..." : "▾" );
+			h->addWidget( helper );
+			if( def->kind == Kind::Colour )
+				QObject::connect( helper, &QToolButton::clicked, [r, helper](){
+					Vector3 start( 1, 1, 1 );
+					if( Entity* w = Worldspawn() )
+						string_parse_vector3( w->getKeyValue( r->key.c_str() ), start );
+					Colour_pick( helper->window(), start, [r]( const Vector3& c ){
+						Key_live( r->key.c_str(), QString( "%1 %2 %3" ).arg( Fmt( c.x() ), Fmt( c.y() ), Fmt( c.z() ) ).toLatin1().constData() );
+					} );
+				} );
+			else if( def->kind == Kind::Music )
+				QObject::connect( helper, &QToolButton::clicked, [r, helper](){
+					StringOutputStream path( 256 );
+					path << g_qeglobals.m_userGamePath << "music/";
+					if( const char* file = file_dialog( helper->window(), true, "Music file", path, "sound" ) ){
+						const char* relative = path_make_relative( file, GlobalFileSystem().findRoot( file ) );
+						Key_set( r->key.c_str(), relative );
+					}
+				} );
+			else{ // a menu of the values: the fog shaders, or the choices
+				auto *menu = new QMenu( helper );
+				QObject::connect( menu, &QMenu::aboutToShow, [menu, def, r](){
+					menu->clear();
+					std::vector<CopiedString> values;
+					if( def->kind == Kind::Fog ){
+						static std::vector<CopiedString>* fogs;
+						fogs = &values;
+						GlobalShaderSystem().krForEachFogShader( makeCallbackF( +[]( const char* name, const float*, float depth ){
+							if( depth > 0 )
+								fogs->emplace_back( name );
+						} ) );
+						std::sort( values.begin(), values.end(), []( const CopiedString& a, const CopiedString& b ){ return string_less_nocase( a.c_str(), b.c_str() ); } );
+						if( values.empty() )
+							menu->addAction( "(no fog shaders loaded)" )->setEnabled( false );
+					}
+					else
+						for( const char* c : def->choices )
+							values.emplace_back( c );
+					for( const CopiedString& value : values )
+						menu->addAction( value.c_str(), [r, value](){ Key_set( r->key.c_str(), value.c_str() ); } );
+				} );
+				helper->setMenu( menu );
+				helper->setPopupMode( QToolButton::InstantPopup );
+				helper->setToolTip( def->kind == Kind::Fog ? "Pick one of the game's fog shaders" : "Pick a value" );
+			}
+		}
+		r->reset = new QPushButton( "Reset" );
+		h->addWidget( r->reset );
+		QObject::connect( r->reset, &QPushButton::clicked, [r](){ Keys_reset( { r->key } ); r->wanted = false; } );
+		QObject::connect( r->tick, &QCheckBox::toggled, [r]( bool on ){
+			if( on ){
+				const char* value = r->def != nullptr ? r->def->value : "";
+				if( string_empty( value ) ){ // type a value: it is added then
+					r->wanted = true;
+					r->edit->setEnabled( true );
+					r->edit->setFocus();
+				}
+				else
+					Key_set( r->key.c_str(), value );
+			}
+			else{
+				r->wanted = false;
+				Key_set( r->key.c_str(), "" );
+			}
+			Panels_read();
+		} );
+		QObject::connect( r->edit, &QLineEdit::textEdited, [r]( const QString& text ){
+			Key_live( r->key.c_str(), text.toLatin1().constData() );
+		} );
+		QObject::connect( r->edit, &QLineEdit::editingFinished, [r](){
+			Keys_commit();
+			r->wanted = false;
+			Panels_read();
+		} );
+		rows->push_back( std::move( row ) );
+		return r;
+	};
+	for( const KeyDef& d : Catalogue() )
+		makeRow( d.key, &d );
+
+	QObject::connect( sp, &QCheckBox::toggled, []( bool on ){ g_showSP = on; Panels_read(); } );
+	QObject::connect( filter, &QLineEdit::textChanged, [](){ Panels_read(); } );
+
+	auto order = std::make_shared<std::vector<QWidget*>>();
+	panel.readers.push_back( [rows, makeRow, list, listWidget, notSet, order, filter, info, resetAll](){
+		const Entity* w = Worldspawn();
+		// custom keys: the map has them now, or had them when it was loaded
+		const auto custom = [&]( const char* key ){
+			if( Key_internal( key ) || Catalogue_find( key ) != nullptr )
+				return;
+			for( auto& r : *rows )
+				if( string_equal_nocase( r->key.c_str(), key ) )
+					return;
+			makeRow( key, nullptr );
+		};
+		for( const auto& [k, val] : Keys_of( w ) )
+			custom( k.c_str() );
+		for( const auto& [k, was] : g_snapshot.keys )
+			custom( k.c_str() );
+
+		int changed = 0;
+		const QString f = filter->text().trimmed();
+		std::vector<QWidget*> top, removed, bottom; // removed: set when the map was loaded, not now
+		for( auto& r : *rows ){
+			const char* value = w != nullptr ? w->getKeyValue( r->key.c_str() ) : "";
+			bool had;
+			const char* was = g_snapshot.get( r->key.c_str(), had );
+			r->set = !string_empty( value );
+			const bool differs = w != nullptr && !string_equal( value, was );
+			changed += differs;
+			const bool editing = r->edit->hasFocus();
+			if( !editing ){
+				const QSignalBlocker b( r->edit );
+				r->edit->setText( value );
+			}
+			r->edit->setPlaceholderText( r->set ? QString() : r->def != nullptr && !string_empty( r->def->value ) ? QString( r->def->value )
+			                             : r->def != nullptr ? QString( "type a value" ) : QString() );
+			r->edit->setEnabled( w != nullptr && ( r->set || r->wanted || editing ) );
+			{
+				const QSignalBlocker b( r->tick );
+				r->tick->setChecked( r->set || r->wanted );
+				r->tick->setEnabled( w != nullptr );
+			}
+			QFont font = r->name->font();
+			font.setBold( r->set );
+			font.setItalic( r->def == nullptr );
+			r->name->setFont( font );
+			r->name->setText( differs ? QString( "%1 *" ).arg( r->key.c_str() ) : QString( r->key.c_str() ) );
+			r->reset->setEnabled( differs );
+			r->reset->setToolTip( had ? QString( "Back to \"%1\" (as loaded)" ).arg( was ) : QString( "Not set when loaded: Reset removes it" ) );
+			// which rows show, and where
+			const bool shown = ( r->set || r->wanted || had || r->def == nullptr || r->def->who != eSP || g_showSP )
+			                && ( f.isEmpty() || QString( r->key.c_str() ).contains( f, Qt::CaseInsensitive ) )
+			                && ( r->def != nullptr || r->set || had );
+			r->widget->setVisible( shown );
+			( r->set || r->wanted ? top : had ? removed : bottom ).push_back( r->widget );
+		}
+		info->setText( w == nullptr ? QString( "No map open." )
+		               : changed == 0 ? QString( "Changes show at once in the views. * = changed since the map was loaded." )
+		               : QString( "%1 key%2 changed since the map was loaded (marked *)." ).arg( changed ).arg( changed == 1 ? "" : "s" ) );
+		resetAll->setEnabled( changed != 0 );
+		// set keys on top, then the rest; re-sorted only when the mouse is off the list and nothing is being typed in,
+		// so a row never jumps away from under the cursor
+		std::vector<QWidget*> wantOrder = top;
+		wantOrder.push_back( notSet );
+		wantOrder.insert( wantOrder.end(), removed.begin(), removed.end() );
+		wantOrder.insert( wantOrder.end(), bottom.begin(), bottom.end() );
+		const QWidget* focus = QApplication::focusWidget();
+		const bool typing = focus != nullptr && listWidget->isAncestorOf( focus ) && qobject_cast<const QLineEdit*>( focus ) != nullptr;
+		if( wantOrder != *order && ( order->empty() || ( !typing && !listWidget->underMouse() ) ) ){
+			*order = wantOrder;
+			while( list->count() > 0 )
+				delete list->takeAt( 0 );
+			for( QWidget* wdg : wantOrder )
+				list->addWidget( wdg );
+			list->addStretch( 1 );
+		}
+	} );
+	return root;
 }
 
 void MapSettings_show(){
@@ -758,13 +929,17 @@ QWidget* KrWorldspawn_constructTab(){
 void KrWorldspawn_constructPage(){
 	g_page = GroupDialog_addPage( "Worldspawn", WorldspawnTab_construct(), RawStringExportCaller( "Worldspawn" ) );
 }
-/// the light keys for the Sun Calibrator
+/// the light and view distance keys for the Sun Calibrator
 QWidget* KrMapSettings_lightSection(){
 	auto *holder = new QWidget;
 	auto *v = new QVBoxLayout( holder );
 	v->setContentsMargins( 0, 0, 0, 0 );
 	Panel& panel = Panel_new( holder );
-	v->addWidget( LightSection( panel, "Worldspawn light (ambient, _color, _minlight, _floodlight) - also in the Worldspawn tab" ) );
+	v->addWidget( LightSection( panel, "Light - used when you compile (LIGHT stage)" ) );
+	v->addWidget( GameSection( panel ) );
+	auto *note = new QLabel( "Every other worldspawn key: the Worldspawn tab next to Textures / Models / Entities." );
+	note->setStyleSheet( "color: gray;" );
+	v->addWidget( note );
 	return holder;
 }
 /// a map was loaded or made: what Reset goes back to
@@ -788,5 +963,6 @@ void KrMapSettings_registerCommands(){
 	GlobalCommands_insert( "KrMapSettings", makeCallbackF( MapSettings_show ) );
 	GlobalPreferenceSystem().registerPreference( "KrPreviewAmbient", BoolImportStringCaller( g_krPreviewAmbient ), BoolExportStringCaller( g_krPreviewAmbient ) );
 	GlobalPreferenceSystem().registerPreference( "KrPreviewFlood", BoolImportStringCaller( g_krPreviewFlood ), BoolExportStringCaller( g_krPreviewFlood ) );
+	GlobalPreferenceSystem().registerPreference( "KrWorldspawnShowSP", BoolImportStringCaller( g_showSP ), BoolExportStringCaller( g_showSP ) );
 	GlobalPreferenceSystem().registerPreference( "KrPreviewDistanceCull", BoolImportStringCaller( g_krPreviewDistanceCull ), BoolExportStringCaller( g_krPreviewDistanceCull ) );
 }

@@ -33,6 +33,7 @@
 #include <cmath>
 #include <vector>
 
+#include "gtkutil/guisettings.h"
 #include "iselection.h"
 #include "ientity.h"
 #include "iundo.h"
@@ -482,6 +483,8 @@ void Mirror_show(){
 		g_copyBox->setChecked( g_copy );
 		g_coordSpin->setValue( g_coordinate );
 	}
+	static const bool remembered = ( g_guiSettings.addWindow( g_window, "KenRadiant/Mirror" ), true ); // where you left it, next time too
+	(void)remembered;
 	g_window->show();
 	g_window->raise();
 	g_timer->start();

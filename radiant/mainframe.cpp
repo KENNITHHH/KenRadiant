@@ -1232,7 +1232,7 @@ void create_entity_menu( QMenuBar *menubar ){
 
 	Entity_constructMenu( menu );
 	menu->addSeparator();
-	create_menu_item_with_mnemonic( menu, "Worldspawn Settings... (ambient, floodlight, distancecull, fog, all keys)", "KrMapSettings" ); // KenRadiant
+	create_menu_item_with_mnemonic( menu, "Worldspawn Settings... (every worldspawn key)", "KrMapSettings" ); // KenRadiant
 }
 
 void create_brush_menu( QMenuBar *menubar ){
@@ -1532,7 +1532,7 @@ void create_fov_toolbar( QToolBar *toolbar ){
 	toolbar_append_toggle_button( toolbar, "Game View (Shift+G): hide editor-only things", "kr_gameview.png", "ToggleGameView" );
 	toolbar_append_toggle_button( toolbar, "Shaders like in game: every stage of a shader (glows, blends, rgbGen, animMap) - off = the editor image only", "kr_gameshaders.png", "ToggleGameShaders" );
 	toolbar_append_toggle_button( toolbar, "Live light preview (Ctrl+L): light entities and the sky shader sun light the 3D view, with sun and light shadows", "kr_lightpreview.png", "ToggleLightPreview" );
-	toolbar_append_button( toolbar, "Sun Calibrator: tweak the sky shader's q3map_sun live, preview gamma / compensate / bounce", "kr_sun.png", "SunCalibrator" );
+	toolbar_append_button( toolbar, "Sun Calibrator: the sky shader's sun, the light preview, the worldspawn light keys (ambient, _color, _minlight, _floodlight, distancecull) and how the game shows it - live", "kr_sun.png", "SunCalibrator" );
 	toolbar_append_button( toolbar, "Fog: show the map's fog in the 3D view like the game does, or try another one", "kr_fog.png", "KrFogWindow" );
 	toolbar->addSeparator();
 	toolbar_append_button( toolbar, "Map Text: the .map as text, follows the selection; click a line to select it, find models / keys", "kr_maptext.png", "MapTextWindow" );

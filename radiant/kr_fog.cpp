@@ -22,6 +22,7 @@
 #include <QColorDialog>
 #include <vector>
 
+#include "gtkutil/guisettings.h"
 #include "ientity.h"
 #include "ishaders.h"
 #include "iscenegraph.h"
@@ -346,6 +347,8 @@ void Fog_show(){
 	Combo_fill();
 	Window_update();
 	g_window->adjustSize(); // (the note at the bottom is only filled in by Window_update)
+	static const bool remembered = ( g_guiSettings.addWindow( g_window, "KenRadiant/Fog" ), true ); // where you left it, next time too
+	(void)remembered;
 	g_window->show();
 	g_window->raise();
 }

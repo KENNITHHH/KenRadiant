@@ -6,6 +6,7 @@
    This file is part of KenRadiant (GPL, see LICENSE).
  */
 
+#include "gtkutil/guisettings.h"
 #include "kr_lightpreview.h"
 
 #include <QDialog>
@@ -13,6 +14,8 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScreen>
+#include <QTabWidget>
+#include <QTabBar>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -317,17 +320,22 @@ class SunCalibrator : public QDialog
 public:
 	SunCalibrator( QWidget* parent ) : QDialog( parent, Qt::Tool ){
 		setWindowTitle( "Sun Calibrator / Light Preview Settings" );
-		// everything in a scroll area: with the worldspawn light it is taller than many screens
+		// one tab per subject; each page scrolls when it is taller than the window
 		auto *outer = new QVBoxLayout( this );
-		outer->setContentsMargins( 0, 0, 0, 0 );
-		auto *scroll = new QScrollArea;
-		scroll->setWidgetResizable( true );
-		scroll->setFrameShape( QFrame::NoFrame );
-		scroll->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
-		outer->addWidget( scroll );
-		auto *inner = new QWidget;
-		auto *vbox = new QVBoxLayout( inner );
-
+		auto *tabs = new QTabWidget;
+		outer->addWidget( tabs );
+		const auto page = [tabs]( const char* name, const char* tip ){
+			auto *scroll = new QScrollArea;
+			scroll->setWidgetResizable( true );
+			scroll->setFrameShape( QFrame::NoFrame );
+			scroll->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
+			auto *inner = new QWidget;
+			auto *v = new QVBoxLayout( inner );
+			scroll->setWidget( inner );
+			tabs->setTabToolTip( tabs->addTab( scroll, name ), tip );
+			return v;
+		};
+		QVBoxLayout* vbox = page( "Sky Shader", "The sun and sky light of the map's sky shader (q3map_sun / q3map_sunExt / q3map_skyLight)" );
 		m_shaderLabel = new QLabel;
 		m_shaderLabel->setWordWrap( true );
 		vbox->addWidget( m_shaderLabel );
@@ -403,7 +411,9 @@ public:
 			buttons->addWidget( copy );
 			buttons->addWidget( write );
 			vbox->addLayout( buttons );
+			vbox->addStretch( 1 );
 		}
+		vbox = page( "Lights", "How many of the map's light entities the live light preview uses" );
 		{
 			auto *group = new QGroupBox( "Lights" );
 			auto *grid = new QGridLayout( group );
@@ -420,9 +430,11 @@ public:
 			} );
 			vbox->addWidget( group );
 		}
-		{
-			vbox->addWidget( KrMapSettings_lightSection() ); // KenRadiant: the worldspawn light keys, live
-		}
+		vbox->addStretch( 1 );
+		vbox = page( "Worldspawn", "The worldspawn keys for light and view distance: ambient, _color, _minlight, _floodlight, distancecull, fog, gridsize - live" );
+		vbox->addWidget( KrMapSettings_lightSection() ); // KenRadiant: the worldspawn keys, live
+		vbox->addStretch( 1 );
+		vbox = page( "Compile Preview", "An approximation of q3map2's -light options on the live light preview" );
 		{
 			auto *group = new QGroupBox( "Compile preview (approximation of q3map2 -light options)" );
 			auto *grid = new QGridLayout( group );
@@ -454,7 +466,9 @@ public:
 			buttons->addWidget( preset );
 			grid->addLayout( buttons, r++, 0, 1, 3 );
 			vbox->addWidget( group );
+			vbox->addStretch( 1 );
 		}
+		vbox = page( "Game Look", "How SOF2 shows the lightmaps: overbright and r_gamma" );
 		{
 			auto *group = new QGroupBox( "Game look (how SOF2 shows the lightmaps)" );
 			auto *grid = new QGridLayout( group );
@@ -471,13 +485,22 @@ public:
 			} );
 			vbox->addWidget( group );
 		}
+		vbox->addStretch( 1 );
 		m_engineShift.set( float( g_krEngineShift ) );
 		m_engineGamma.set( g_krEngineGamma );
 		refresh();
-		scroll->setWidget( inner );
-		const QSize want = inner->sizeHint();
+		static int lastTab = 0; // opens on the tab you were on
+		tabs->setCurrentIndex( lastTab );
+		QObject::connect( tabs, &QTabWidget::currentChanged, []( int i ){ lastTab = i; } );
+		// big enough for the tallest page where the screen allows
+		int width = 0, height = 0;
+		for( int i = 0; i < tabs->count(); ++i ){
+			const QSize want = static_cast<QScrollArea*>( tabs->widget( i ) )->widget()->sizeHint();
+			width = std::max( width, want.width() );
+			height = std::max( height, want.height() );
+		}
 		const int screenHeight = screen() != nullptr ? screen()->availableGeometry().height() : 900;
-		resize( want.width() + scroll->verticalScrollBar()->sizeHint().width() + 4, std::min( want.height() + 4, screenHeight - 80 ) );
+		resize( width + 40, std::min( height + tabs->tabBar()->sizeHint().height() + 40, screenHeight - 80 ) );
 	}
 
 	/// shows the current sun (from the map, or the calibrator's own values)
@@ -535,8 +558,10 @@ void KrSunCalibrator_show(){
 	// the dialog shows what the map's sky shader says
 	extern void KrLightPreview_prepareSun();
 	KrLightPreview_prepareSun();
-	if( g_sunCalibrator == nullptr )
+	if( g_sunCalibrator == nullptr ){
 		g_sunCalibrator = new SunCalibrator( MainFrame_getWindow() );
+		g_guiSettings.addWindow( g_sunCalibrator, "KenRadiant/SunCalibrator" ); // where you left it, next time too
+	}
 	g_sunCalibrator->refresh();
 	g_sunCalibrator->show();
 	g_sunCalibrator->raise();

@@ -28,6 +28,7 @@
 #include <utility>
 #include <QKeyEvent>
 
+#include "gtkutil/guisettings.h"
 #include "imap.h"
 #include "ientity.h"
 #include "typesystem.h"
@@ -525,7 +526,7 @@ void MapText_selectionChanged( const Selectable& ){
 
 void MapText_show(){
 	if( g_mapText == nullptr ){
-		g_mapText = new MapTextDialog( MainFrame_getWindow() );
+		g_mapText = new MapTextDialog( MainFrame_getWindow() ); g_guiSettings.addWindow( g_mapText, "KenRadiant/MapText" ); // where you left it, next time too
 		QObject::connect( g_mapText, &QObject::destroyed, [](){ g_mapText = nullptr; } ); // closing the editor: no callbacks into a deleted window
 		AddSceneChangeCallback( FreeCaller<void(), MapText_sceneChanged>() );
 		typedef FreeCaller<void(const Selectable&), MapText_selectionChanged> SelectionChangedCaller;

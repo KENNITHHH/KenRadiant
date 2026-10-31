@@ -1328,9 +1328,9 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 				QObject::connect( b, &QAbstractButton::clicked, EntityInspector_clearKeyValue );
 			}
 			{	// KenRadiant
-				auto *b = new QPushButton( "Map Settings" );
-				b->setToolTip( "The worldspawn's look: ambient, _color, _minlight, _floodlight, distancecull, fog, gridsize - "
-				               "with what each does and a preview in the 3D view" );
+				auto *b = new QPushButton( "Worldspawn" );
+				b->setToolTip( "The Worldspawn tab: every key a worldspawn can have, tick to add, with what each does "
+				               "(the light and distancecull sliders are in the Sun Calibrator's Worldspawn tab)" );
 				hbox->addWidget( b );
 				QObject::connect( b, &QAbstractButton::clicked, [](){ GlobalCommands_find( "KrMapSettings" ).m_callback(); } );
 			}

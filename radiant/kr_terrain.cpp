@@ -11,6 +11,7 @@
    This file is part of KenRadiant (GPL, see LICENSE).
  */
 
+#include "gtkutil/guisettings.h"
 #include "kr_terrain.h"
 
 #include <vector>
@@ -1235,7 +1236,7 @@ void TerrainPaint_toggle(){
 	g_hover.reset();
 	if( g_paint ){
 		if( g_paintDialog == nullptr ){
-			g_paintDialog = new TerrainPaintDialog( MainFrame_getWindow() );
+			g_paintDialog = new TerrainPaintDialog( MainFrame_getWindow() ); g_guiSettings.addWindow( g_paintDialog, "KenRadiant/TerrainPaint" ); // where you left it, next time too
 			QObject::connect( g_paintDialog, &QObject::destroyed, [](){ g_paintDialog = nullptr; } );
 		}
 		g_paintDialog->fillBases();

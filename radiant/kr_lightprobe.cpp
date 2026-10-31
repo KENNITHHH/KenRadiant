@@ -42,6 +42,7 @@
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 
+#include "gtkutil/guisettings.h"
 #include "igl.h"
 #include "math/matrix.h"
 #include "math/vector.h"
@@ -743,6 +744,8 @@ void KrProbe_show(){
 		} );
 		updateLine();
 	}
+	static const bool remembered = ( g_guiSettings.addWindow( g_window, "KenRadiant/LightingProbe" ), true ); // where you left it, next time too
+	(void)remembered;
 	g_window->show();
 	g_window->raise();
 	g_window->activateWindow();
