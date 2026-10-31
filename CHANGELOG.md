@@ -3,6 +3,18 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-10-31 (45)
+### The map's fog like the game (from your Lighting Probe on mp_col2)
+- SOF2's global fog is OpenGL fog, **GL_EXP2 with density 2.354 / fogparms distance** (as in Raven's JK2 / JKA
+  renderers), not idTech3's fog texture (`sqrt( distance / depthForOpaque )`) the editor used. Fitted on 1878 points
+  of your screenshot: density 2.31 / D (EXP2 fits 2.4 x better than the square root curve), so the editor had a
+  quarter of the fog on things 200 units away where the game has almost none - near terrain looked washed out green,
+  the editor 1.7 x brighter than the game. Now: little fog close by, quickly thick further away, 99% at the fogparms
+  distance. In the live preview and on the .bsp (Show Compiled Lighting).
+- The live light itself matches the compile now (same probe): stored light, preview vs your -ravenlight .bsp:
+  terrain 1.00, jungle_1to2 1.02, rock2_moss_brick 1.01, paths 1.06 (build 42: 1.4 - 1.9). Trees still come out a
+  little dark (0.7 - 0.85).
+
 ## Build 2026-10-31 (44)
 - **Go To (View > Go To Coordinates..., Ctrl+Shift+G) sets where the camera looks too**: Yaw and Pitch fields, and
   you can paste the game line straight in (`... setviewpos -597 -272 -85 66`): x y z yaw, the camera 38 units over

@@ -307,8 +307,10 @@ const char* const c_fp =
 	"  if( u_alpha == 1 ) c.a *= v_colour.a; else if( u_alpha == 2 ) c.a *= u_const.a;\n"
 	"  if( ( u_afunc == 1 && c.a <= 0.0 ) || ( u_afunc == 2 && c.a >= 0.5 ) || ( u_afunc == 3 && c.a < 0.5 ) ) discard;\n"
 	"  gl_FragColor = vec4( pow( c.rgb, vec3( 1.0 / u_gamma ) ), c.a );\n"
-	"  if( u_fog_on != 0 ) // the engine's fog curve: alpha = sqrt( depth / depthForOpaque ), depth along the view axis\n"
-	"    gl_FragColor.rgb = mix( gl_FragColor.rgb, u_fog_col, sqrt( clamp( -v_eye.z / u_fog_depth, 0.0, 1.0 ) ) );\n"
+	"  if( u_fog_on != 0 ){ // SOF2's global fog: GL_EXP2, density 2.354 / depthForOpaque, eye-space depth (kr_light_fp.glsl)\n"
+	"    float x = 2.354 * max( -v_eye.z, 0.0 ) / u_fog_depth;\n"
+	"    gl_FragColor.rgb = mix( gl_FragColor.rgb, u_fog_col, 1.0 - exp( -x * x ) );\n"
+	"  }\n"
 	"}\n";
 GLint u_src, u_rgb, u_alpha, u_afunc, u_const, u_tcscale, u_tcscroll, u_tclm, u_env, u_campos;
 GLint u_fog_on, u_fog_col, u_fog_depth;

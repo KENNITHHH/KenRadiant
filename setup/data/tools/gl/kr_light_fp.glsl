@@ -72,13 +72,17 @@ uniform int u_fog_on;
 uniform vec3 u_fog_col;
 uniform float u_fog_depth; // fogparms' distance: completely fogged this far away
 
-/* the engine's fog curve: alpha = sqrt( distance / depthForOpaque ), clamped (tr_shade fogTable = pow( x, 0.5 ) ).
-   The distance is the one the engine uses in RB_CalcFogTexCoords: along the view axis (dot( vertex - eye, forward )),
-   which is -z in eye space - not the distance to the eye, or the screen edges would fog far too early. */
+/* SOF2's global fog (worldspawn "fog") is OpenGL fog, GL_EXP2 with density sqrt( -ln( 1/255 ) ) / depthForOpaque
+   (2.354 / distance, as Raven's JK2 / JKA renderers): f = 1 - exp( -( 2.354 d / D )^2 ) - almost nothing close by,
+   then quickly thick (99% at the fogparms distance). Fitted on mp_col2 from the Lighting Probe: 2.31 / D, game
+   multiplier 0.95 (Q3's own fog texture, sqrt( d / D ), put a quarter of the fog on things 200 units away).
+   d is the eye-space depth (GL's fog coordinate), not the distance to the eye. */
 vec3 krFog( vec3 colour ){
 	if( u_fog_on == 0 )
 		return colour;
-	return mix( colour, u_fog_col, sqrt( clamp( -v_pos.z / u_fog_depth, 0.0, 1.0 ) ) );
+	const float c_density = 2.354; // sqrt( -ln( 1 / 255 ) )
+	float x = c_density * max( -v_pos.z, 0.0 ) / u_fog_depth;
+	return mix( colour, u_fog_col, 1.0 - exp( -x * x ) );
 }
 
 // q3map2 index-map terrain: layer weights from the index map, layer textures with their tcMod scale

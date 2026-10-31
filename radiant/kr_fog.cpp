@@ -2,7 +2,7 @@
    KenRadiant: fog in the 3D view, like SOF2 draws it.
 
    The map's worldspawn "fog" key names a shader with fogparms ( r g b ) <distance>; the engine (idTech3) fades a
-   surface into that colour over the distance in front of you (square root curve) and shows the sky as the flat fog
+   surface into that colour over the distance in front of you (SOF2: OpenGL EXP2 fog, density 2.354 / distance) and shows the sky as the flat fog
    colour. The Fog window takes the map's values, can try any other fog shader of the game, or a colour and distance
    set by hand.
 
@@ -206,7 +206,7 @@ void Window_update(){
 	if( g_mode == eMap && g_mapHas )
 		g_info->setText( QString( "This map's fog: <b>%1</b>.<br>"
 		                          "The game fades a surface into the fog colour over the distance in front of you "
-		                          "(square root curve, like idTech3) and draws the sky as the flat fog colour." )
+		                          "(little close by, then quickly thick - SOF2's EXP2 fog, measured with the Lighting Probe) and draws the sky as the flat fog colour." )
 		                 .arg( g_mapShader.c_str() ) );
 	else if( g_mode == eMap && !g_mapShader.empty() )
 		g_info->setText( QString( "The worldspawn \"fog\" key names <b>%1</b>, but that shader has no fogparms - "
