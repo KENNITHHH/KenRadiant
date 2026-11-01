@@ -3,6 +3,14 @@
 Builds are published as **KenRadiant Latest Build** on the Releases page; the q3map2 version string carries the commit
 (`q3map2 -v` → `2.5.17n-sof2-git-<commit>`).
 
+## Build 2026-11-01 (47)
+### Live light preview: -bounce
+- The Compile window's **-bounce** now lights the live preview (before only the Sun Calibrator's compile preview
+  did, with a rough even fill). Every spot gets back 0.0985 x the light its lights give it without shadows or angle
+  (the sides they don't reach too), each further bounce 35% of the one before; the sun's share as before.
+  Fitted on your mp_shop probe (-bounce 1, -gamma 2.2, 3111 points): the preview was 0.89 x the .bsp on walls and
+  ceilings (floors 0.95), the error to the .bsp per point drops from 0.027 to 0.006 (stored light).
+
 ## Build 2026-11-01 (46)
 - **Show Compiled Lighting with fog**: walls and floors (lightmap + texture stages) were 25% too dark against the game
   (Lighting Probe, mp_col2: editor 0.79 x the game). Each stage got the fog on its own, so the lightmap and the

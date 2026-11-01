@@ -2472,16 +2472,16 @@ static void KrLightPreview_collect( const Vector3& viewer ){
 	}
 	// sun softness from q3map_sunExt deviance (degrees): wider shadow filtering
 	g_krSunSoftness = 1 + ( g_krSun.ext ? std::clamp( g_krSun.deviance, 0.f, 30.f ) * 1.5f : 0.f );
-	// bounce approximation: a share of the direct light comes back as fill (real bounce needs a compile)
-	g_krBounceFill = Vector3( 0, 0, 0 );
-	if( g_krCompile.enabled && g_krCompile.bounce > 0 ){
-		Vector3 lights( 0, 0, 0 );
-		for( const KrPreviewLight& l : g_krLightPreviewLights )
-			lights += l.colour;
-		if( !g_krLightPreviewLights.empty() )
-			lights /= float( g_krLightPreviewLights.size() );
-		g_krBounceFill = ( g_krSunColour * 0.35f + lights * 0.1f ) * ( 1 - std::pow( 0.6f, float( g_krCompile.bounce ) ) ) * 0.6f;
-	}
+	// bounce (-bounce N: the Compile window's, or the Sun Calibrator's compile preview while it is on): the lights come
+	// back off the walls as an even fill - per spot 0.0985 x the light of its lights (in reach, the 48 strongest) without shadows or angle
+	// (fitted on mp_shop with the Lighting Probe: -bounce 1, 3111 points, the error to the .bsp from 0.027 to 0.006 -
+	// a quarter), each further bounce 35% of the one before; the sun comes back as a flat share of itself
+	extern int KrCompile_bounce();
+	extern float g_krBounceK;
+	const int bounces = g_krCompile.enabled ? g_krCompile.bounce : KrCompile_bounce();
+	const float series = bounces > 0 ? ( 1 - std::pow( 0.35f, float( bounces ) ) ) / 0.65f : 0.f;
+	g_krBounceK = 0.0985f * series;
+	g_krBounceFill = g_krSunColour * ( 0.35f * 0.6f * ( bounces > 0 ? 1 - std::pow( 0.6f, float( bounces ) ) : 0.f ) );
 	// ambient: worldspawn _ambient (0..255 like q3map2); q3map_skyLight as light from the sky dome (tinted a little by the sun)
 	g_krAmbient = Vector3( 1, 1, 1 ) * std::clamp( ambient / 255.f, 0.f, 1.f );
 	const Vector3 tint = vector3_length_squared( g_krSunColour ) > 0 ? vector3_normalised( g_krSun.colour ) * 1.732f : Vector3( 1, 1, 1 );

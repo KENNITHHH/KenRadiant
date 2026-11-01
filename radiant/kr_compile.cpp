@@ -1349,6 +1349,18 @@ void KrCompile_ravenParams( bool& raven, bool& sof2map, float& sunMinimum ){
 	}
 }
 
+/// -bounce of the LIGHT stage (0 with sof2map), for the live light preview's bounce fill
+int KrCompile_bounce(){
+	Compile_restoreForMap();
+	if( g_options.compiler == 1 )
+		return 0;
+	int bounce = g_options.bounce;
+	const QStringList t = QProcess::splitCommand( QString( g_options.extraLight.c_str() ) + Compile_advanced( g_options.advLight ) );
+	for( int i = 0; i + 1 < t.size(); ++i )
+		if( t[i] == "-bounce" ) bounce = t[i + 1].toInt();
+	return std::max( bounce, 0 );
+}
+
 /// the Compile window's commands as text (Lighting Probe report)
 QString KrCompile_commands(){
 	return Compile_commandsText( g_options, nullptr );

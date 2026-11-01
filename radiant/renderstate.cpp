@@ -532,6 +532,7 @@ float g_krShadowBiasUnit = 0;
 float g_krSunSoftness = 1;
 KrCompilePreview g_krCompile;
 Vector3 g_krBounceFill( 0, 0, 0 );
+float g_krBounceK = 0; // bounce: share of the unshadowed light of the lights at a spot that comes back as fill
 bool g_krLightShadows = true;
 int g_krShadowedLights = 4;
 int g_krPreviewLightCount = int( c_krMaxPreviewLights );
@@ -607,7 +608,7 @@ public:
 	GLint u_mode, u_fflight, u_time, u_turb, u_turb_on, u_deform, u_dfunc, u_ddiv, u_dwave, u_dmove, u_bulge;
 	GLint u_fog_on, u_fog_col, u_fog_depth;
 	GLint u_flood;
-	GLint u_raven_fill, u_sun_min;
+	GLint u_raven_fill, u_sun_min, u_bounce_k;
 	bool m_preview = false; // lit preview pass (the 3D view with Ctrl+L on)
 	bool m_fog = false;     // the map's fog, drawn like the game (kr_fog.cpp)
 	bool m_bound = false;
@@ -641,7 +642,7 @@ public:
 		u_deform = u( "u_deform" ); u_dfunc = u( "u_dfunc" ); u_ddiv = u( "u_ddiv" ); u_dwave = u( "u_dwave" ); u_dmove = u( "u_dmove" ); u_bulge = u( "u_bulge" );
 		u_fog_on = u( "u_fog_on" ); u_fog_col = u( "u_fog_col" ); u_fog_depth = u( "u_fog_depth" );
 		u_flood = u( "u_flood" );
-		u_raven_fill = u( "u_raven_fill" ); u_sun_min = u( "u_sun_min" );
+		u_raven_fill = u( "u_raven_fill" ); u_sun_min = u( "u_sun_min" ); u_bounce_k = u( "u_bounce_k" );
 		gl().glUniform1i( u_tex, 0 );
 		gl().glUniform1i( u( "u_shadow" ), 7 );
 		gl().glUniform1i( u( "u_cube0" ), 8 );
@@ -754,6 +755,7 @@ public:
 		gl().glUniform1f( u_vscale, cvscale );
 		gl().glUniform1f( u_saturation, c ? g_krCompile.saturation : 1.f );
 		gl().glUniform3f( u_bounce, g_krBounceFill.x(), g_krBounceFill.y(), g_krBounceFill.z() );
+		gl().glUniform1f( u_bounce_k, g_krBounceK );
 		GlobalOpenGL_debugAssertNoErrors();
 	}
 	/// per surface: lit / fullbright glow / unlit, and the vertex effects (tcMod turb, deformVertexes)

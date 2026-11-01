@@ -16,7 +16,9 @@ uniform vec3 u_ambient;    // worldspawn _ambient
 uniform vec3 u_sky;        // q3map_skyLight: light from the whole sky, more on surfaces facing up
 uniform vec3 u_minlight;   // worldspawn _minlight, in its _color
 uniform vec3 u_raven_fill; // sof2map / q3map2 -ravenlight: the sky shader's surface light, flat wherever the sky is seen
-uniform float u_sun_min;   // sof2map / -ravenlight: the sun's angle factor never below this (SkyMinimum) where it faces the sun
+uniform float u_sun_min;
+uniform float u_bounce_k;  // -bounce: this share of the light that reaches a spot without shadows / angle comes back as fill
+vec3 g_bounce = vec3( 0.0 ); // (summed by pointLight)   // sof2map / -ravenlight: the sun's angle factor never below this (SkyMinimum) where it faces the sun
 uniform vec3 u_flood;      // worldspawn _floodlight colour * intensity (q3map2 fill light), weighed by the sky seen
 // sky light occlusion: 16 directional depth maps (zenith + 2 rings) in a 4 x 4 atlas
 uniform sampler2DShadow u_skyshadow;
@@ -165,6 +167,8 @@ vec3 pointLight( float id, vec3 nw ){
 		if( sampleRadius > radiusAtDist - 32.0 )
 			c *= ( radiusAtDist - sampleRadius ) / 32.0;
 	}
+	// bounce: what this light gives here without its angle or shadow (also on the sides it doesn't light)
+	g_bounce += b.rgb * ( a.w > 0.0 ? a.w / max( dd, 256.0 ) : max( -a.w - max( dist, 16.0 ), 0.0 ) / 255.0 );
 	if( c > 0.0 && id < 7.5 ){
 		vec3 L = -d + nw * ( 3.0 + dist * ( 0.02 + 0.04 * ( 1.0 - ndl ) ) ) + g_offw * ( 1.0 + dist * 0.01 ); // (normal offset against acne, more at grazing angles; terrain: off the face too)
 		int i = int( id + 0.5 );
@@ -302,6 +306,7 @@ void main()
 			}
 		}
 	}
+	light += u_bounce_k * g_bounce;
 	light = max( light, u_minlight );
 	// what q3map2 does (ColorToBytes): vertex light is scaled by -vertexscale before the gamma, a lightmap by
 	// -brightness after it (it goes in as lmscale), then both by 1 / -compensate
