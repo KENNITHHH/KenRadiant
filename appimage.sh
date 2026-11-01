@@ -6,8 +6,8 @@ APPNAME="NetRadiant-Custom"
 BINARY="radiant.x86_64"
 DESKTOP="netradiantcustom.desktop"
 ICON="$BINARY"
-ICON_SRC="install/bitmaps/logo.svg"
-ICON_DEST="$APPDIR/$ICON.svg"
+ICON_SRC="icons/radiant.png" # a PNG: newer appimagetool builds need one for .DirIcon (an .svg was refused)
+ICON_DEST="$APPDIR/$ICON.png"
 
 
 echo "[1/5] Preparing AppDir structure..."
